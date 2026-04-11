@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+}
+
+html {
+  background-color: #0d0d0d;
+  color: #efefef;
+}
+
+body {
+  background-color: #0d0d0d;
+  color: #efefef;
+  min-height: 100vh;
+}
+
+/* scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0d0d0d;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a2a2a;
+  border-radius: 0;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}
+
+/* RainbowKit override — square buttons */
+[data-rk] button {
+  border-radius: 0 !important;
+}
