@@ -1,4 +1,4 @@
-import turboClient from './client'
+import { getTurboClient } from './client'
 
 export const uploadFile = async (
   file: File,
@@ -6,7 +6,7 @@ export const uploadFile = async (
 ): Promise<string> => {
   const uint8Array = new Uint8Array(await file.arrayBuffer())
 
-  const { id } = await turboClient.uploadFile({
+  const { id } = await getTurboClient().uploadFile({
     fileStreamFactory: () => Buffer.from(uint8Array),
     fileSizeFactory: () => file.size,
     dataItemOpts: {
