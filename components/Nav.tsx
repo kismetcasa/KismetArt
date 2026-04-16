@@ -12,7 +12,7 @@ export function Nav() {
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-8">
           <Link href="/" className="text-sm font-mono tracking-widest text-[#efefef] uppercase">
-            in•process
+            Kismet Art
           </Link>
           <nav className="flex items-center gap-1">
             <Link
