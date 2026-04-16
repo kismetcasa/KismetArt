@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const url = new URL(`${INPROCESS_API}/moment`)
   url.searchParams.set('collectionAddress', collectionAddress)
   url.searchParams.set('tokenId', tokenId)
-  url.searchParams.set('chainId', chainId)
+  url.searchParams.set('chain_id', chainId)
 
   const res = await fetch(url.toString(), { next: { revalidate: 60 } })
   const data = await res.json()

@@ -13,13 +13,13 @@ interface CollectButtonProps {
 }
 
 export function CollectButton({ collectionAddress, tokenId, className = '' }: CollectButtonProps) {
-  const { isConnected } = useAccount()
+  const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const [loading, setLoading] = useState(false)
   const [collected, setCollected] = useState(false)
 
   async function handleCollect() {
-    if (!isConnected) {
+    if (!isConnected || !address) {
       openConnectModal?.()
       return
     }
@@ -29,6 +29,7 @@ export function CollectButton({ collectionAddress, tokenId, className = '' }: Co
       const payload: CollectPayload = {
         moment: { collectionAddress, tokenId, chainId: 8453 },
         amount: 1,
+        account: address!,
         comment: 'collected via in•process client',
       }
 
