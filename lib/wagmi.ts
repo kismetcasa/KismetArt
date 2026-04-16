@@ -4,7 +4,7 @@ import { http } from 'wagmi'
 
 export const wagmiConfig = getDefaultConfig({
   appName: 'inprocess client',
-  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'WALLETCONNECT_PROJECT_ID_REQUIRED',
+  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID!,
   chains: [base],
   transports: {
     [base.id]: http(),
