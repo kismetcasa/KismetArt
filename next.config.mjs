@@ -29,9 +29,16 @@ const nextConfig = {
     },
   },
 
-  // Webpack aliases for production builds
-  webpack: (config, { isServer }) => {
+  // Webpack config for production builds
+  webpack: (config, { isServer, webpack }) => {
     if (!isServer) {
+      // Strip node: URI prefix so standard fallbacks can resolve the modules
+      config.plugins.push(
+        new webpack.NormalModuleReplacementPlugin(/^node:/, (resource) => {
+          resource.request = resource.request.replace(/^node:/, '')
+        })
+      )
+
       config.resolve.fallback = {
         ...config.resolve.fallback,
         buffer: require.resolve('buffer/'),
