@@ -19,7 +19,7 @@ export function CollectButton({ collectionAddress, tokenId, className = '' }: Co
   const [collected, setCollected] = useState(false)
 
   async function handleCollect() {
-    if (!isConnected) {
+    if (!isConnected || !address) {
       openConnectModal?.()
       return
     }

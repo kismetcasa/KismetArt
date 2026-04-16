@@ -133,6 +133,7 @@ export function MintForm() {
       toast.success('Minted!', { id: 'mint', description: `Token #${data.tokenId}` })
     } catch (err) {
       setStep('idle')
+      setUploadProgress(0)
       toast.error('Mint failed', {
         id: 'mint',
         description: err instanceof Error ? err.message : 'Unknown error',
