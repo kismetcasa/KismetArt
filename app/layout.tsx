@@ -5,11 +5,11 @@ import { Nav } from '@/components/Nav'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'in•process client',
-  description: 'mint, collect, and discover art on in•process',
+  title: 'Kismet Art',
+  description: 'mint, collect, and discover art on Kismet Art',
   openGraph: {
-    title: 'in•process client',
-    description: 'mint, collect, and discover art on in•process',
+    title: 'Kismet Art',
+    description: 'mint, collect, and discover art on Kismet Art',
   },
 }
 

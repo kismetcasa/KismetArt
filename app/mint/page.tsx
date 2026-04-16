@@ -1,8 +1,8 @@
 import { MintForm } from '@/components/MintForm'
 
 export const metadata = {
-  title: 'mint — in•process client',
-  description: 'upload your work and mint it as a moment on in•process',
+  title: 'mint — Kismet Art',
+  description: 'upload your work and mint it as a moment on Kismet Art',
 }
 
 export default function MintPage() {
@@ -13,7 +13,7 @@ export default function MintPage() {
           Mint
         </h1>
         <p className="text-xs font-mono text-[#555]">
-          upload your work and publish it as a moment on in•process
+          upload your work and publish it as a moment on Kismet Art
         </p>
       </div>
       <MintForm />
