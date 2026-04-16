@@ -1,35 +1,10 @@
-import { connectorsForWallets } from '@rainbow-me/rainbowkit'
-import {
-  injectedWallet,
-  metaMaskWallet,
-  baseAccount,
-  rabbyWallet,
-} from '@rainbow-me/rainbowkit/wallets'
-import { createConfig, http } from 'wagmi'
+import { getDefaultConfig } from '@rainbow-me/rainbowkit'
 import { base } from 'wagmi/chains'
+import { http } from 'wagmi'
 
-const connectors = connectorsForWallets(
-  [
-    {
-      groupName: 'Wallets',
-      wallets: [
-        injectedWallet,
-        metaMaskWallet,
-        baseAccount,
-        rabbyWallet,
-      ],
-    },
-  ],
-  {
-    appName: 'inprocess client',
-    // projectId is required by the type signature but is only consumed by
-    // walletConnectWallet, which is not included above.
-    projectId: 'inprocess-client',
-  }
-)
-
-export const wagmiConfig = createConfig({
-  connectors,
+export const wagmiConfig = getDefaultConfig({
+  appName: 'inprocess client',
+  projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || 'WALLETCONNECT_PROJECT_ID_REQUIRED',
   chains: [base],
   transports: {
     [base.id]: http(),
