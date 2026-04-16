@@ -7,6 +7,8 @@ import { toast } from 'sonner'
 import { Upload, X } from 'lucide-react'
 import { parseEther } from 'viem'
 import type { CreateMomentPayload } from '@/lib/inprocess'
+import uploadToArweave from '@/lib/arweave/uploadToArweave'
+import { uploadJson } from '@/lib/arweave/uploadJson'
 
 const PLATFORM_COLLECTION = process.env.NEXT_PUBLIC_PLATFORM_COLLECTION
 const CREATE_REFERRAL = process.env.NEXT_PUBLIC_CREATE_REFERRAL ?? '0x0000000000000000000000000000000000000000'
@@ -21,6 +23,7 @@ export function MintForm() {
   const [description, setDescription] = useState('')
   const [price, setPrice] = useState('0')
   const [step, setStep] = useState<'idle' | 'uploading-media' | 'uploading-metadata' | 'minting' | 'done'>('idle')
+  const [uploadProgress, setUploadProgress] = useState(0)
   const [result, setResult] = useState<{ hash: string; contractAddress: string; tokenId: string } | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -49,24 +52,6 @@ export function MintForm() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  async function uploadFile(f: File): Promise<string> {
-    const fd = new FormData()
-    fd.append('file', f)
-    const res = await fetch('/api/upload', { method: 'POST', body: fd })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error ?? 'Upload failed')
-    return data.uri as string
-  }
-
-  async function uploadJson(obj: object): Promise<string> {
-    const fd = new FormData()
-    fd.append('json', JSON.stringify(obj))
-    const res = await fetch('/api/upload', { method: 'POST', body: fd })
-    const data = await res.json()
-    if (!res.ok) throw new Error(data.error ?? 'Metadata upload failed')
-    return data.uri as string
-  }
-
   async function handleMint(e: React.FormEvent) {
     e.preventDefault()
 
@@ -87,11 +72,16 @@ export function MintForm() {
     try {
       // 1. Upload media to Arweave
       setStep('uploading-media')
+      setUploadProgress(0)
       toast.loading('Uploading media to Arweave…', { id: 'mint' })
-      const mediaUri = await uploadFile(file)
+      const mediaUri = await uploadToArweave(file, (pct) => {
+        setUploadProgress(pct)
+        toast.loading(`Uploading media… ${pct}%`, { id: 'mint' })
+      })
 
       // 2. Upload metadata to Arweave
       setStep('uploading-metadata')
+      setUploadProgress(0)
       toast.loading('Uploading metadata…', { id: 'mint' })
       const metadata = {
         name: name.trim(),
@@ -302,7 +292,7 @@ export function MintForm() {
         {!isConnected
           ? 'connect wallet to mint'
           : isBusy
-          ? stepLabel(step)
+          ? stepLabel(step, uploadProgress)
           : 'mint'}
       </button>
 
@@ -315,9 +305,9 @@ export function MintForm() {
   )
 }
 
-function stepLabel(step: string): string {
+function stepLabel(step: string, progress: number): string {
   switch (step) {
-    case 'uploading-media': return 'uploading media…'
+    case 'uploading-media': return progress > 0 ? `uploading media… ${progress}%` : 'uploading media…'
     case 'uploading-metadata': return 'uploading metadata…'
     case 'minting': return 'minting…'
     default: return 'working…'
