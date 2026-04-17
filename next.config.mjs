@@ -46,6 +46,9 @@ const nextConfig = {
         stream: require.resolve('stream-browserify'),
         process: require.resolve('process/browser'),
       }
+
+      // pino-pretty is an optional dep of pino (used by WalletConnect) — not needed in browser
+      config.resolve.alias['pino-pretty'] = false
     }
     return config
   },
