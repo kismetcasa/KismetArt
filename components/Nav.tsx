@@ -35,6 +35,16 @@ export function Nav() {
             >
               Mint
             </Link>
+            <Link
+              href="/collections/create"
+              className={`px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
+                pathname === '/collections/create'
+                  ? 'text-[#d4f53c]'
+                  : 'text-[#888] hover:text-[#efefef]'
+              }`}
+            >
+              Create
+            </Link>
           </nav>
         </div>
 
