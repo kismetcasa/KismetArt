@@ -1,9 +1,8 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
-import { useAccount } from 'wagmi'
+import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { parseEventLogs } from 'viem'
 import { toast } from 'sonner'
 import { Upload, X } from 'lucide-react'
@@ -39,6 +38,12 @@ export function CreateCollectionForm() {
 
   useEffect(() => {
     if (!receipt || step !== 'deploying') return
+    if (receipt.status === 'reverted') {
+      setStep('idle')
+      setTxHash(undefined)
+      toast.error('Transaction reverted', { id: 'create-collection', description: 'The deploy transaction failed on-chain.' })
+      return
+    }
     const logs = parseEventLogs({
       abi: FACTORY_ABI,
       eventName: 'SetupNewContract',
