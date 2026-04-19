@@ -4,9 +4,9 @@ import { useState, useRef } from 'react'
 import { useAccount } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
-import { Upload, X } from 'lucide-react'
-import { parseEther } from 'viem'
-import type { CreateMomentPayload } from '@/lib/inprocess'
+import { Upload, X, Plus, Trash2 } from 'lucide-react'
+import { parseEther, isAddress } from 'viem'
+import type { CreateMomentPayload, Split } from '@/lib/inprocess'
 import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { uploadJson } from '@/lib/arweave/uploadJson'
 
@@ -27,11 +27,26 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [price, setPrice] = useState('0')
+  const [splits, setSplits] = useState<Split[]>([])
+  const [splitInput, setSplitInput] = useState({ address: '', pct: '' })
   const [step, setStep] = useState<'idle' | 'uploading-media' | 'uploading-metadata' | 'minting' | 'done'>('idle')
   const [uploadProgress, setUploadProgress] = useState(0)
   const [result, setResult] = useState<{ hash: string; contractAddress: string; tokenId: string } | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const splitsTotal = splits.reduce((s, r) => s + r.percentAllocation, 0)
+
+  function addSplit() {
+    const addr = splitInput.address.trim()
+    const pct = parseFloat(splitInput.pct)
+    if (!isAddress(addr)) { toast.error('Invalid address'); return }
+    if (isNaN(pct) || pct <= 0 || pct > 100) { toast.error('Allocation must be 1–100'); return }
+    if (splitsTotal + pct > 100) { toast.error('Total allocation exceeds 100%'); return }
+    if (splits.some((s) => s.address === addr)) { toast.error('Address already added'); return }
+    setSplits((prev) => [...prev, { address: addr, percentAllocation: pct }])
+    setSplitInput({ address: '', pct: '' })
+  }
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
@@ -71,6 +86,14 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
     }
     if (!name.trim()) {
       toast.error('Please enter a title')
+      return
+    }
+    if (splits.length === 1) {
+      toast.error('Splits require at least 2 recipients')
+      return
+    }
+    if (splits.length > 1 && splitsTotal !== 100) {
+      toast.error(`Split allocations must sum to 100% (currently ${splitsTotal}%)`)
       return
     }
 
@@ -123,6 +146,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
           payoutRecipient: address,
         },
         account: address!,
+        ...(splits.length >= 2 ? { splits } : {}),
       }
 
       const res = await fetch('/api/mint', {
@@ -184,6 +208,8 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
             setName('')
             setDescription('')
             setPrice('0')
+            setSplits([])
+            setSplitInput({ address: '', pct: '' })
           }}
           className="text-xs font-mono text-[#888] hover:text-[#efefef] underline"
         >
@@ -286,6 +312,68 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
         </div>
         {price === '0' && (
           <p className="text-xs text-[#555] font-mono mt-1">Free mint (open edition)</p>
+        )}
+      </div>
+
+      {/* Revenue splits */}
+      <div>
+        <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
+          Revenue Splits
+        </label>
+        <div className="flex gap-2 mb-2">
+          <input
+            type="text"
+            value={splitInput.address}
+            onChange={(e) => setSplitInput((s) => ({ ...s, address: e.target.value }))}
+            placeholder="0x… address"
+            className="flex-1 bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+          />
+          <input
+            type="number"
+            value={splitInput.pct}
+            onChange={(e) => setSplitInput((s) => ({ ...s, pct: e.target.value }))}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSplit() } }}
+            placeholder="%"
+            min="1"
+            max="100"
+            className="w-16 bg-[#111] border border-[#2a2a2a] px-2 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+          />
+          <button
+            type="button"
+            onClick={addSplit}
+            className="px-3 border border-[#2a2a2a] text-[#888] hover:border-[#555] hover:text-[#efefef] transition-colors"
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+        {splits.length > 0 && (
+          <ul className="flex flex-col gap-1 mb-2">
+            {splits.map((s) => (
+              <li key={s.address} className="flex items-center justify-between bg-[#111] border border-[#2a2a2a] px-3 py-2">
+                <span className="text-xs font-mono text-[#888] truncate">{s.address}</span>
+                <div className="flex items-center gap-3 ml-2 flex-shrink-0">
+                  <span className="text-xs font-mono text-[#efefef]">{s.percentAllocation}%</span>
+                  <button
+                    type="button"
+                    onClick={() => setSplits((prev) => prev.filter((r) => r.address !== s.address))}
+                    className="text-[#555] hover:text-[#888]"
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+        {splits.length > 0 && (
+          <p className={`text-xs font-mono ${splitsTotal === 100 ? 'text-[#555]' : 'text-[#d4f53c]'}`}>
+            {splitsTotal}% allocated{splitsTotal < 100 ? ` — ${100 - splitsTotal}% remaining` : ' ✓'}
+          </p>
+        )}
+        {splits.length === 0 && (
+          <p className="text-xs text-[#555] font-mono">
+            optional — split primary sale proceeds among multiple addresses
+          </p>
         )}
       </div>
 
