@@ -92,7 +92,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
       toast.error('Splits require at least 2 recipients')
       return
     }
-    if (splits.length > 1 && splitsTotal !== 100) {
+    if (splits.length > 1 && Math.round(splitsTotal * 100) !== 10000) {
       toast.error(`Split allocations must sum to 100% (currently ${splitsTotal}%)`)
       return
     }
@@ -143,7 +143,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
             saleEnd: '18446744073709551615',
           },
           mintToCreatorCount: 1,
-          payoutRecipient: address,
+          ...(splits.length < 2 ? { payoutRecipient: address } : {}),
         },
         account: address!,
         ...(splits.length >= 2 ? { splits } : {}),

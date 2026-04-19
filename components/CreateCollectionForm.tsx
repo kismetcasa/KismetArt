@@ -3,10 +3,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { parseEventLogs } from 'viem'
+import { parseEventLogs, isAddress } from 'viem'
 import { toast } from 'sonner'
 import { Upload, X, Plus, Trash2 } from 'lucide-react'
-import { isAddress } from 'viem'
 import { FACTORY_ADDRESS, FACTORY_ABI, encodeMinterPermission } from '@/lib/collections'
 import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { uploadJson } from '@/lib/arweave/uploadJson'
@@ -39,6 +38,14 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
 
   const { writeContractAsync } = useWriteContract()
 
+  function addMinter() {
+    const addr = minterInput.trim()
+    if (!isAddress(addr)) { toast.error('Invalid address'); return }
+    if (minters.includes(addr)) return
+    setMinters((prev) => [...prev, addr])
+    setMinterInput('')
+  }
+
   const { data: receipt } = useWaitForTransactionReceipt({
     hash: txHash,
     query: { enabled: !!txHash && step === 'deploying' },
@@ -49,6 +56,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
     if (receipt.status === 'reverted') {
       setStep('idle')
       setTxHash(undefined)
+      setUploadProgress(0)
       toast.error('Transaction reverted', { id: 'create-collection', description: 'The deploy transaction failed on-chain.' })
       return
     }
@@ -89,6 +97,10 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
     }
     if (!name.trim()) {
       toast.error('Please enter a collection name')
+      return
+    }
+    if (royaltyRecipient.trim() && !isAddress(royaltyRecipient.trim())) {
+      toast.error('Invalid royalty recipient address')
       return
     }
 
@@ -338,24 +350,14 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
             onKeyDown={(e) => {
               if (e.key !== 'Enter') return
               e.preventDefault()
-              const addr = minterInput.trim()
-              if (!isAddress(addr)) { toast.error('Invalid address'); return }
-              if (minters.includes(addr)) return
-              setMinters((prev) => [...prev, addr])
-              setMinterInput('')
+              addMinter()
             }}
             placeholder="0x… wallet address"
             className="flex-1 bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
           />
           <button
             type="button"
-            onClick={() => {
-              const addr = minterInput.trim()
-              if (!isAddress(addr)) { toast.error('Invalid address'); return }
-              if (minters.includes(addr)) return
-              setMinters((prev) => [...prev, addr])
-              setMinterInput('')
-            }}
+            onClick={addMinter}
             className="px-3 border border-[#2a2a2a] text-[#888] hover:border-[#555] hover:text-[#efefef] transition-colors"
           >
             <Plus size={14} />
