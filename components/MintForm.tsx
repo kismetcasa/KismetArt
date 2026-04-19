@@ -13,7 +13,12 @@ import { uploadJson } from '@/lib/arweave/uploadJson'
 const PLATFORM_COLLECTION = process.env.NEXT_PUBLIC_PLATFORM_COLLECTION
 const CREATE_REFERRAL = process.env.NEXT_PUBLIC_CREATE_REFERRAL ?? '0x0000000000000000000000000000000000000000'
 
-export function MintForm() {
+interface MintFormProps {
+  collectionAddress?: string
+}
+
+export function MintForm({ collectionAddress }: MintFormProps = {}) {
+  const targetCollection = collectionAddress ?? PLATFORM_COLLECTION
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
 
@@ -99,8 +104,8 @@ export function MintForm() {
       const now = Math.floor(Date.now() / 1000)
 
       const payload: CreateMomentPayload = {
-        contract: PLATFORM_COLLECTION
-          ? { address: PLATFORM_COLLECTION }
+        contract: targetCollection
+          ? { address: targetCollection }
           : {
               name: `${name.trim()} by ${address}`,
               uri: metadataUri,
@@ -297,7 +302,7 @@ export function MintForm() {
           : 'mint'}
       </button>
 
-      {!PLATFORM_COLLECTION && (
+      {!targetCollection && (
         <p className="text-xs font-mono text-[#555] text-center">
           No platform collection set — each mint creates a new collection
         </p>
