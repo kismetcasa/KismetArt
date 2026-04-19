@@ -5,7 +5,6 @@ import { RefreshCw } from 'lucide-react'
 import { MomentCard } from '@/components/MomentCard'
 import type { Moment } from '@/lib/inprocess'
 
-// Collection is locked server-side in /api/timeline — not passed from client.
 const PLATFORM_COLLECTION = process.env.NEXT_PUBLIC_PLATFORM_COLLECTION
 
 export default function DiscoverPage() {
