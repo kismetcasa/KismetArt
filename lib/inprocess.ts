@@ -37,6 +37,11 @@ export interface TimelineResponse {
   status: string
 }
 
+export interface Split {
+  address: string
+  percentAllocation: number
+}
+
 export interface CreateMomentPayload {
   contract: {
     address?: string
@@ -51,6 +56,7 @@ export interface CreateMomentPayload {
     payoutRecipient?: string
     maxSupply?: number
   }
+  splits?: Split[]
   account: string
 }
 
