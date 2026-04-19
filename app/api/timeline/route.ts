@@ -16,6 +16,12 @@ export async function GET(req: NextRequest) {
   url.searchParams.set('chain_id', '8453')
 
   const res = await fetch(url.toString(), { next: { revalidate: 30 } })
-  const data = await res.json()
+  const text = await res.text()
+  let data: unknown
+  try {
+    data = JSON.parse(text)
+  } catch {
+    return NextResponse.json({ error: 'upstream error', status: res.status }, { status: 502 })
+  }
   return NextResponse.json(data, { status: res.status })
 }

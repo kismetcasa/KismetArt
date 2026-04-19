@@ -30,7 +30,7 @@ export function CollectButton({ collectionAddress, tokenId, className = '' }: Co
         moment: { collectionAddress, tokenId, chainId: 8453 },
         amount: 1,
         account: address,
-        comment: 'collected via in•process client',
+        comment: 'collected via Kismet Art',
       }
 
       const res = await fetch('/api/collect', {

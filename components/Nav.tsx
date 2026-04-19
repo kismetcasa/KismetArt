@@ -12,7 +12,7 @@ export function Nav() {
       <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-8">
           <Link href="/" className="text-sm font-mono tracking-widest text-[#efefef] uppercase">
-            in•process
+            Kismet Art
           </Link>
           <nav className="flex items-center gap-1">
             <Link
@@ -36,14 +36,14 @@ export function Nav() {
               Mint
             </Link>
             <Link
-              href="/collections/create"
+              href="/market"
               className={`px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
-                pathname === '/collections/create'
+                pathname === '/market'
                   ? 'text-[#d4f53c]'
                   : 'text-[#888] hover:text-[#efefef]'
               }`}
             >
-              Create
+              Market
             </Link>
           </nav>
         </div>
