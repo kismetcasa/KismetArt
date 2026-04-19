@@ -13,7 +13,11 @@ import { uploadJson } from '@/lib/arweave/uploadJson'
 // kismetcasa.eth — referral address credited on each mint from this collection
 const CREATE_REFERRAL = process.env.NEXT_PUBLIC_CREATE_REFERRAL ?? '0x0000000000000000000000000000000000000000'
 
-export function CreateCollectionForm() {
+interface CreateCollectionFormProps {
+  onDeployed?: (address: string, name: string) => void
+}
+
+export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps = {}) {
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
 
@@ -50,9 +54,11 @@ export function CreateCollectionForm() {
       logs: receipt.logs,
     })
     const found = logs[0]?.args?.newContract as string | undefined
-    setCollectionAddress(found ?? receipt.logs[0]?.address ?? null)
+    const deployedAddress = found ?? receipt.logs[0]?.address ?? null
+    setCollectionAddress(deployedAddress)
     setStep('done')
     toast.success('Collection deployed!', { id: 'create-collection' })
+    if (deployedAddress) onDeployed?.(deployedAddress, name)
   }, [receipt, step])
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
