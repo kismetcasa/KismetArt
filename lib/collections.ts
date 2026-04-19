@@ -1,4 +1,30 @@
+import { encodeFunctionData, type Address } from 'viem'
+
 export const FACTORY_ADDRESS = '0x6832A997D8616707C7b68721D6E9332E77da7F6C' as const
+
+// Minimal ABI fragment for the Zora 1155 collection contract's permission function.
+// tokenId=0 means collection-wide; permissionBits=2 is PERMISSION_BIT_MINTER.
+const COLLECTION_ABI = [
+  {
+    name: 'addPermission',
+    type: 'function',
+    stateMutability: 'nonpayable',
+    inputs: [
+      { name: 'tokenId', type: 'uint256' },
+      { name: 'user', type: 'address' },
+      { name: 'permissionBits', type: 'uint256' },
+    ],
+    outputs: [],
+  },
+] as const
+
+export function encodeMinterPermission(minterAddress: Address): `0x${string}` {
+  return encodeFunctionData({
+    abi: COLLECTION_ABI,
+    functionName: 'addPermission',
+    args: [0n, minterAddress, 2n],
+  })
+}
 
 export const FACTORY_ABI = [
   {

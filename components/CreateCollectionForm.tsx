@@ -5,8 +5,9 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagm
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { parseEventLogs } from 'viem'
 import { toast } from 'sonner'
-import { Upload, X } from 'lucide-react'
-import { FACTORY_ADDRESS, FACTORY_ABI } from '@/lib/collections'
+import { Upload, X, Plus, Trash2 } from 'lucide-react'
+import { isAddress } from 'viem'
+import { FACTORY_ADDRESS, FACTORY_ABI, encodeMinterPermission } from '@/lib/collections'
 import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { uploadJson } from '@/lib/arweave/uploadJson'
 
@@ -22,6 +23,9 @@ export function CreateCollectionForm() {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [royaltyBps, setRoyaltyBps] = useState('500')
+  const [royaltyRecipient, setRoyaltyRecipient] = useState('')
+  const [minters, setMinters] = useState<string[]>([])
+  const [minterInput, setMinterInput] = useState('')
   const [step, setStep] = useState<'idle' | 'uploading-image' | 'uploading-metadata' | 'deploying' | 'done'>('idle')
   const [uploadProgress, setUploadProgress] = useState(0)
   const [collectionAddress, setCollectionAddress] = useState<string | null>(null)
@@ -109,6 +113,11 @@ export function CreateCollectionForm() {
       toast.loading('Deploying collection…', { id: 'create-collection' })
 
       const bps = Math.max(0, Math.min(10000, parseInt(royaltyBps, 10) || 0))
+      const recipient = (royaltyRecipient.trim() || address) as `0x${string}`
+
+      const setupActions = minters
+        .filter((m) => isAddress(m))
+        .map((m) => encodeMinterPermission(m as `0x${string}`))
 
       const hash = await writeContractAsync({
         address: FACTORY_ADDRESS,
@@ -120,10 +129,10 @@ export function CreateCollectionForm() {
           {
             royaltyMintSchedule: 0,
             royaltyBPS: bps,
-            royaltyRecipient: address,
+            royaltyRecipient: recipient,
           },
           address,
-          [],
+          setupActions,
         ],
       })
 
@@ -179,6 +188,9 @@ export function CreateCollectionForm() {
             setName('')
             setDescription('')
             setRoyaltyBps('500')
+            setRoyaltyRecipient('')
+            setMinters([])
+            setMinterInput('')
           }}
           className="text-xs font-mono text-[#888] hover:text-[#efefef] underline"
         >
@@ -288,6 +300,80 @@ export function CreateCollectionForm() {
           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-mono text-[#555]">%</span>
         </div>
         <p className="text-xs text-[#555] font-mono mt-1">paid to your wallet on secondary sales</p>
+      </div>
+
+      {/* Royalty recipient */}
+      <div>
+        <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
+          Royalty Recipient
+        </label>
+        <input
+          type="text"
+          value={royaltyRecipient}
+          onChange={(e) => setRoyaltyRecipient(e.target.value)}
+          placeholder={address ?? '0x… (defaults to your wallet)'}
+          className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+        />
+        <p className="text-xs text-[#555] font-mono mt-1">
+          address that receives royalties on secondary sales — enter a 0xSplits contract to split
+        </p>
+      </div>
+
+      {/* Authorized minters */}
+      <div>
+        <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
+          Authorized Minters
+        </label>
+        <div className="flex gap-2 mb-2">
+          <input
+            type="text"
+            value={minterInput}
+            onChange={(e) => setMinterInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key !== 'Enter') return
+              e.preventDefault()
+              const addr = minterInput.trim()
+              if (!isAddress(addr)) { toast.error('Invalid address'); return }
+              if (minters.includes(addr)) return
+              setMinters((prev) => [...prev, addr])
+              setMinterInput('')
+            }}
+            placeholder="0x… wallet address"
+            className="flex-1 bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+          />
+          <button
+            type="button"
+            onClick={() => {
+              const addr = minterInput.trim()
+              if (!isAddress(addr)) { toast.error('Invalid address'); return }
+              if (minters.includes(addr)) return
+              setMinters((prev) => [...prev, addr])
+              setMinterInput('')
+            }}
+            className="px-3 border border-[#2a2a2a] text-[#888] hover:border-[#555] hover:text-[#efefef] transition-colors"
+          >
+            <Plus size={14} />
+          </button>
+        </div>
+        {minters.length > 0 && (
+          <ul className="flex flex-col gap-1">
+            {minters.map((m) => (
+              <li key={m} className="flex items-center justify-between bg-[#111] border border-[#2a2a2a] px-3 py-2">
+                <span className="text-xs font-mono text-[#888] truncate">{m}</span>
+                <button
+                  type="button"
+                  onClick={() => setMinters((prev) => prev.filter((x) => x !== m))}
+                  className="ml-2 text-[#555] hover:text-[#888] flex-shrink-0"
+                >
+                  <Trash2 size={12} />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="text-xs text-[#555] font-mono mt-1">
+          these addresses can adminMint to this collection — leave empty for open access
+        </p>
       </div>
 
       {/* Submit */}
