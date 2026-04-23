@@ -29,7 +29,6 @@ export function CollectButton({ collectionAddress, tokenId, className = '' }: Co
       const payload: CollectPayload = {
         moment: { collectionAddress, tokenId, chainId: 8453 },
         amount: 1,
-        account: address,
         comment: 'collected via Kismet Art',
       }
 
