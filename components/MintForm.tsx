@@ -135,7 +135,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
             },
         token: {
           tokenMetadataURI: metadataUri,
-          createReferral: CREATE_REFERRAL,
+          createReferral: (CREATE_REFERRAL && isAddress(CREATE_REFERRAL) && CREATE_REFERRAL !== '0x0000000000000000000000000000000000000000') ? CREATE_REFERRAL : address!,
           salesConfig: {
             type: 'fixedPrice',
             pricePerToken: priceInWei,
@@ -155,7 +155,12 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
         body: JSON.stringify(payload),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.detail ?? data.error ?? data.message ?? 'Mint failed')
+      if (!res.ok) {
+        const errors = Array.isArray(data.errors)
+          ? ': ' + data.errors.map((e: { field?: string; message?: string }) => `${e.field ?? ''} ${e.message ?? ''}`.trim()).join(', ')
+          : ''
+        throw new Error((data.detail ?? data.error ?? data.message ?? 'Mint failed') + errors)
+      }
 
       setResult(data)
       setStep('done')
