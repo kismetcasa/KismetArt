@@ -4,8 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { MomentCard } from '@/components/MomentCard'
 import type { Moment } from '@/lib/inprocess'
-
-const PLATFORM_COLLECTION = process.env.NEXT_PUBLIC_PLATFORM_COLLECTION
+import { PLATFORM_COLLECTION } from '@/lib/config'
 
 export default function DiscoverPage() {
   const [moments, setMoments] = useState<Moment[]>([])

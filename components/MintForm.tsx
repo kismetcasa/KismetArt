@@ -9,9 +9,9 @@ import { parseEther, isAddress } from 'viem'
 import type { CreateMomentPayload, Split } from '@/lib/inprocess'
 import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { uploadJson } from '@/lib/arweave/uploadJson'
+import { PLATFORM_COLLECTION } from '@/lib/config'
 
-const PLATFORM_COLLECTION = process.env.NEXT_PUBLIC_PLATFORM_COLLECTION
-const CREATE_REFERRAL = process.env.NEXT_PUBLIC_CREATE_REFERRAL ?? '0x0000000000000000000000000000000000000000'
+const CREATE_REFERRAL = process.env.NEXT_PUBLIC_CREATE_REFERRAL ?? ''
 
 interface MintFormProps {
   collectionAddress?: string

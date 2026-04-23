@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { PLATFORM_COLLECTION } from '@/lib/config'
 
 const INPROCESS_API = 'https://api.inprocess.world/api'
-// Locked server-side — clients cannot override which collection is shown.
-const PLATFORM_COLLECTION = process.env.NEXT_PUBLIC_PLATFORM_COLLECTION
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
