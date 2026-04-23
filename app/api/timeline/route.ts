@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const INPROCESS_API = 'https://inprocess.world/api'
+const INPROCESS_API = 'https://api.inprocess.world'
 // Locked server-side — clients cannot override which collection is shown.
 const PLATFORM_COLLECTION = process.env.NEXT_PUBLIC_PLATFORM_COLLECTION
 
