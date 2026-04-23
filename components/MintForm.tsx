@@ -131,7 +131,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
         body: JSON.stringify(payload),
       })
       const data = await res.json()
-      if (!res.ok) throw new Error(data.error ?? data.message ?? 'Mint failed')
+      if (!res.ok) throw new Error(data.detail ?? data.error ?? data.message ?? 'Mint failed')
 
       setResult(data)
       setStep('done')
