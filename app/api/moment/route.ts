@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const url = new URL(`${INPROCESS_API}/moment`)
   url.searchParams.set('collectionAddress', collectionAddress)
   url.searchParams.set('tokenId', tokenId)
-  url.searchParams.set('chain_id', chainId)
+  url.searchParams.set('chainId', chainId)
 
   const res = await fetch(url.toString(), {
     headers: { 'Accept': 'application/json' },

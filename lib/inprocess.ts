@@ -74,7 +74,6 @@ export interface CollectPayload {
     chainId?: number
   }
   amount: number
-  account: string
   comment?: string
 }
 
