@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const INPROCESS_API = 'https://api.inprocess.world'
+const INPROCESS_API = 'https://api.inprocess.world/api'
 
 export async function POST(req: NextRequest) {
   const body = await req.json()

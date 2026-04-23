@@ -3,26 +3,19 @@
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { CollectButton } from './CollectButton'
-import { resolveUri, fetchMetadata, formatPrice, shortAddress, type Moment, type MomentDetail, type MomentMetadata } from '@/lib/inprocess'
+import { resolveUri, formatPrice, shortAddress, type Moment, type MomentDetail } from '@/lib/inprocess'
 
 interface MomentCardProps {
   moment: Moment
 }
 
 export function MomentCard({ moment }: MomentCardProps) {
-  const [meta, setMeta] = useState<MomentMetadata>({})
   const [imgError, setImgError] = useState(false)
   const [price, setPrice] = useState<string | null>(null)
 
-  // Fetch token metadata from Arweave (not included in timeline response)
-  useEffect(() => {
-    if (!moment.uri) return
-    fetchMetadata(moment.uri).then((m) => {
-      if (m) setMeta(m)
-    })
-  }, [moment.uri])
+  const meta = moment.metadata ?? {}
 
-  // Fetch sale config for price display via our proxy
+  // Fetch sale config for price display
   useEffect(() => {
     const params = new URLSearchParams({
       collectionAddress: moment.address,
@@ -92,9 +85,9 @@ export function MomentCard({ moment }: MomentCardProps) {
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs text-[#555] font-mono hover:text-[#888] transition-colors"
-              title={moment.default_admin.address}
+              title={moment.creator.address}
             >
-              {shortAddress(moment.default_admin.address)}
+              {shortAddress(moment.creator.address)}
             </a>
             {price !== null && (
               <span className="text-xs font-mono text-[#d4f53c]">{price}</span>
