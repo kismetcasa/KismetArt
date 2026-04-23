@@ -4,4 +4,9 @@ export const PLATFORM_COLLECTION =
   process.env.NEXT_PUBLIC_PLATFORM_COLLECTION ||
   '0x349D3DA472BDD2FBeebf8e0bBAF4220160A62526'
 
+// Referral address — receives a cut of the Zora protocol mint fee on every collect.
+export const CREATE_REFERRAL =
+  process.env.NEXT_PUBLIC_CREATE_REFERRAL ||
+  '0x58f19e55058057B04feAe2EEA88F90B84b7714Eb'
+
 export const CHAIN_ID = 8453
