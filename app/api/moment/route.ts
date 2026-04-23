@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const INPROCESS_API = 'https://www.inprocess.world/api'
+const INPROCESS_API = 'https://inprocess.world/api'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -17,7 +17,16 @@ export async function GET(req: NextRequest) {
   url.searchParams.set('tokenId', tokenId)
   url.searchParams.set('chain_id', chainId)
 
-  const res = await fetch(url.toString(), { next: { revalidate: 60 } })
-  const data = await res.json()
+  const res = await fetch(url.toString(), {
+    headers: { 'Accept': 'application/json' },
+    next: { revalidate: 60 },
+  })
+  const text = await res.text()
+  let data: unknown
+  try {
+    data = JSON.parse(text)
+  } catch {
+    return NextResponse.json({ error: 'upstream error', status: res.status }, { status: 502 })
+  }
   return NextResponse.json(data, { status: res.status })
 }

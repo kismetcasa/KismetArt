@@ -1,6 +1,6 @@
 import { formatEther } from 'viem'
 
-export const INPROCESS_API = 'https://www.inprocess.world/api'
+export const INPROCESS_API = 'https://inprocess.world/api'
 export const CHAIN_ID = 8453 // Base mainnet
 
 export interface SalesConfig {
