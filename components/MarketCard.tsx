@@ -27,7 +27,8 @@ export function MarketCard({ moment }: MarketCardProps) {
     load()
   }, [moment.address, moment.token_id])
 
-  const imageUri = detail?.metadata?.image ? resolveUri(detail.metadata.image) : null
+  const meta = moment.metadata ?? {}
+  const imageUri = meta.image ? resolveUri(meta.image) : null
   const price = detail?.saleConfig?.pricePerToken != null ? formatPrice(detail.saleConfig.pricePerToken) : null
   const saleActive =
     detail?.saleConfig != null &&
@@ -37,11 +38,9 @@ export function MarketCard({ moment }: MarketCardProps) {
     <div className="bg-[#0d0d0d] flex flex-col">
       {/* Thumbnail */}
       <div className="aspect-square bg-[#111] overflow-hidden">
-        {loading ? (
-          <div className="w-full h-full animate-pulse bg-[#161616]" />
-        ) : imageUri ? (
+        {imageUri ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={imageUri} alt={detail?.metadata?.name ?? ''} className="w-full h-full object-cover" />
+          <img src={imageUri} alt={meta.name ?? ''} className="w-full h-full object-cover" />
         ) : (
           <div className="w-full h-full bg-[#161616]" />
         )}
@@ -52,10 +51,10 @@ export function MarketCard({ moment }: MarketCardProps) {
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="text-sm font-mono text-[#efefef] truncate">
-              {loading ? '—' : (detail?.metadata?.name ?? 'untitled')}
+              {meta.name ?? 'untitled'}
             </p>
             <p className="text-xs font-mono text-[#555] mt-0.5">
-              {shortAddress(moment.default_admin?.address ?? '')}
+              {shortAddress(moment.creator?.address ?? '')}
             </p>
           </div>
           <div className="text-right shrink-0">

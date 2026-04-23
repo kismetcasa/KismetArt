@@ -1,6 +1,6 @@
 import { formatEther } from 'viem'
 
-export const INPROCESS_API = 'https://api.inprocess.world'
+export const INPROCESS_API = 'https://api.inprocess.world/api'
 export const CHAIN_ID = 8453 // Base mainnet
 
 export interface SalesConfig {
@@ -11,24 +11,34 @@ export interface SalesConfig {
   currency?: string
 }
 
-// Admin object shape returned by the timeline API
 export interface MomentAdmin {
   address: string
   username?: string
   hidden: boolean
 }
 
-// Moment object as returned by GET /api/timeline (snake_case field names)
+export interface MomentMetadataInline {
+  name?: string
+  description?: string
+  image?: string
+  animation_url?: string
+  external_url?: string
+  content?: { uri?: string; mime?: string }
+}
+
+// Moment object as returned by GET /api/timeline (metadata inlined)
 export interface Moment {
-  address: string         // collection contract address
+  address: string
   token_id: string
   chain_id?: number
-  id?: string             // UUID
-  uri: string             // Arweave metadata URI — metadata is NOT inlined
-  default_admin: MomentAdmin
+  protocol?: string
+  id?: string
+  uri: string
+  creator: MomentAdmin
   admins: MomentAdmin[]
   created_at: string
-  updated_at: string
+  updated_at?: string
+  metadata?: MomentMetadataInline
 }
 
 export interface TimelineResponse {
@@ -94,27 +104,6 @@ export function resolveUri(uri: string): string {
   return uri
 }
 
-// Metadata stored on Arweave — fetched separately from the timeline
-export interface MomentMetadata {
-  name?: string
-  description?: string
-  image?: string
-  animation_url?: string
-  content?: { mime?: string; uri?: string }
-}
-
-/** Fetch token metadata from an Arweave/IPFS URI */
-export async function fetchMetadata(uri: string): Promise<MomentMetadata> {
-  try {
-    const url = resolveUri(uri)
-    if (!url) return {}
-    const res = await fetch(url)
-    if (!res.ok) return {}
-    return res.json()
-  } catch {
-    return {}
-  }
-}
 
 export interface MomentDetail {
   uri: string
