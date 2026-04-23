@@ -5,7 +5,7 @@ const KEY = 'kismetart:collections'
 
 export async function getTrackedCollections(): Promise<string[]> {
   try {
-    const stored = await kv.smembers<string>(KEY)
+    const stored = (await kv.smembers(KEY)) as string[]
     const all = new Set([PLATFORM_COLLECTION, ...stored])
     return Array.from(all)
   } catch {
