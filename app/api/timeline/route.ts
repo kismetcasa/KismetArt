@@ -15,7 +15,10 @@ export async function GET(req: NextRequest) {
   url.searchParams.set('limit', limit)
   url.searchParams.set('chain_id', '8453')
 
-  const res = await fetch(url.toString(), { next: { revalidate: 30 } })
+  const res = await fetch(url.toString(), {
+    headers: { 'Accept': 'application/json' },
+    next: { revalidate: 30 },
+  })
   const text = await res.text()
   let data: unknown
   try {
