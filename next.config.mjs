@@ -31,6 +31,10 @@ const nextConfig = {
 
   // Webpack config for production builds
   webpack: (config, { isServer, webpack }) => {
+    // These optional deps are not available and not needed in any build target
+    config.resolve.alias['pino-pretty'] = false
+    config.resolve.alias['@react-native-async-storage/async-storage'] = false
+
     if (!isServer) {
       // Strip node: URI prefix so standard fallbacks can resolve the modules
       config.plugins.push(
@@ -46,10 +50,6 @@ const nextConfig = {
         stream: require.resolve('stream-browserify'),
         process: require.resolve('process/browser'),
       }
-
-      // Optional deps not needed in browser
-      config.resolve.alias['pino-pretty'] = false
-      config.resolve.alias['@react-native-async-storage/async-storage'] = false
     }
     return config
   },
