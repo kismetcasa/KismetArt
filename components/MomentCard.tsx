@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { CollectButton } from './CollectButton'
+import { ListButton } from './ListButton'
 import { resolveUri, formatPrice, shortAddress, type Moment, type MomentDetail } from '@/lib/inprocess'
 
 interface MomentCardProps {
@@ -94,10 +95,19 @@ export function MomentCard({ moment }: MomentCardProps) {
             )}
           </div>
 
-          <CollectButton
-            collectionAddress={moment.address}
-            tokenId={moment.token_id}
-          />
+          <div className="flex gap-2">
+            <CollectButton
+              collectionAddress={moment.address}
+              tokenId={moment.token_id}
+            />
+            <ListButton
+              collectionAddress={moment.address}
+              tokenId={moment.token_id}
+              name={meta.name}
+              image={meta.image ? resolveUri(meta.image) : undefined}
+              creatorAddress={moment.creator?.address}
+            />
+          </div>
         </div>
       </div>
     </article>
