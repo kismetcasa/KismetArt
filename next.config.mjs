@@ -47,8 +47,9 @@ const nextConfig = {
         process: require.resolve('process/browser'),
       }
 
-      // pino-pretty is an optional dep of pino (used by WalletConnect) — not needed in browser
+      // Optional deps not needed in browser
       config.resolve.alias['pino-pretty'] = false
+      config.resolve.alias['@react-native-async-storage/async-storage'] = false
     }
     return config
   },

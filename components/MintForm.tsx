@@ -9,9 +9,7 @@ import { parseEther, isAddress } from 'viem'
 import type { CreateMomentPayload, Split } from '@/lib/inprocess'
 import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { uploadJson } from '@/lib/arweave/uploadJson'
-
-const PLATFORM_COLLECTION = process.env.NEXT_PUBLIC_PLATFORM_COLLECTION
-const CREATE_REFERRAL = process.env.NEXT_PUBLIC_CREATE_REFERRAL ?? '0x0000000000000000000000000000000000000000'
+import { PLATFORM_COLLECTION, CREATE_REFERRAL } from '@/lib/config'
 
 interface MintFormProps {
   collectionAddress?: string
@@ -135,7 +133,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
             },
         token: {
           tokenMetadataURI: metadataUri,
-          createReferral: (CREATE_REFERRAL && isAddress(CREATE_REFERRAL) && CREATE_REFERRAL !== '0x0000000000000000000000000000000000000000') ? CREATE_REFERRAL : address!,
+          createReferral: CREATE_REFERRAL,
           salesConfig: {
             type: 'fixedPrice',
             pricePerToken: priceInWei,

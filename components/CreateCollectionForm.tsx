@@ -70,7 +70,14 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
     setCollectionAddress(deployedAddress)
     setStep('done')
     toast.success('Collection deployed!', { id: 'create-collection' })
-    if (deployedAddress) onDeployed?.(deployedAddress, name)
+    if (deployedAddress) {
+      fetch('/api/collections', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ address: deployedAddress }),
+      }).catch(() => {})
+      onDeployed?.(deployedAddress, name)
+    }
   }, [receipt, step])
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
