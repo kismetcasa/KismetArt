@@ -29,18 +29,24 @@ export interface Listing {
 
 const KEY_ALL = 'kismetart:listings'
 const keyById = (id: string) => `kismetart:listing:${id}`
-const keyByToken = (collection: string, tokenId: string) =>
-  `kismetart:listings:token:${collection.toLowerCase()}:${tokenId}`
+// One active listing per (collection, tokenId, seller) — supports multiple sellers per token
+const keyByOwned = (collection: string, tokenId: string, seller: string) =>
+  `kismetart:listings:owned:${collection.toLowerCase()}:${tokenId}:${seller.toLowerCase()}`
 const keyBySeller = (seller: string) =>
   `kismetart:listings:seller:${seller.toLowerCase()}`
 
 export async function createListing(
   data: Omit<Listing, 'id' | 'createdAt' | 'status'>
 ): Promise<Listing> {
-  // Prevent duplicate active listing for same token from same seller
-  const existing = await getListingForToken(data.collectionAddress, data.tokenId)
-  if (existing && existing.seller.toLowerCase() === data.seller.toLowerCase()) {
-    throw new Error('Active listing already exists for this token')
+  // One active listing per seller per token
+  const ownedId = await redis.get<string>(
+    keyByOwned(data.collectionAddress, data.tokenId, data.seller)
+  )
+  if (ownedId) {
+    const existing = await getListing(typeof ownedId === 'string' ? ownedId : String(ownedId))
+    if (existing && existing.status === 'active') {
+      throw new Error('Active listing already exists for this token')
+    }
   }
 
   const listing: Listing = {
@@ -53,7 +59,7 @@ export async function createListing(
   await Promise.all([
     redis.zadd(KEY_ALL, { score: listing.createdAt, member: listing.id }),
     redis.set(keyById(listing.id), JSON.stringify(listing)),
-    redis.set(keyByToken(listing.collectionAddress, listing.tokenId), listing.id),
+    redis.set(keyByOwned(listing.collectionAddress, listing.tokenId, listing.seller), listing.id),
     redis.sadd(keyBySeller(listing.seller), listing.id),
   ])
 
@@ -66,14 +72,18 @@ export async function getListing(id: string): Promise<Listing | null> {
   return typeof raw === 'string' ? JSON.parse(raw) : raw
 }
 
+// Look up a specific seller's active listing for a token
 export async function getListingForToken(
   collectionAddress: string,
-  tokenId: string
+  tokenId: string,
+  seller: string
 ): Promise<Listing | null> {
-  const id = await redis.get<string>(keyByToken(collectionAddress.toLowerCase(), tokenId))
+  const id = await redis.get<string>(
+    keyByOwned(collectionAddress.toLowerCase(), tokenId, seller.toLowerCase())
+  )
   if (!id) return null
   const listing = await getListing(typeof id === 'string' ? id : String(id))
-  if (!listing || listing.status !== 'active') return null
+  if (!listing || listing.status !== 'active' || listing.expiresAt <= Date.now()) return null
   return listing
 }
 
@@ -113,7 +123,6 @@ export async function updateListingStatus(
   const updated: Listing = { ...listing, status }
   await Promise.all([
     redis.set(keyById(id), JSON.stringify(updated)),
-    // Remove from token index so the slot is free for a new listing
-    redis.del(keyByToken(listing.collectionAddress, listing.tokenId)),
+    redis.del(keyByOwned(listing.collectionAddress, listing.tokenId, listing.seller)),
   ])
 }

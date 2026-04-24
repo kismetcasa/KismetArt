@@ -10,9 +10,10 @@ export async function GET(req: NextRequest) {
   const collection = searchParams.get('collection') ?? undefined
   const tokenId = searchParams.get('tokenId') ?? undefined
 
-  // Single-token lookup
-  if (collection && tokenId) {
-    const listing = await getListingForToken(collection, tokenId)
+  // Single-token lookup — requires seller to identify which listing
+  const seller = searchParams.get('seller') ?? undefined
+  if (collection && tokenId && seller) {
+    const listing = await getListingForToken(collection, tokenId, seller)
     return NextResponse.json({ listing: listing ?? null })
   }
 
