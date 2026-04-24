@@ -7,11 +7,9 @@ import { parseEventLogs, isAddress } from 'viem'
 import { toast } from 'sonner'
 import { Upload, X, Plus, Trash2 } from 'lucide-react'
 import { FACTORY_ADDRESS, FACTORY_ABI, encodeMinterPermission } from '@/lib/collections'
+import { CREATE_REFERRAL } from '@/lib/config'
 import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { uploadJson } from '@/lib/arweave/uploadJson'
-
-// kismetcasa.eth — referral address credited on each mint from this collection
-const CREATE_REFERRAL = process.env.NEXT_PUBLIC_CREATE_REFERRAL ?? '0x0000000000000000000000000000000000000000'
 
 interface CreateCollectionFormProps {
   onDeployed?: (address: string, name: string) => void
