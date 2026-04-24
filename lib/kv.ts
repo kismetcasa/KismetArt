@@ -1,11 +1,16 @@
-import { kv } from '@vercel/kv'
+import { Redis } from '@upstash/redis'
 import { PLATFORM_COLLECTION } from './config'
+
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+})
 
 const KEY = 'kismetart:collections'
 
 export async function getTrackedCollections(): Promise<string[]> {
   try {
-    const stored = (await kv.smembers(KEY)) as string[]
+    const stored = (await redis.smembers(KEY)) as string[]
     const all = new Set([PLATFORM_COLLECTION, ...stored])
     return Array.from(all)
   } catch {
@@ -15,8 +20,8 @@ export async function getTrackedCollections(): Promise<string[]> {
 
 export async function addTrackedCollection(address: string): Promise<void> {
   try {
-    await kv.sadd(KEY, address)
+    await redis.sadd(KEY, address)
   } catch {
-    // KV not configured — silently skip
+    // Redis not configured — silently skip
   }
 }
