@@ -17,15 +17,12 @@ const nextConfig = {
     ],
   },
 
-  // Turbopack aliases for dev server (Next.js 15.x)
-  experimental: {
-    turbo: {
-      resolveAlias: {
-        buffer: 'buffer/',
-        crypto: 'crypto-browserify',
-        stream: 'stream-browserify',
-        process: 'process/browser',
-      },
+  turbopack: {
+    resolveAlias: {
+      buffer: 'buffer/',
+      crypto: 'crypto-browserify',
+      stream: 'stream-browserify',
+      process: 'process/browser',
     },
   },
 
