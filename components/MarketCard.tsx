@@ -1,48 +1,97 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { CollectButton } from '@/components/CollectButton'
-import { resolveUri, formatPrice, shortAddress, type Moment, type MomentDetail } from '@/lib/inprocess'
+import { useState } from 'react'
+import { useAccount, useWriteContract } from 'wagmi'
+import { useConnectModal } from '@rainbow-me/rainbowkit'
+import { toast } from 'sonner'
+import { formatEther } from 'viem'
+import type { Hex } from 'viem'
+import { shortAddress } from '@/lib/inprocess'
+import { SEAPORT_ADDRESS, SEAPORT_ABI, deserializeOrder } from '@/lib/seaport'
+import { BuyButton } from './BuyButton'
+import type { Listing } from '@/lib/listings'
 
 interface MarketCardProps {
-  moment: Moment
+  listing: Listing
+  onRemove?: () => void
 }
 
-export function MarketCard({ moment }: MarketCardProps) {
-  const [detail, setDetail] = useState<MomentDetail | null>(null)
-  const [loading, setLoading] = useState(true)
+export function MarketCard({ listing, onRemove }: MarketCardProps) {
+  const { address, isConnected } = useAccount()
+  const { openConnectModal } = useConnectModal()
+  const { writeContractAsync } = useWriteContract()
+  const [cancelling, setCancelling] = useState(false)
 
-  useEffect(() => {
-    async function load() {
-      try {
-        const params = new URLSearchParams({
-          collectionAddress: moment.address,
-          tokenId: moment.token_id,
-        })
-        const res = await fetch(`/api/moment?${params}`)
-        if (res.ok) setDetail(await res.json())
-      } catch {}
-      setLoading(false)
+  const isSeller = address?.toLowerCase() === listing.seller.toLowerCase()
+  const priceEth = formatEther(BigInt(listing.price))
+    .replace(/(\.\d*?)0+$/, '$1')
+    .replace(/\.$/, '')
+  const royaltyPct = listing.price !== '0'
+    ? ((Number(listing.royaltyAmount) / Number(listing.price)) * 100).toFixed(1)
+    : '0'
+
+  async function handleCancel() {
+    if (!isConnected || !address) { openConnectModal?.(); return }
+
+    setCancelling(true)
+    toast.loading('Cancel listing in wallet…', { id: 'cancel' })
+
+    try {
+      const order = deserializeOrder(listing.orderComponents)
+
+      // On-chain cancel so the signed order can never be filled
+      await writeContractAsync({
+        address: SEAPORT_ADDRESS,
+        abi: SEAPORT_ABI,
+        functionName: 'cancel',
+        args: [[{
+          offerer: order.offerer,
+          zone: order.zone,
+          offer: order.offer,
+          consideration: order.consideration,
+          orderType: order.orderType,
+          startTime: order.startTime,
+          endTime: order.endTime,
+          zoneHash: order.zoneHash,
+          salt: order.salt,
+          conduitKey: order.conduitKey,
+          counter: order.counter,
+        }]],
+      })
+
+      await fetch(`/api/listings/${listing.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'cancelled' }),
+      })
+
+      toast.success('Listing cancelled', { id: 'cancel' })
+      onRemove?.()
+    } catch (err) {
+      toast.error('Cancel failed', {
+        id: 'cancel',
+        description: err instanceof Error ? err.message : 'Unknown error',
+      })
+    } finally {
+      setCancelling(false)
     }
-    load()
-  }, [moment.address, moment.token_id])
-
-  const meta = moment.metadata ?? {}
-  const imageUri = meta.image ? resolveUri(meta.image) : null
-  const price = detail?.saleConfig?.pricePerToken != null ? formatPrice(detail.saleConfig.pricePerToken) : null
-  const saleActive =
-    detail?.saleConfig != null &&
-    Number(detail.saleConfig.saleEnd) > Date.now() / 1000
+  }
 
   return (
     <div className="bg-[#0d0d0d] flex flex-col">
       {/* Thumbnail */}
       <div className="aspect-square bg-[#111] overflow-hidden">
-        {imageUri ? (
+        {listing.image ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={imageUri} alt={meta.name ?? ''} className="w-full h-full object-cover" />
+          <img
+            src={listing.image}
+            alt={listing.name ?? ''}
+            className="w-full h-full object-cover"
+          />
         ) : (
-          <div className="w-full h-full bg-[#161616]" />
+          <div className="w-full h-full flex items-center justify-center">
+            <span className="text-[#2a2a2a] font-mono text-xs">no preview</span>
+          </div>
         )}
       </div>
 
@@ -51,30 +100,35 @@ export function MarketCard({ moment }: MarketCardProps) {
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
             <p className="text-sm font-mono text-[#efefef] truncate">
-              {meta.name ?? 'untitled'}
+              {listing.name ?? 'untitled'}
             </p>
             <p className="text-xs font-mono text-[#555] mt-0.5">
-              {shortAddress(moment.creator?.address ?? '')}
+              creator {shortAddress(listing.creatorAddress ?? '')}
+            </p>
+            <p className="text-xs font-mono text-[#333] mt-0.5">
+              seller {shortAddress(listing.seller)}
             </p>
           </div>
           <div className="text-right shrink-0">
-            <p className="text-xs font-mono text-[#d4f53c]">
-              {loading ? '—' : (price ?? '—')}
-            </p>
-            <p className="text-xs font-mono text-[#333] mt-0.5">royalties enforced</p>
+            <p className="text-xs font-mono text-[#d4f53c]">{priceEth} ETH</p>
+            {Number(listing.royaltyAmount) > 0 && (
+              <p className="text-xs font-mono text-[#333] mt-0.5">
+                {royaltyPct}% royalty
+              </p>
+            )}
           </div>
         </div>
 
-        {!loading && saleActive && (
-          <CollectButton
-            collectionAddress={moment.address}
-            tokenId={moment.token_id}
-            className="w-full"
-          />
-        )}
-
-        {!loading && !saleActive && (
-          <p className="text-xs font-mono text-[#333] text-center py-2">sale ended</p>
+        {isSeller ? (
+          <button
+            onClick={handleCancel}
+            disabled={cancelling}
+            className="w-full text-xs font-mono tracking-wider uppercase px-4 py-2 border border-[#2a2a2a] text-[#555] hover:border-red-900 hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {cancelling ? 'cancelling…' : 'cancel listing'}
+          </button>
+        ) : (
+          <BuyButton listing={listing} onBought={onRemove} className="w-full" />
         )}
       </div>
     </div>

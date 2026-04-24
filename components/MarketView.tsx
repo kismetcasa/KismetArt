@@ -3,27 +3,27 @@
 import { useState, useEffect, useCallback } from 'react'
 import { RefreshCw } from 'lucide-react'
 import { MarketCard } from '@/components/MarketCard'
-import type { Moment } from '@/lib/inprocess'
+import type { Listing } from '@/lib/listings'
 
 export function MarketView() {
-  const [moments, setMoments] = useState<Moment[]>([])
+  const [listings, setListings] = useState<Listing[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [refreshing, setRefreshing] = useState(false)
 
-  const fetchMoments = useCallback(async (p = 1, append = false) => {
+  const fetchListings = useCallback(async (p = 1, append = false) => {
     try {
       if (p === 1 && !append) setLoading(true)
       else setRefreshing(true)
 
       const params = new URLSearchParams({ page: String(p), limit: '18' })
-      const res = await fetch(`/api/timeline?${params}`)
+      const res = await fetch(`/api/listings?${params}`)
       if (!res.ok) throw new Error(`Failed to load market (${res.status})`)
       const data = await res.json()
 
-      setMoments((prev) => append ? [...prev, ...data.moments] : data.moments)
+      setListings((prev) => append ? [...prev, ...data.listings] : data.listings)
       setTotalPages(data.pagination?.total_pages ?? 1)
       setPage(p)
       setError(null)
@@ -35,22 +35,23 @@ export function MarketView() {
     }
   }, [])
 
-  useEffect(() => {
-    fetchMoments(1)
-  }, [fetchMoments])
+  useEffect(() => { fetchListings(1) }, [fetchListings])
+
+  function removeListing(id: string) {
+    setListings((prev) => prev.filter((l) => l.id !== id))
+  }
 
   return (
     <div className="max-w-6xl mx-auto px-4 py-8">
-      {/* Header */}
       <div className="flex items-center justify-between mb-8">
         <div>
           <h1 className="text-xs font-mono text-[#888] uppercase tracking-widest">Market</h1>
           <p className="text-xs font-mono text-[#333] mt-1">
-            all sales enforce creator royalties on-chain
+            creator royalties enforced on every sale
           </p>
         </div>
         <button
-          onClick={() => fetchMoments(1)}
+          onClick={() => fetchListings(1)}
           disabled={loading || refreshing}
           className="flex items-center gap-2 text-xs font-mono text-[#555] hover:text-[#888] transition-colors disabled:opacity-40"
         >
@@ -77,7 +78,7 @@ export function MarketView() {
         <div className="border border-red-900/50 p-6 text-center">
           <p className="text-sm font-mono text-red-400">{error}</p>
           <button
-            onClick={() => fetchMoments(1)}
+            onClick={() => fetchListings(1)}
             className="mt-4 text-xs font-mono text-[#888] hover:text-[#efefef] underline"
           >
             try again
@@ -85,22 +86,26 @@ export function MarketView() {
         </div>
       )}
 
-      {!loading && !error && moments.length === 0 && (
+      {!loading && !error && listings.length === 0 && (
         <div className="border border-[#2a2a2a] p-16 text-center">
-          <p className="text-sm font-mono text-[#555]">no moments listed yet</p>
+          <p className="text-sm font-mono text-[#555]">no listings yet</p>
           <p className="text-xs font-mono text-[#333] mt-2">
-            <a href="/mint" className="text-[#d4f53c] hover:underline">mint a moment</a>{' '}
-            to list it here
+            collect a moment on{' '}
+            <a href="/" className="text-[#d4f53c] hover:underline">discover</a>
+            {' '}then list it here
           </p>
         </div>
       )}
 
-      {!loading && moments.length > 0 && (
+      {!loading && listings.length > 0 && (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-px bg-[#2a2a2a]">
-            {moments.map((moment) => (
-              <div key={`${moment.address}-${moment.token_id}`} className="bg-[#0d0d0d]">
-                <MarketCard moment={moment} />
+            {listings.map((listing) => (
+              <div key={listing.id} className="bg-[#0d0d0d]">
+                <MarketCard
+                  listing={listing}
+                  onRemove={() => removeListing(listing.id)}
+                />
               </div>
             ))}
           </div>
@@ -108,7 +113,7 @@ export function MarketView() {
           {page < totalPages && (
             <div className="mt-8 text-center">
               <button
-                onClick={() => fetchMoments(page + 1, true)}
+                onClick={() => fetchListings(page + 1, true)}
                 disabled={refreshing}
                 className="px-8 py-3 border border-[#2a2a2a] text-xs font-mono text-[#888] uppercase tracking-wider hover:border-[#555] hover:text-[#efefef] transition-colors disabled:opacity-40"
               >
