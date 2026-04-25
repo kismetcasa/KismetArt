@@ -165,7 +165,7 @@ export function ProfileView({ address }: ProfileViewProps) {
               value={usernameInput}
               onChange={(e) => setUsernameInput(e.target.value)}
               placeholder={shortAddr}
-              maxLength={50}
+              maxLength={30}
               className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
             />
           </div>

@@ -47,7 +47,7 @@ export async function PUT(
     return NextResponse.json({ error: 'Signature verification failed' }, { status: 401 })
   }
 
-  const username = body.username?.trim().slice(0, 50) || undefined
+  const username = body.username?.trim().slice(0, 30) || undefined
   const profile = await upsertProfile(address, { username, avatarUrl: body.avatarUrl })
   return NextResponse.json({ profile })
 }
