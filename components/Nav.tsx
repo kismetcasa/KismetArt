@@ -3,9 +3,22 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
+import { useAccount } from 'wagmi'
+import { useEffect, useState } from 'react'
+import { ProfileAvatar } from './ProfileAvatar'
 
 export function Nav() {
   const pathname = usePathname()
+  const { address, isConnected } = useAccount()
+  const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined)
+
+  useEffect(() => {
+    if (!address) { setAvatarUrl(undefined); return }
+    fetch(`/api/profile/${address}`)
+      .then((r) => r.json())
+      .then((d) => setAvatarUrl(d.profile?.avatarUrl))
+      .catch(() => {})
+  }, [address])
 
   return (
     <header className="fixed top-0 left-0 right-0 z-50 border-b border-[#2a2a2a] bg-[#0d0d0d]/90 backdrop-blur-sm">
@@ -48,11 +61,18 @@ export function Nav() {
           </nav>
         </div>
 
-        <ConnectButton
-          showBalance={false}
-          chainStatus="none"
-          accountStatus="address"
-        />
+        <div className="flex items-center gap-3">
+          <ConnectButton
+            showBalance={false}
+            chainStatus="none"
+            accountStatus="address"
+          />
+          {isConnected && address && (
+            <Link href={`/profile/${address}`} className="flex-shrink-0">
+              <ProfileAvatar address={address} avatarUrl={avatarUrl} size={32} />
+            </Link>
+          )}
+        </div>
       </div>
     </header>
   )

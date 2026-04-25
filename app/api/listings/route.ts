@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAddress } from 'viem'
-import { createListing, getListings, getListingForToken } from '@/lib/listings'
+import { createListing, getListings, getListingForToken, getListingsBySeller } from '@/lib/listings'
 import type { SerializedOrderComponents } from '@/lib/seaport'
 
 export async function GET(req: NextRequest) {
@@ -10,11 +10,18 @@ export async function GET(req: NextRequest) {
   const collection = searchParams.get('collection') ?? undefined
   const tokenId = searchParams.get('tokenId') ?? undefined
 
-  // Single-token lookup — requires seller to identify which listing
   const seller = searchParams.get('seller') ?? undefined
+
+  // Single-token lookup — requires seller to identify which listing
   if (collection && tokenId && seller) {
     const listing = await getListingForToken(collection, tokenId, seller)
     return NextResponse.json({ listing: listing ?? null })
+  }
+
+  // Seller profile lookup — all active listings by a specific seller
+  if (seller && !collection && !tokenId) {
+    const listings = await getListingsBySeller(seller)
+    return NextResponse.json({ listings, pagination: { page: 1, limit: listings.length, total: listings.length, total_pages: 1 } })
   }
 
   const { listings, total } = await getListings({ page, limit, collection })

@@ -21,6 +21,7 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const page = parseInt(searchParams.get('page') ?? '1')
   const limit = parseInt(searchParams.get('limit') ?? '20')
+  const creator = searchParams.get('creator')?.toLowerCase() ?? undefined
 
   const collections = await getTrackedCollections()
 
@@ -38,6 +39,11 @@ export async function GET(req: NextRequest) {
       if (seen.has(key)) return false
       seen.add(key)
       return true
+    })
+    .filter((m: unknown) => {
+      if (!creator) return true
+      const moment = m as { creator?: { address?: string } }
+      return moment.creator?.address?.toLowerCase() === creator
     })
     .sort((a: unknown, b: unknown) => {
       const ma = a as { created_at: string }
