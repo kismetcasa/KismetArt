@@ -204,29 +204,29 @@ export function ListButton({
           if (!isConnected) { openConnectModal?.(); return }
           setShowForm(true)
         }}
-        className="text-xs font-mono tracking-wider uppercase px-4 py-2 border border-[#2a2a2a] text-[#555] hover:border-[#888] hover:text-[#888] transition-colors"
+        className="w-full text-xs font-mono tracking-wider uppercase px-3 py-1.5 border border-[#2a2a2a] text-[#555] hover:border-[#7C3AED] hover:text-[#7C3AED] transition-colors"
       >
-        list
+        list for sale
       </button>
     )
   }
 
   return (
-    <div className="flex gap-1.5 items-center">
+    <div className="flex gap-1.5 items-center w-full">
       <input
         type="number"
         value={priceEth}
         onChange={(e) => setPriceEth(e.target.value)}
-        placeholder="price ETH"
+        placeholder="price in ETH"
         min="0"
         step="0.001"
         disabled={isBusy}
-        className="w-28 bg-[#111] border border-[#2a2a2a] px-2 py-2 text-xs text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] disabled:opacity-50"
+        className="flex-1 min-w-0 bg-[#111] border border-[#2a2a2a] px-2 py-1.5 text-xs text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] disabled:opacity-50"
       />
       <button
         onClick={handleList}
         disabled={isBusy}
-        className="text-xs font-mono tracking-wider uppercase px-3 py-2 border border-[#7C3AED] text-[#7C3AED] hover:bg-[#7C3AED] hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        className="flex-shrink-0 text-xs font-mono tracking-wider uppercase px-3 py-1.5 border border-[#7C3AED] text-[#7C3AED] hover:bg-[#7C3AED] hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {step === 'approving' ? 'approving…'
           : step === 'signing' ? 'signing…'
@@ -237,7 +237,7 @@ export function ListButton({
         type="button"
         onClick={() => { setShowForm(false); setPriceEth('') }}
         disabled={isBusy}
-        className="text-xs font-mono text-[#555] hover:text-[#888] disabled:opacity-40"
+        className="flex-shrink-0 text-xs font-mono text-[#555] hover:text-[#888] disabled:opacity-40"
       >
         ✕
       </button>

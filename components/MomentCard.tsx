@@ -95,20 +95,18 @@ export function MomentCard({ moment }: MomentCardProps) {
             )}
           </div>
 
-          <div className="flex gap-2">
-            <CollectButton
-              collectionAddress={moment.address}
-              tokenId={moment.token_id}
-            />
-            <ListButton
-              collectionAddress={moment.address}
-              tokenId={moment.token_id}
-              name={meta.name}
-              image={meta.image ? resolveUri(meta.image) : undefined}
-              creatorAddress={moment.creator?.address}
-            />
-          </div>
+          <CollectButton
+            collectionAddress={moment.address}
+            tokenId={moment.token_id}
+          />
         </div>
+        <ListButton
+          collectionAddress={moment.address}
+          tokenId={moment.token_id}
+          name={meta.name}
+          image={meta.image ? resolveUri(meta.image) : undefined}
+          creatorAddress={moment.creator?.address}
+        />
       </div>
     </article>
   )
