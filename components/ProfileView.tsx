@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAccount, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
+import { Pencil } from 'lucide-react'
 import { ProfileAvatar } from './ProfileAvatar'
 import { MomentCard } from './MomentCard'
 import { MarketCard } from './MarketCard'
@@ -16,6 +17,7 @@ interface ProfileViewProps {
 
 interface Profile {
   address: string
+  username?: string
   avatarUrl?: string
   updatedAt: number
 }
@@ -33,7 +35,8 @@ export function ProfileView({ address }: ProfileViewProps) {
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [loadingMoments, setLoadingMoments] = useState(true)
   const [loadingListings, setLoadingListings] = useState(true)
-  const [editingAvatar, setEditingAvatar] = useState(false)
+  const [editing, setEditing] = useState(false)
+  const [usernameInput, setUsernameInput] = useState('')
   const [avatarInput, setAvatarInput] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -63,7 +66,13 @@ export function ProfileView({ address }: ProfileViewProps) {
       .finally(() => setLoadingListings(false))
   }, [address])
 
-  async function saveAvatar() {
+  function openEdit() {
+    setUsernameInput(profile?.username ?? '')
+    setAvatarInput(profile?.avatarUrl ?? '')
+    setEditing(true)
+  }
+
+  async function saveProfile() {
     if (!isOwner) return
     if (!connectedAddress) { openConnectModal?.(); return }
 
@@ -78,7 +87,12 @@ export function ProfileView({ address }: ProfileViewProps) {
       const res = await fetch(`/api/profile/${address}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ avatarUrl: avatarInput.trim() || undefined, signature, nonce }),
+        body: JSON.stringify({
+          username: usernameInput.trim() || undefined,
+          avatarUrl: avatarInput.trim() || undefined,
+          signature,
+          nonce,
+        }),
       })
 
       if (!res.ok) {
@@ -88,8 +102,7 @@ export function ProfileView({ address }: ProfileViewProps) {
 
       const { profile: updated } = await res.json()
       setProfile(updated)
-      setEditingAvatar(false)
-      setAvatarInput('')
+      setEditing(false)
       toast.success('Profile updated')
     } catch (err) {
       toast.error('Failed to update profile', {
@@ -101,54 +114,82 @@ export function ProfileView({ address }: ProfileViewProps) {
   }
 
   const shortAddr = `${address.slice(0, 6)}…${address.slice(-4)}`
+  const displayName = profile?.username || shortAddr
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12 flex flex-col gap-12">
       {/* Profile header */}
       <div className="flex items-center gap-6">
         <div className="relative">
-          {!loadingProfile && (
+          {!loadingProfile ? (
             <ProfileAvatar
               address={address}
               avatarUrl={profile?.avatarUrl}
               size={80}
               editable={isOwner}
-              onEdit={() => { setAvatarInput(profile?.avatarUrl ?? ''); setEditingAvatar(true) }}
+              onEdit={openEdit}
             />
-          )}
-          {loadingProfile && (
+          ) : (
             <div className="w-20 h-20 rounded-full bg-[#1a1a1a] animate-pulse" />
           )}
         </div>
         <div className="flex flex-col gap-1">
-          <p className="text-[#efefef] font-mono text-sm">{shortAddr}</p>
+          <div className="flex items-center gap-2">
+            {loadingProfile ? (
+              <div className="h-4 w-28 bg-[#1a1a1a] animate-pulse rounded" />
+            ) : (
+              <p className="text-[#efefef] font-mono text-sm">{displayName}</p>
+            )}
+            {isOwner && !loadingProfile && (
+              <button
+                onClick={openEdit}
+                className="text-[#555] hover:text-[#888] transition-colors"
+                title="Edit profile"
+              >
+                <Pencil size={12} />
+              </button>
+            )}
+          </div>
           <p className="text-[#555] font-mono text-xs break-all">{address}</p>
         </div>
       </div>
 
-      {/* Avatar edit panel */}
-      {editingAvatar && isOwner && (
-        <div className="border border-[#2a2a2a] p-4 flex flex-col gap-3">
-          <p className="text-xs font-mono text-[#888] uppercase tracking-wider">Update Avatar</p>
-          <input
-            type="url"
-            value={avatarInput}
-            onChange={(e) => setAvatarInput(e.target.value)}
-            placeholder="https://… image URL (optional)"
-            className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
-          />
-          <p className="text-xs text-[#555] font-mono">leave blank to use the default gradient avatar</p>
+      {/* Edit profile panel */}
+      {editing && isOwner && (
+        <div className="border border-[#2a2a2a] p-4 flex flex-col gap-4">
+          <p className="text-xs font-mono text-[#888] uppercase tracking-wider">Edit Profile</p>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-mono text-[#555] uppercase tracking-wider">Display Name</label>
+            <input
+              type="text"
+              value={usernameInput}
+              onChange={(e) => setUsernameInput(e.target.value)}
+              placeholder={shortAddr}
+              maxLength={30}
+              className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+            />
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-mono text-[#555] uppercase tracking-wider">Avatar URL</label>
+            <input
+              type="url"
+              value={avatarInput}
+              onChange={(e) => setAvatarInput(e.target.value)}
+              placeholder="https://… (leave blank for gradient avatar)"
+              className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+            />
+          </div>
           <input ref={fileInputRef} type="file" accept="image/*" className="hidden" />
           <div className="flex gap-3">
             <button
-              onClick={saveAvatar}
+              onClick={saveProfile}
               disabled={saving}
               className="px-4 py-2 text-xs font-mono border border-[#7C3AED] text-[#7C3AED] hover:bg-[#7C3AED] hover:text-white transition-colors disabled:opacity-40"
             >
               {saving ? 'saving…' : 'save'}
             </button>
             <button
-              onClick={() => { setEditingAvatar(false); setAvatarInput('') }}
+              onClick={() => setEditing(false)}
               disabled={saving}
               className="px-4 py-2 text-xs font-mono border border-[#2a2a2a] text-[#555] hover:border-[#888] hover:text-[#888] transition-colors disabled:opacity-40"
             >
