@@ -22,7 +22,7 @@ export function MintTabs() {
           onClick={() => setTab('mint')}
           className={`px-4 py-2 text-xs font-mono tracking-wider uppercase transition-colors border-b-2 -mb-px ${
             tab === 'mint'
-              ? 'border-[#d4f53c] text-[#d4f53c]'
+              ? 'border-[#7C3AED] text-[#7C3AED]'
               : 'border-transparent text-[#888] hover:text-[#efefef]'
           }`}
         >
@@ -32,7 +32,7 @@ export function MintTabs() {
           onClick={() => setTab('create')}
           className={`px-4 py-2 text-xs font-mono tracking-wider uppercase transition-colors border-b-2 -mb-px ${
             tab === 'create'
-              ? 'border-[#d4f53c] text-[#d4f53c]'
+              ? 'border-[#7C3AED] text-[#7C3AED]'
               : 'border-transparent text-[#888] hover:text-[#efefef]'
           }`}
         >
@@ -43,9 +43,9 @@ export function MintTabs() {
       {tab === 'mint' && (
         <>
           {deployedCollection && (
-            <div className="mb-6 p-3 border border-[#d4f53c]/30 bg-[#d4f53c]/5 flex items-center justify-between gap-4">
+            <div className="mb-6 p-3 border border-[#7C3AED]/30 bg-[#7C3AED]/5 flex items-center justify-between gap-4">
               <div>
-                <p className="text-xs font-mono text-[#d4f53c]">minting into: {deployedCollection.name}</p>
+                <p className="text-xs font-mono text-[#7C3AED]">minting into: {deployedCollection.name}</p>
                 <p className="text-xs font-mono text-[#555] mt-0.5 break-all">{deployedCollection.address}</p>
               </div>
               <button

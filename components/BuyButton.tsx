@@ -93,8 +93,8 @@ export function BuyButton({ listing, onBought, className = '' }: BuyButtonProps)
       disabled={loading || bought}
       className={`text-xs font-mono tracking-wider uppercase px-4 py-2 border transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
         bought
-          ? 'border-[#d4f53c] text-[#d4f53c] bg-[#d4f53c]/10'
-          : 'border-[#2a2a2a] text-[#888] hover:border-[#d4f53c] hover:text-[#d4f53c]'
+          ? 'border-[#7C3AED] text-[#7C3AED] bg-[#7C3AED]/10'
+          : 'border-[#2a2a2a] text-[#888] hover:border-[#7C3AED] hover:text-[#7C3AED]'
       } ${className}`}
     >
       {bought ? 'bought' : loading ? 'buying…' : `buy ${eth} ETH`}

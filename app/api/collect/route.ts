@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-const INPROCESS_API = 'https://api.inprocess.world/api'
+import { INPROCESS_API } from '@/lib/inprocess'
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.INPROCESS_API_KEY

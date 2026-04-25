@@ -93,7 +93,7 @@ export default function DiscoverPage() {
           <p className="text-sm font-mono text-[#555]">no moments yet</p>
           <p className="text-xs font-mono text-[#333] mt-2">
             be the first to{' '}
-            <a href="/mint" className="text-[#d4f53c] hover:underline">
+            <a href="/mint" className="text-[#7C3AED] hover:underline">
               mint
             </a>
           </p>

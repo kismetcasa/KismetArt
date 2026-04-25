@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getTrackedCollections } from '@/lib/kv'
-
-const INPROCESS_API = 'https://api.inprocess.world/api'
+import { INPROCESS_API } from '@/lib/inprocess'
 
 async function fetchCollection(collection: string, limit: number): Promise<unknown[]> {
   const url = new URL(`${INPROCESS_API}/timeline`)

@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-
-const INPROCESS_API = 'https://api.inprocess.world/api'
+import { INPROCESS_API } from '@/lib/inprocess'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)

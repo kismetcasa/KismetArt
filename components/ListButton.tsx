@@ -226,7 +226,7 @@ export function ListButton({
       <button
         onClick={handleList}
         disabled={isBusy}
-        className="text-xs font-mono tracking-wider uppercase px-3 py-2 border border-[#d4f53c] text-[#d4f53c] hover:bg-[#d4f53c] hover:text-[#0d0d0d] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        className="text-xs font-mono tracking-wider uppercase px-3 py-2 border border-[#7C3AED] text-[#7C3AED] hover:bg-[#7C3AED] hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
       >
         {step === 'approving' ? 'approving…'
           : step === 'signing' ? 'signing…'
