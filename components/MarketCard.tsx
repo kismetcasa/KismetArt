@@ -110,7 +110,7 @@ export function MarketCard({ listing, onRemove }: MarketCardProps) {
             </p>
           </div>
           <div className="text-right shrink-0">
-            <p className="text-xs font-mono text-[#d4f53c]">{priceEth} ETH</p>
+            <p className="text-xs font-mono text-[#7C3AED]">{priceEth} ETH</p>
             {Number(listing.royaltyAmount) > 0 && (
               <p className="text-xs font-mono text-[#333] mt-0.5">
                 {royaltyPct}% royalty

@@ -91,7 +91,7 @@ export function MomentCard({ moment }: MomentCardProps) {
               {shortAddress(moment.creator.address)}
             </a>
             {price !== null && (
-              <span className="text-xs font-mono text-[#d4f53c]">{price}</span>
+              <span className="text-xs font-mono text-[#7C3AED]">{price}</span>
             )}
           </div>
 

@@ -19,7 +19,7 @@ export function Nav() {
               href="/"
               className={`px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
                 pathname === '/'
-                  ? 'text-[#d4f53c]'
+                  ? 'text-[#7C3AED]'
                   : 'text-[#888] hover:text-[#efefef]'
               }`}
             >
@@ -29,7 +29,7 @@ export function Nav() {
               href="/mint"
               className={`px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
                 pathname === '/mint'
-                  ? 'text-[#d4f53c]'
+                  ? 'text-[#7C3AED]'
                   : 'text-[#888] hover:text-[#efefef]'
               }`}
             >
@@ -39,7 +39,7 @@ export function Nav() {
               href="/market"
               className={`px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
                 pathname === '/market'
-                  ? 'text-[#d4f53c]'
+                  ? 'text-[#7C3AED]'
                   : 'text-[#888] hover:text-[#efefef]'
               }`}
             >
