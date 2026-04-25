@@ -114,6 +114,16 @@ export async function getListings({
   return { listings: active.slice(start, start + limit), total }
 }
 
+export async function getListingsBySeller(seller: string): Promise<Listing[]> {
+  const ids = await redis.smembers(keyBySeller(seller.toLowerCase())) as string[]
+  if (!ids.length) return []
+  const all = await Promise.all(ids.map((id) => getListing(id)))
+  const now = Date.now()
+  return all.filter(
+    (l): l is Listing => l !== null && l.status === 'active' && l.expiresAt > now
+  )
+}
+
 export async function updateListingStatus(
   id: string,
   status: 'filled' | 'cancelled'
