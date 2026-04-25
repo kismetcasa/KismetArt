@@ -23,7 +23,7 @@ export async function PUT(
     return NextResponse.json({ error: 'Invalid address' }, { status: 400 })
   }
 
-  const body = await req.json() as { avatarUrl?: string; signature: string; nonce: string }
+  const body = await req.json() as { username?: string; avatarUrl?: string; signature: string; nonce: string }
 
   if (!body.signature || !body.nonce) {
     return NextResponse.json({ error: 'signature and nonce required' }, { status: 400 })
@@ -47,6 +47,7 @@ export async function PUT(
     return NextResponse.json({ error: 'Signature verification failed' }, { status: 401 })
   }
 
-  const profile = await upsertProfile(address, { avatarUrl: body.avatarUrl })
+  const username = body.username?.trim().slice(0, 50) || undefined
+  const profile = await upsertProfile(address, { username, avatarUrl: body.avatarUrl })
   return NextResponse.json({ profile })
 }

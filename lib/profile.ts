@@ -8,6 +8,7 @@ const redis = new Redis({
 
 export interface Profile {
   address: string
+  username?: string
   avatarUrl?: string
   updatedAt: number
 }
@@ -27,7 +28,7 @@ export async function getProfile(address: string): Promise<Profile> {
 
 export async function upsertProfile(
   address: string,
-  data: Partial<Pick<Profile, 'avatarUrl'>>
+  data: Partial<Pick<Profile, 'username' | 'avatarUrl'>>
 ): Promise<Profile> {
   const existing = await getProfile(address)
   const updated: Profile = { ...existing, ...data, address: address.toLowerCase(), updatedAt: Date.now() }
