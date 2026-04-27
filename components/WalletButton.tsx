@@ -24,11 +24,11 @@ export function WalletButton() {
                 onClick={openConnectModal}
                 style={{
                   borderRadius: '9999px',
-                  background: 'linear-gradient(135deg, #8B5CF6, #C084FC)',
+                  background: 'white',
                   fontFamily: dancing.style.fontFamily,
-                  fontSize: '16px',
+                  fontSize: '18px',
                   fontWeight: 600,
-                  color: 'white',
+                  color: 'black',
                   padding: '7px 18px',
                   border: 'none',
                   cursor: 'pointer',
@@ -36,7 +36,7 @@ export function WalletButton() {
                   letterSpacing: '0.01em',
                 }}
               >
-                connect wallet
+                connect
               </button>
             ) : (
               <button
