@@ -36,3 +36,28 @@ body {
 [data-rk] button {
   border-radius: 0 !important;
 }
+
+/* Purple gradient utilities */
+.accent-grad {
+  background: linear-gradient(to right, #8B5CF6, #C084FC);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.btn-accent {
+  border: 1px solid #8B5CF6;
+  color: #8B5CF6;
+  transition: all 0.15s ease;
+}
+
+.btn-accent:hover:not(:disabled) {
+  background: linear-gradient(to right, #8B5CF6, #C084FC);
+  border-color: transparent;
+  color: white;
+}
+
+.btn-accent:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}

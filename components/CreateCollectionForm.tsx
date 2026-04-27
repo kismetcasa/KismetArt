@@ -175,8 +175,8 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
   if (step === 'done' && collectionAddress) {
     return (
       <div className="border border-[#2a2a2a] p-8 text-center flex flex-col gap-6">
-        <div className="w-12 h-12 mx-auto rounded-full bg-[#7C3AED]/10 border border-[#7C3AED] flex items-center justify-center">
-          <span className="text-[#7C3AED] text-xl">✓</span>
+        <div className="w-12 h-12 mx-auto rounded-full bg-[#8B5CF6]/10 border border-[#8B5CF6] flex items-center justify-center">
+          <span className="text-xl accent-grad">✓</span>
         </div>
         <div>
           <h3 className="text-[#efefef] font-mono text-sm mb-2">Collection deployed</h3>
@@ -187,7 +187,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
             href={`https://inprocess.world/collect/base:${collectionAddress}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs font-mono text-[#7C3AED] hover:underline"
+            className="text-xs font-mono accent-grad hover:underline"
           >
             View on in•process →
           </a>
@@ -275,7 +275,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
       {/* Collection name */}
       <div>
         <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
-          Collection Name <span className="text-[#7C3AED]">*</span>
+          Collection Name <span className="accent-grad">*</span>
         </label>
         <input
           type="text"
@@ -393,7 +393,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
       <button
         type="submit"
         disabled={isBusy}
-        className="w-full py-3 border border-[#7C3AED] text-[#7C3AED] text-xs font-mono tracking-widest uppercase hover:bg-[#7C3AED] hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        className="w-full py-3 text-xs font-mono tracking-widest uppercase btn-accent"
       >
         {!isConnected
           ? 'connect wallet to deploy'

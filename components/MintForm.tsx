@@ -178,8 +178,8 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
   if (step === 'done' && result) {
     return (
       <div className="border border-[#2a2a2a] p-8 text-center flex flex-col gap-6">
-        <div className="w-12 h-12 mx-auto rounded-full bg-[#7C3AED]/10 border border-[#7C3AED] flex items-center justify-center">
-          <span className="text-[#7C3AED] text-xl">✓</span>
+        <div className="w-12 h-12 mx-auto rounded-full bg-[#8B5CF6]/10 border border-[#8B5CF6] flex items-center justify-center">
+          <span className="text-xl accent-grad">✓</span>
         </div>
         <div>
           <h3 className="text-[#efefef] font-mono text-sm mb-2">Moment minted</h3>
@@ -190,7 +190,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
             href={`https://inprocess.world/collect/base:${result.contractAddress}/${result.tokenId}`}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-xs font-mono text-[#7C3AED] hover:underline"
+            className="text-xs font-mono accent-grad hover:underline"
           >
             View on in•process →
           </a>
@@ -271,7 +271,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
       {/* Title */}
       <div>
         <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
-          Title <span className="text-[#7C3AED]">*</span>
+          Title <span className="accent-grad">*</span>
         </label>
         <input
           type="text"
@@ -369,7 +369,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
           </ul>
         )}
         {splits.length > 0 && (
-          <p className={`text-xs font-mono ${splitsTotal === 100 ? 'text-[#555]' : 'text-[#7C3AED]'}`}>
+          <p className={`text-xs font-mono ${splitsTotal === 100 ? 'text-[#555]' : 'accent-grad'}`}>
             {splitsTotal}% allocated{splitsTotal < 100 ? ` — ${100 - splitsTotal}% remaining` : ' ✓'}
           </p>
         )}
@@ -384,7 +384,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
       <button
         type="submit"
         disabled={isBusy}
-        className="w-full py-3 border border-[#7C3AED] text-[#7C3AED] text-xs font-mono tracking-widest uppercase hover:bg-[#7C3AED] hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        className="w-full py-3 text-xs font-mono tracking-widest uppercase btn-accent"
       >
         {!isConnected
           ? 'connect wallet to mint'
