@@ -166,7 +166,7 @@ export function ProfileView({ address }: ProfileViewProps) {
               onChange={(e) => setUsernameInput(e.target.value)}
               placeholder={shortAddr}
               maxLength={30}
-              className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+              className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
             />
           </div>
           <div className="flex flex-col gap-1">
@@ -176,7 +176,7 @@ export function ProfileView({ address }: ProfileViewProps) {
               value={avatarInput}
               onChange={(e) => setAvatarInput(e.target.value)}
               placeholder="https://… (leave blank for gradient avatar)"
-              className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+              className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
             />
           </div>
           <input ref={fileInputRef} type="file" accept="image/*" className="hidden" />
@@ -184,14 +184,14 @@ export function ProfileView({ address }: ProfileViewProps) {
             <button
               onClick={saveProfile}
               disabled={saving}
-              className="px-4 py-2 text-xs font-mono btn-accent"
+              className="px-4 py-2.5 text-xs font-mono btn-accent"
             >
               {saving ? 'saving…' : 'save'}
             </button>
             <button
               onClick={() => setEditing(false)}
               disabled={saving}
-              className="px-4 py-2 text-xs font-mono border border-[#2a2a2a] text-[#555] hover:border-[#888] hover:text-[#888] transition-colors disabled:opacity-40"
+              className="px-4 py-2.5 text-xs font-mono border border-[#2a2a2a] text-[#555] hover:border-[#888] hover:text-[#888] transition-colors disabled:opacity-40"
             >
               cancel
             </button>

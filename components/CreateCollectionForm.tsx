@@ -115,6 +115,8 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
       return
     }
 
+    setDeployedImageUri(undefined)
+
     try {
       let imageUri: string | undefined
 
@@ -221,6 +223,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
             setRoyaltyRecipient('')
             setMinters([])
             setMinterInput('')
+            setDeployedImageUri(undefined)
           }}
           className="text-xs font-mono text-[#888] hover:text-[#efefef] underline"
         >
