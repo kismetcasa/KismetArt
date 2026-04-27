@@ -87,6 +87,8 @@ export async function getListingForToken(
   return listing
 }
 
+const MAX_LISTINGS_SCAN = 500
+
 export async function getListings({
   page = 1,
   limit = 18,
@@ -96,18 +98,24 @@ export async function getListings({
   limit?: number
   collection?: string
 } = {}): Promise<{ listings: Listing[]; total: number }> {
-  // All IDs newest-first
-  const ids = (await redis.zrange(KEY_ALL, 0, -1, { rev: true })) as string[]
+  const ids = (await redis.zrange(KEY_ALL, 0, MAX_LISTINGS_SCAN - 1, { rev: true })) as string[]
 
   const all = await Promise.all(ids.map((id) => getListing(id)))
   const now = Date.now()
-  const active = all.filter(
-    (l): l is Listing =>
-      l !== null &&
-      l.status === 'active' &&
-      l.expiresAt > now &&
-      (!collection || l.collectionAddress.toLowerCase() === collection.toLowerCase())
-  )
+  const stale: string[] = []
+
+  const active = all.filter((l): l is Listing => {
+    if (!l) return false
+    if (l.status !== 'active' || l.expiresAt <= now) {
+      stale.push(l.id)
+      return false
+    }
+    return !collection || l.collectionAddress.toLowerCase() === collection.toLowerCase()
+  })
+
+  if (stale.length > 0) {
+    redis.zrem(KEY_ALL, ...stale).catch(() => {})
+  }
 
   const total = active.length
   const start = (page - 1) * limit
@@ -134,5 +142,6 @@ export async function updateListingStatus(
   await Promise.all([
     redis.set(keyById(id), JSON.stringify(updated)),
     redis.del(keyByOwned(listing.collectionAddress, listing.tokenId, listing.seller)),
+    redis.zrem(KEY_ALL, id),
   ])
 }

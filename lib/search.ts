@@ -27,8 +27,11 @@ async function fetchCollectionMoments(collection: string): Promise<Moment[]> {
   }
 }
 
+const MAX_SEARCH_COLLECTIONS = 10
+
 export async function searchMoments(query: string): Promise<MomentSearchResult[]> {
-  const collections = await getTrackedCollections()
+  const allCollections = await getTrackedCollections()
+  const collections = allCollections.slice(0, MAX_SEARCH_COLLECTIONS)
   const all = await Promise.all(collections.map(fetchCollectionMoments))
   const q = query.toLowerCase()
   const seen = new Set<string>()

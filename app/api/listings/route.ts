@@ -5,12 +5,18 @@ import type { SerializedOrderComponents } from '@/lib/seaport'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const page = Math.max(1, parseInt(searchParams.get('page') ?? '1'))
-  const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') ?? '18')))
+  const page = Math.max(1, parseInt(searchParams.get('page') ?? '1') || 1)
+  const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') ?? '18') || 18))
   const collection = searchParams.get('collection') ?? undefined
   const tokenId = searchParams.get('tokenId') ?? undefined
-
   const seller = searchParams.get('seller') ?? undefined
+
+  if (collection && !isAddress(collection)) {
+    return NextResponse.json({ error: 'Invalid collection address' }, { status: 400 })
+  }
+  if (seller && !isAddress(seller)) {
+    return NextResponse.json({ error: 'Invalid seller address' }, { status: 400 })
+  }
 
   // Single-token lookup — requires seller to identify which listing
   if (collection && tokenId && seller) {
@@ -65,6 +71,12 @@ export async function POST(req: NextRequest) {
     }
     if (!tokenId || !seller || !price || !signature || !orderComponents) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+    if (!isAddress(seller)) {
+      return NextResponse.json({ error: 'Invalid seller address' }, { status: 400 })
+    }
+    if (!/^\d+$/.test(tokenId)) {
+      return NextResponse.json({ error: 'Invalid tokenId' }, { status: 400 })
     }
     if (BigInt(price) <= 0n) {
       return NextResponse.json({ error: 'Price must be greater than 0' }, { status: 400 })
