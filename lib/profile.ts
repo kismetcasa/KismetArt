@@ -17,6 +17,7 @@ const keyByAddress = (address: string) =>
   `kismetart:profile:${address.toLowerCase()}`
 const keyNonce = (address: string) =>
   `kismetart:nonce:${address.toLowerCase()}`
+const KEY_PROFILES = 'kismetart:profiles'
 
 export async function getProfile(address: string): Promise<Profile> {
   const raw = await redis.get<string | Profile>(keyByAddress(address))
@@ -32,8 +33,32 @@ export async function upsertProfile(
 ): Promise<Profile> {
   const existing = await getProfile(address)
   const updated: Profile = { ...existing, ...data, address: address.toLowerCase(), updatedAt: Date.now() }
-  await redis.set(keyByAddress(address), JSON.stringify(updated))
+  await Promise.all([
+    redis.set(keyByAddress(address), JSON.stringify(updated)),
+    redis.sadd(KEY_PROFILES, address.toLowerCase()),
+  ])
   return updated
+}
+
+export async function searchProfiles(query: string): Promise<Profile[]> {
+  const addresses = (await redis.smembers(KEY_PROFILES)) as string[]
+  if (!addresses.length) return []
+  const keys = addresses.map(keyByAddress)
+  const raws = await redis.mget<(string | Profile | null)[]>(...keys)
+  const q = query.toLowerCase()
+  const results: Profile[] = []
+  for (const raw of raws) {
+    if (!raw) continue
+    const profile: Profile = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (
+      (profile.username ?? '').toLowerCase().includes(q) ||
+      profile.address.toLowerCase().startsWith(q)
+    ) {
+      results.push(profile)
+      if (results.length >= 5) break
+    }
+  }
+  return results
 }
 
 // Nonce for wallet signature verification — expires in 5 minutes

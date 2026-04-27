@@ -7,10 +7,19 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
-  const { address } = await req.json()
-  if (!address || typeof address !== 'string') {
+  const body = await req.json() as {
+    address: string
+    name?: string
+    image?: string
+    description?: string
+  }
+  if (!body.address || typeof body.address !== 'string') {
     return NextResponse.json({ error: 'address required' }, { status: 400 })
   }
-  await addTrackedCollection(address)
+  await addTrackedCollection(body.address, {
+    name: body.name ?? body.address,
+    image: body.image,
+    description: body.description,
+  })
   return NextResponse.json({ ok: true })
 }
