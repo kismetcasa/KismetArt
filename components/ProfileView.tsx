@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useAccount, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
@@ -39,8 +39,6 @@ export function ProfileView({ address }: ProfileViewProps) {
   const [usernameInput, setUsernameInput] = useState('')
   const [avatarInput, setAvatarInput] = useState('')
   const [saving, setSaving] = useState(false)
-
-  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!isOwner) setEditing(false)
@@ -183,7 +181,6 @@ export function ProfileView({ address }: ProfileViewProps) {
               className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
             />
           </div>
-          <input ref={fileInputRef} type="file" accept="image/*" className="hidden" />
           <div className="flex gap-3">
             <button
               onClick={saveProfile}
