@@ -204,7 +204,7 @@ export function ListButton({
           if (!isConnected) { openConnectModal?.(); return }
           setShowForm(true)
         }}
-        className="w-full text-xs font-mono tracking-wider uppercase px-3 py-1.5 border border-[#2a2a2a] text-[#555] hover:border-[#8B5CF6] hover:text-[#8B5CF6] transition-colors"
+        className="w-full text-xs font-mono tracking-wider uppercase px-3 py-2.5 border border-[#2a2a2a] text-[#555] hover:border-[#8B5CF6] hover:text-[#8B5CF6] transition-colors"
       >
         list for sale
       </button>
@@ -221,12 +221,12 @@ export function ListButton({
         min="0"
         step="0.001"
         disabled={isBusy}
-        className="flex-1 min-w-0 bg-[#111] border border-[#2a2a2a] px-2 py-1.5 text-xs text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] disabled:opacity-50"
+        className="flex-1 min-w-0 bg-[#111] border border-[#2a2a2a] px-2 py-2.5 text-xs text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] disabled:opacity-50"
       />
       <button
         onClick={handleList}
         disabled={isBusy}
-        className="flex-shrink-0 text-xs font-mono tracking-wider uppercase px-3 py-1.5 btn-accent"
+        className="flex-shrink-0 text-xs font-mono tracking-wider uppercase px-3 py-2.5 btn-accent"
       >
         {step === 'approving' ? 'approving…'
           : step === 'signing' ? 'signing…'

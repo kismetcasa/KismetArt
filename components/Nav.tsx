@@ -27,7 +27,7 @@ export function Nav() {
           <Link href="/" className="text-sm font-mono tracking-widest uppercase accent-grad">
             Kismet Art
           </Link>
-          <nav className="flex items-center gap-1">
+          <nav className="hidden sm:flex items-center gap-1">
             <Link
               href="/"
               className={`px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
