@@ -43,6 +43,10 @@ export function ProfileView({ address }: ProfileViewProps) {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
+    if (!isOwner) setEditing(false)
+  }, [isOwner])
+
+  useEffect(() => {
     fetch(`/api/profile/${address}`)
       .then((r) => r.json())
       .then((d) => setProfile(d.profile ?? { address, updatedAt: 0 }))

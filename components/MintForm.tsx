@@ -46,9 +46,12 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
     setSplitInput({ address: '', pct: '' })
   }
 
+  const MAX_FILE_BYTES = 50 * 1024 * 1024 // 50 MB
+
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) return
+    if (f.size > MAX_FILE_BYTES) { toast.error('File too large', { description: 'Maximum file size is 50 MB' }); return }
     if (preview) URL.revokeObjectURL(preview)
     setFile(f)
     setPreview(URL.createObjectURL(f))
@@ -58,6 +61,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
     e.preventDefault()
     const f = e.dataTransfer.files[0]
     if (!f) return
+    if (f.size > MAX_FILE_BYTES) { toast.error('File too large', { description: 'Maximum file size is 50 MB' }); return }
     if (preview) URL.revokeObjectURL(preview)
     setFile(f)
     setPreview(URL.createObjectURL(f))
