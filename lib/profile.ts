@@ -40,24 +40,49 @@ export async function upsertProfile(
   return updated
 }
 
+export async function trackWallet(address: string): Promise<void> {
+  if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) return
+  await redis.sadd(KEY_PROFILES, address.toLowerCase()).catch(() => {})
+}
+
 export async function searchProfiles(query: string): Promise<Profile[]> {
+  const q = query.trim().toLowerCase()
+  const isAddressQuery = /^0x[0-9a-fA-F]+$/.test(q)
+
   const addresses = (await redis.smembers(KEY_PROFILES)) as string[]
-  if (!addresses.length) return []
-  const keys = addresses.map(keyByAddress)
-  const raws = await redis.mget<(string | Profile | null)[]>(...keys)
-  const q = query.toLowerCase()
   const results: Profile[] = []
-  for (const raw of raws) {
-    if (!raw) continue
-    const profile: Profile = typeof raw === 'string' ? JSON.parse(raw) : raw
-    if (
-      (profile.username ?? '').toLowerCase().includes(q) ||
-      profile.address.toLowerCase().startsWith(q)
-    ) {
-      results.push(profile)
-      if (results.length >= 5) break
+
+  if (isAddressQuery) {
+    // Filter indexed wallets by address prefix
+    const matching = addresses.filter(a => a.startsWith(q))
+    if (matching.length > 0) {
+      const raws = await redis.mget<(string | Profile | null)[]>(...matching.map(keyByAddress))
+      for (const raw of raws) {
+        if (!raw) continue
+        const p: Profile = typeof raw === 'string' ? JSON.parse(raw) : raw
+        results.push(p)
+        if (results.length >= 5) break
+      }
+    }
+    // If querying a full address and not already found, do a direct lookup
+    // so any wallet is discoverable even if they haven't interacted yet
+    if (q.length === 42 && !results.some(r => r.address === q)) {
+      results.unshift(await getProfile(q))
+    }
+  } else {
+    // Username search across all indexed profiles
+    if (!addresses.length) return []
+    const raws = await redis.mget<(string | Profile | null)[]>(...addresses.map(keyByAddress))
+    for (const raw of raws) {
+      if (!raw) continue
+      const p: Profile = typeof raw === 'string' ? JSON.parse(raw) : raw
+      if ((p.username ?? '').toLowerCase().includes(q)) {
+        results.push(p)
+        if (results.length >= 5) break
+      }
     }
   }
+
   return results
 }
 
