@@ -1,0 +1,50 @@
+import { NextRequest, NextResponse } from 'next/server'
+import { checkRateLimit } from '@/lib/ratelimit'
+
+export const runtime = 'nodejs'
+
+export async function POST(req: NextRequest) {
+  const ip =
+    req.headers.get('x-forwarded-for')?.split(',')[0].trim() ??
+    req.headers.get('x-real-ip') ??
+    'unknown'
+
+  const allowed = await checkRateLimit(`sign:${ip}`, 30, 60)
+  if (!allowed) return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+
+  let body: { hash?: string }
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
+  }
+
+  if (!body.hash) return NextResponse.json({ error: 'Missing hash' }, { status: 400 })
+
+  const key = process.env.ARWEAVE_JWK
+  if (!key) return NextResponse.json({ error: 'Not configured' }, { status: 500 })
+
+  try {
+    const jwk = JSON.parse(Buffer.from(key, 'base64').toString())
+    const hashBytes = Buffer.from(body.hash, 'base64')
+
+    const cryptoKey = await crypto.subtle.importKey(
+      'jwk',
+      jwk,
+      { name: 'RSA-PSS', hash: 'SHA-256' },
+      false,
+      ['sign'],
+    )
+
+    const sig = await crypto.subtle.sign(
+      { name: 'RSA-PSS', saltLength: 32 },
+      cryptoKey,
+      hashBytes,
+    )
+
+    return NextResponse.json({ signature: Buffer.from(sig).toString('base64') })
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Sign failed'
+    return NextResponse.json({ error: message }, { status: 500 })
+  }
+}
