@@ -1,7 +1,10 @@
-import uploadToArweave from './uploadToArweave'
-
 export async function uploadJson(json: object): Promise<string> {
-  const jsonString = JSON.stringify(json)
-  const file = new File([jsonString], 'upload.json', { type: 'application/json' })
-  return uploadToArweave(file)
+  const res = await fetch('/api/upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ json }),
+  })
+  const data = await res.json() as { uri?: string; error?: string }
+  if (!res.ok) throw new Error(data.error ?? 'Metadata upload failed')
+  return data.uri!
 }
