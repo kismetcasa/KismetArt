@@ -32,9 +32,9 @@ body {
   background: #444;
 }
 
-/* RainbowKit override — square buttons */
+/* RainbowKit override — square modal buttons; inline styles on custom buttons override this */
 [data-rk] button {
-  border-radius: 0 !important;
+  border-radius: 0;
 }
 
 /* Purple gradient utilities */

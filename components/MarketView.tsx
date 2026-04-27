@@ -87,7 +87,7 @@ export function MarketView() {
       )}
 
       {!loading && !error && listings.length === 0 && (
-        <div className="border border-[#2a2a2a] p-16 text-center">
+        <div className="border border-[#2a2a2a] p-8 sm:p-16 text-center">
           <p className="text-sm font-mono text-[#555]">no listings yet</p>
           <p className="text-xs font-mono text-[#333] mt-2">
             collect a moment on{' '}
