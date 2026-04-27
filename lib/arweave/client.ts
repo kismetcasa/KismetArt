@@ -3,7 +3,7 @@ function b64urlToBuffer(b64url: string): Buffer {
 }
 
 // Duck-typed Arweave signer: publicKey + sign() is all the Turbo web SDK needs.
-// The JWK never leaves the server — only the deepHash (~32 bytes) is sent to /api/sign.
+// The JWK never leaves the server — only the deepHash (48 bytes, SHA-384) is sent to /api/sign.
 export function makeProxySigner() {
   const n = process.env.NEXT_PUBLIC_ARWEAVE_N
   if (!n) throw new Error('NEXT_PUBLIC_ARWEAVE_N not configured')
