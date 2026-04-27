@@ -184,7 +184,7 @@ export function ProfileView({ address }: ProfileViewProps) {
             <button
               onClick={saveProfile}
               disabled={saving}
-              className="px-4 py-2 text-xs font-mono border border-[#7C3AED] text-[#7C3AED] hover:bg-[#7C3AED] hover:text-white transition-colors disabled:opacity-40"
+              className="px-4 py-2 text-xs font-mono btn-accent"
             >
               {saving ? 'saving…' : 'save'}
             </button>
