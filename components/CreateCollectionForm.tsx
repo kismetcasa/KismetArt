@@ -31,6 +31,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
   const [uploadProgress, setUploadProgress] = useState(0)
   const [collectionAddress, setCollectionAddress] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined)
+  const [deployedImageUri, setDeployedImageUri] = useState<string | undefined>(undefined)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -72,7 +73,12 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
       fetch('/api/collections', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address: deployedAddress }),
+        body: JSON.stringify({
+          address: deployedAddress,
+          name: name.trim(),
+          description: description.trim() || undefined,
+          image: deployedImageUri,
+        }),
       }).catch(() => {})
       onDeployed?.(deployedAddress, name)
     }
@@ -109,6 +115,8 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
       return
     }
 
+    setDeployedImageUri(undefined)
+
     try {
       let imageUri: string | undefined
 
@@ -120,6 +128,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
           setUploadProgress(pct)
           toast.loading(`Uploading image… ${pct}%`, { id: 'create-collection' })
         })
+        setDeployedImageUri(imageUri)
       }
 
       setStep('uploading-metadata')
@@ -214,6 +223,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
             setRoyaltyRecipient('')
             setMinters([])
             setMinterInput('')
+            setDeployedImageUri(undefined)
           }}
           className="text-xs font-mono text-[#888] hover:text-[#efefef] underline"
         >
