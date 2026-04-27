@@ -10,3 +10,8 @@ export const CREATE_REFERRAL =
   '0x58f19e55058057B04feAe2EEA88F90B84b7714Eb'
 
 export const CHAIN_ID = 8453
+
+// Wallet address whose mints populate the Featured tab.
+// Set NEXT_PUBLIC_FEATURED_CREATOR to the curator's wallet address.
+export const FEATURED_CREATOR =
+  process.env.NEXT_PUBLIC_FEATURED_CREATOR || ''

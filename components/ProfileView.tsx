@@ -39,10 +39,21 @@ export function ProfileView({ address }: ProfileViewProps) {
   const [usernameInput, setUsernameInput] = useState('')
   const [avatarInput, setAvatarInput] = useState('')
   const [saving, setSaving] = useState(false)
+  const [following, setFollowing] = useState(false)
+  const [followLoading, setFollowLoading] = useState(false)
 
   useEffect(() => {
     if (!isOwner) setEditing(false)
   }, [isOwner])
+
+  // Check follow status when viewer changes
+  useEffect(() => {
+    if (!connectedAddress || isOwner) { setFollowing(false); return }
+    fetch(`/api/follow/${address}?follower=${connectedAddress}`)
+      .then((r) => r.json())
+      .then((d) => setFollowing(d.following === true))
+      .catch(() => {})
+  }, [address, connectedAddress, isOwner])
 
   useEffect(() => {
     fetch(`/api/profile/${address}`)
@@ -115,6 +126,33 @@ export function ProfileView({ address }: ProfileViewProps) {
     }
   }
 
+  async function handleFollow() {
+    if (!connectedAddress) { openConnectModal?.(); return }
+    setFollowLoading(true)
+    try {
+      const nonceRes = await fetch(`/api/profile/${connectedAddress}/nonce`)
+      const { nonce } = await nonceRes.json()
+      const action = following ? 'Unfollow' : 'Follow'
+      const message = `${action} ${address.toLowerCase()} on Kismet Art\nAddress: ${connectedAddress.toLowerCase()}\nNonce: ${nonce}`
+      const signature = await signMessageAsync({ message })
+      const res = await fetch(`/api/follow/${address}`, {
+        method: following ? 'DELETE' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ follower: connectedAddress, signature, nonce }),
+      })
+      if (!res.ok) {
+        const d = await res.json()
+        throw new Error(d.error ?? 'Failed')
+      }
+      setFollowing(!following)
+      toast.success(following ? 'Unfollowed' : 'Following')
+    } catch (err) {
+      toast.error('Failed', { description: err instanceof Error ? err.message : 'Unknown error' })
+    } finally {
+      setFollowLoading(false)
+    }
+  }
+
   const shortAddr = `${address.slice(0, 6)}…${address.slice(-4)}`
   const displayName = profile?.username || shortAddr
 
@@ -149,6 +187,19 @@ export function ProfileView({ address }: ProfileViewProps) {
                 title="Edit profile"
               >
                 <Pencil size={12} />
+              </button>
+            )}
+            {!isOwner && connectedAddress && !loadingProfile && (
+              <button
+                onClick={handleFollow}
+                disabled={followLoading}
+                className={`text-xs font-mono px-2.5 py-1 border transition-colors disabled:opacity-40 ${
+                  following
+                    ? 'border-[#555] text-[#888] hover:border-red-900/50 hover:text-red-400'
+                    : 'border-[#2a2a2a] text-[#555] hover:border-[#555] hover:text-[#efefef]'
+                }`}
+              >
+                {followLoading ? '…' : following ? 'following' : 'follow'}
               </button>
             )}
           </div>
