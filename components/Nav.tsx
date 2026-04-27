@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { ConnectButton } from '@rainbow-me/rainbowkit'
+import { WalletButton } from './WalletButton'
 import { useAccount } from 'wagmi'
 import { useEffect, useState } from 'react'
 import { ProfileAvatar } from './ProfileAvatar'
@@ -62,11 +62,7 @@ export function Nav() {
         </div>
 
         <div className="flex items-center gap-3">
-          <ConnectButton
-            showBalance={false}
-            chainStatus="none"
-            accountStatus="address"
-          />
+          <WalletButton />
           {isConnected && address && (
             <Link href={`/profile/${address}`} className="flex-shrink-0">
               <ProfileAvatar address={address} avatarUrl={avatarUrl} size={32} />
