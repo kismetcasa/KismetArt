@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { INPROCESS_API } from '@/lib/inprocess'
+import { trackWallet } from '@/lib/profile'
 
 export async function POST(req: NextRequest) {
   const body = await req.json()
+  if (body?.account) trackWallet(body.account)
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   const apiKey = process.env.INPROCESS_API_KEY

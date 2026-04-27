@@ -53,10 +53,9 @@ export async function searchCollections(query: string): Promise<CollectionMeta[]
   const results: CollectionMeta[] = []
   for (let i = 0; i < addresses.length; i++) {
     const raw = raws[i]
+    if (!raw) continue // skip auto-tracked collections without an explicit name
     const address = addresses[i].toLowerCase()
-    const meta: CollectionMeta = raw
-      ? (typeof raw === 'string' ? JSON.parse(raw) : raw)
-      : { address, name: address }
+    const meta: CollectionMeta = typeof raw === 'string' ? JSON.parse(raw) : raw
     if (meta.name.toLowerCase().includes(q) || address.startsWith(q)) {
       results.push(meta)
       if (results.length >= 5) break

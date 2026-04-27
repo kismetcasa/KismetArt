@@ -48,13 +48,6 @@ export function Nav() {
               >
                 Mint
               </Link>
-              <button
-                onClick={() => setSearchOpen(true)}
-                className="px-3 py-1.5 text-[#888] hover:text-[#efefef] transition-colors"
-                title="Search"
-              >
-                <Search size={14} />
-              </button>
               <Link
                 href="/market"
                 className={`px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
@@ -63,6 +56,13 @@ export function Nav() {
               >
                 Market
               </Link>
+              <button
+                onClick={() => setSearchOpen(true)}
+                className="px-3 py-1.5 text-[#888] hover:text-[#efefef] transition-colors"
+                title="Search"
+              >
+                <Search size={14} />
+              </button>
             </nav>
           </div>
 

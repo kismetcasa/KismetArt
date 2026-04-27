@@ -26,10 +26,11 @@ export function CollectButton({ collectionAddress, tokenId, className = '' }: Co
 
     setLoading(true)
     try {
-      const payload: CollectPayload = {
+      const payload: CollectPayload & { account: string } = {
         moment: { collectionAddress, tokenId, chainId: 8453 },
         amount: 1,
         comment: 'collected via Kismet Art',
+        account: address,
       }
 
       const res = await fetch('/api/collect', {
