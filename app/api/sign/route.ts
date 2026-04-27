@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
     req.headers.get('x-real-ip') ??
     'unknown'
 
-  const allowed = await checkRateLimit(`sign:${ip}`, 30, 60)
+  const allowed = await checkRateLimit(`sign:${ip}`, 10, 60)
   if (!allowed) return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
 
   let body: { hash?: string }
