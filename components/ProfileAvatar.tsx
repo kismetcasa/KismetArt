@@ -8,6 +8,7 @@ interface ProfileAvatarProps {
   size?: number
   editable?: boolean
   onEdit?: () => void
+  clickable?: boolean
 }
 
 function addressToGradient(address: string): { from: string; to: string; angle: number } {
@@ -26,7 +27,7 @@ function addressToGradient(address: string): { from: string; to: string; angle: 
   }
 }
 
-export function ProfileAvatar({ address, avatarUrl, size = 40, editable = false, onEdit }: ProfileAvatarProps) {
+export function ProfileAvatar({ address, avatarUrl, size = 40, editable = false, onEdit, clickable = false }: ProfileAvatarProps) {
   const [imgError, setImgError] = useState(false)
   const grad = addressToGradient(address)
 
@@ -44,7 +45,15 @@ export function ProfileAvatar({ address, avatarUrl, size = 40, editable = false,
   }
 
   return (
-    <div style={style} className="cursor-default select-none">
+    <div
+      style={style}
+      className={[
+        'select-none transition-all duration-150',
+        clickable
+          ? 'cursor-pointer hover:scale-105 active:scale-95 hover:shadow-[0_0_0_2px_rgba(255,255,255,0.18)]'
+          : 'cursor-default',
+      ].join(' ')}
+    >
       {avatarUrl && !imgError && (
         // eslint-disable-next-line @next/next/no-img-element
         <img

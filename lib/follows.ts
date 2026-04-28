@@ -29,6 +29,10 @@ export async function getFollowing(address: string): Promise<string[]> {
   return (await redis.smembers(keyFollowing(address.toLowerCase()))) as string[]
 }
 
+export async function getFollowers(address: string): Promise<string[]> {
+  return (await redis.smembers(keyFollowers(address.toLowerCase()))) as string[]
+}
+
 export async function getFollowerCount(address: string): Promise<number> {
   return redis.scard(keyFollowers(address.toLowerCase()))
 }
