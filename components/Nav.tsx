@@ -28,7 +28,7 @@ export function Nav() {
       <header className="fixed top-0 left-0 right-0 z-50 border-b border-[#2a2a2a] bg-[#0d0d0d]/90 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-8">
-            <Link href="/" className="text-sm font-mono tracking-widest uppercase accent-grad">
+            <Link href="/" className="text-sm font-mono tracking-widest uppercase text-[#888]">
               Kismet Art
             </Link>
             <nav className="hidden sm:flex items-center gap-1">
