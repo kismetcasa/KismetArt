@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
+import { Star } from 'lucide-react'
 import { CollectButton } from './CollectButton'
 import { ListButton } from './ListButton'
 import { resolveUri, formatPrice, shortAddress, type Moment, type MomentDetail } from '@/lib/inprocess'
+import { useAdmin } from '@/contexts/AdminContext'
 
 interface MomentCardProps {
   moment: Moment
@@ -13,8 +15,10 @@ interface MomentCardProps {
 export function MomentCard({ moment }: MomentCardProps) {
   const [imgError, setImgError] = useState(false)
   const [price, setPrice] = useState<string | null>(null)
+  const { isAdmin, featuredKeys, toggleFeatured } = useAdmin()
 
   const meta = moment.metadata ?? {}
+  const isFeatured = featuredKeys.has(`${moment.address.toLowerCase()}:${moment.token_id}`)
 
   // Fetch sale config for price display
   useEffect(() => {
@@ -41,6 +45,21 @@ export function MomentCard({ moment }: MomentCardProps) {
     <article className="group flex flex-col bg-[#161616] border border-[#2a2a2a] overflow-hidden">
       {/* Media */}
       <div className="relative aspect-square bg-[#111] overflow-hidden">
+        {isAdmin && (
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              toggleFeatured(moment.address, moment.token_id)
+            }}
+            className={`absolute top-2 right-2 z-10 p-1 transition-colors ${
+              isFeatured ? 'text-yellow-400' : 'text-[#333] hover:text-[#888]'
+            }`}
+            title={isFeatured ? 'Unfeature' : 'Feature'}
+          >
+            <Star size={16} fill={isFeatured ? 'currentColor' : 'none'} strokeWidth={1.5} />
+          </button>
+        )}
         {isVideo && mediaUrl ? (
           <video
             src={mediaUrl}

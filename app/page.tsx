@@ -6,7 +6,7 @@ import { RefreshCw } from 'lucide-react'
 import { MomentCard } from '@/components/MomentCard'
 import { MarketView } from '@/components/MarketView'
 import type { Moment } from '@/lib/inprocess'
-import { FEATURED_CREATOR } from '@/lib/config'
+import { useAdmin } from '@/contexts/AdminContext'
 
 // ─── types ───────────────────────────────────────────────────────────────────
 
@@ -277,6 +277,7 @@ function MainFeed() {
 // ─── discover page ────────────────────────────────────────────────────────────
 
 export default function DiscoverPage() {
+  const { isAdmin, session, startSession, featuredKeys } = useAdmin()
   const [order, setOrder] = useState<TabId[]>(DRAGGABLE)
   const [active, setActive] = useState<TabId>('featured')
 
@@ -296,11 +297,26 @@ export default function DiscoverPage() {
 
       <div className="mt-2">
         {active === 'featured' && (
-          <MomentFeed
-            feedKey="featured"
-            apiUrl={FEATURED_CREATOR ? `/api/timeline?creator=${FEATURED_CREATOR}` : '/api/timeline'}
-            emptyMessage="no featured mints yet"
-          />
+          <>
+            {isAdmin && !session && (
+              <div className="flex items-center justify-between py-4 border-b border-[#2a2a2a] mb-2">
+                <p className="text-xs font-mono text-[#555]">
+                  admin — sign to start curating
+                </p>
+                <button
+                  onClick={startSession}
+                  className="text-xs font-mono px-3 py-1.5 border border-[#2a2a2a] text-[#888] hover:border-[#555] hover:text-[#efefef] transition-colors"
+                >
+                  sign in
+                </button>
+              </div>
+            )}
+            <MomentFeed
+              feedKey={`featured-${featuredKeys.size}`}
+              apiUrl="/api/timeline?featured=1"
+              emptyMessage={isAdmin ? 'no featured mints yet — click ★ on any mint to feature it' : 'no featured mints yet'}
+            />
+          </>
         )}
 
         {active === 'trending' && (

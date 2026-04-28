@@ -23,12 +23,15 @@ async function fetchCollection(collection: string, limit: number): Promise<unkno
   }
 }
 
+const FEATURED_KEY = 'kismetart:featured'
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const page = parseInt(searchParams.get('page') ?? '1') || 1
   const limit = parseInt(searchParams.get('limit') ?? '20') || 20
   const creator = searchParams.get('creator')?.toLowerCase() ?? undefined
   const sort = searchParams.get('sort') // 'trending' | null
+  const featured = searchParams.get('featured') === '1'
   // Comma-separated addresses to prioritise in the feed (following mode)
   const followingParam = searchParams.get('following')
   const followingSet = followingParam
@@ -37,8 +40,9 @@ export async function GET(req: NextRequest) {
 
   const collections = await getTrackedCollections()
 
-  // Trending needs a larger sample so we can sort across all known mints
-  const fetchLimit = sort === 'trending' ? Math.max(page * limit, 100) : page * limit
+  // Trending and featured need larger samples for cross-collection sorting
+  const fetchLimit =
+    sort === 'trending' || featured ? Math.max(page * limit, 200) : page * limit
   const results = await Promise.all(collections.map((c) => fetchCollection(c, fetchLimit)))
 
   // Merge and deduplicate
@@ -59,7 +63,31 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  if (sort === 'trending') {
+  if (featured) {
+    // Fetch featured set (member = "collectionAddress:tokenId", score = featuredAt timestamp)
+    const raw = (await redis.zrange(FEATURED_KEY, 0, -1, {
+      rev: true,
+      withScores: true,
+    })) as (string | number)[]
+
+    const featuredMap = new Map<string, number>()
+    for (let i = 0; i + 1 < raw.length; i += 2) {
+      featuredMap.set(String(raw[i]), Number(raw[i + 1]))
+    }
+
+    merged = merged.filter((m: unknown) => {
+      const moment = m as { address?: string; token_id?: string }
+      return featuredMap.has(`${moment.address?.toLowerCase()}:${moment.token_id}`)
+    })
+
+    merged = merged.sort((a: unknown, b: unknown) => {
+      const ma = a as { address?: string; token_id?: string }
+      const mb = b as { address?: string; token_id?: string }
+      const scoreA = featuredMap.get(`${ma.address?.toLowerCase()}:${ma.token_id}`) ?? 0
+      const scoreB = featuredMap.get(`${mb.address?.toLowerCase()}:${mb.token_id}`) ?? 0
+      return scoreB - scoreA
+    })
+  } else if (sort === 'trending') {
     // Fetch all trending scores from Redis in one call (flat alternating member/score array)
     const raw = (await redis.zrange('kismetart:trending', 0, -1, {
       rev: true,
