@@ -55,8 +55,13 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       .catch(() => setIsAdmin(false))
   }, [address])
 
-  // Restore session from sessionStorage on mount
+  // Restore from sessionStorage once admin is confirmed; clear when not admin.
+  // Combined into one effect so the restore never races with the clear.
   useEffect(() => {
+    if (!isAdmin) {
+      applySession(null)
+      return
+    }
     try {
       const raw = sessionStorage.getItem(SESSION_KEY)
       if (!raw) return
@@ -67,11 +72,6 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         sessionStorage.removeItem(SESSION_KEY)
       }
     } catch {}
-  }, [])
-
-  // Clear session when wallet disconnects or changes away from admin
-  useEffect(() => {
-    if (!isAdmin) applySession(null)
   }, [isAdmin])
 
   // Fetch featured keys on mount
