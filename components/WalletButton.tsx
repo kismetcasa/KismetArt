@@ -1,9 +1,6 @@
 'use client'
 
 import { ConnectButton } from '@rainbow-me/rainbowkit'
-import { Dancing_Script } from 'next/font/google'
-
-const dancing = Dancing_Script({ subsets: ['latin'], weight: ['600'] })
 
 export function WalletButton() {
   return (
@@ -25,15 +22,15 @@ export function WalletButton() {
                 style={{
                   borderRadius: '9999px',
                   background: 'white',
-                  fontFamily: dancing.style.fontFamily,
-                  fontSize: '18px',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: '13px',
                   fontWeight: 600,
                   color: 'black',
                   padding: '7px 18px',
                   border: 'none',
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
-                  letterSpacing: '0.01em',
+                  letterSpacing: '0.05em',
                 }}
               >
                 connect

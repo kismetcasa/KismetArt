@@ -1,5 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { INPROCESS_API } from '@/lib/inprocess'
+import { Redis } from '@upstash/redis'
+
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+})
 
 export async function POST(req: NextRequest) {
   const apiKey = process.env.INPROCESS_API_KEY
@@ -17,6 +23,15 @@ export async function POST(req: NextRequest) {
     },
     body: JSON.stringify(body),
   })
+
+  // Fire-and-forget: increment trending score for this mint
+  if (res.ok) {
+    const col = (body as { moment?: { collectionAddress?: string } }).moment?.collectionAddress?.toLowerCase()
+    const tok = (body as { moment?: { tokenId?: string } }).moment?.tokenId
+    if (col && tok) {
+      redis.zincrby('kismetart:trending', 1, `${col}:${tok}`).catch(() => {})
+    }
+  }
 
   const text = await res.text()
   let data: unknown

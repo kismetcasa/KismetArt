@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getTrackedCollections } from '@/lib/kv'
 import { INPROCESS_API } from '@/lib/inprocess'
+import { Redis } from '@upstash/redis'
+
+const redis = new Redis({
+  url: process.env.UPSTASH_REDIS_REST_URL!,
+  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
+})
 
 async function fetchCollection(collection: string, limit: number): Promise<unknown[]> {
   const url = new URL(`${INPROCESS_API}/timeline`)
@@ -17,39 +23,111 @@ async function fetchCollection(collection: string, limit: number): Promise<unkno
   }
 }
 
+const FEATURED_KEY = 'kismetart:featured'
+
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const page = parseInt(searchParams.get('page') ?? '1')
-  const limit = parseInt(searchParams.get('limit') ?? '20')
+  const page = parseInt(searchParams.get('page') ?? '1') || 1
+  const limit = parseInt(searchParams.get('limit') ?? '20') || 20
   const creator = searchParams.get('creator')?.toLowerCase() ?? undefined
+  const sort = searchParams.get('sort') // 'trending' | null
+  const featured = searchParams.get('featured') === '1'
+  // Comma-separated addresses to prioritise in the feed (following mode)
+  const followingParam = searchParams.get('following')
+  const followingSet = followingParam
+    ? new Set(followingParam.split(',').map((a) => a.toLowerCase()).filter(Boolean))
+    : null
 
   const collections = await getTrackedCollections()
 
-  // Fetch from all collections in parallel, grab enough to cover this page
-  const fetchLimit = page * limit
+  // Trending and featured need larger samples for cross-collection sorting
+  const fetchLimit =
+    sort === 'trending' || featured ? Math.max(page * limit, 200) : page * limit
   const results = await Promise.all(collections.map((c) => fetchCollection(c, fetchLimit)))
 
-  // Merge, deduplicate by id, sort newest first
+  // Merge and deduplicate
   const seen = new Set<string>()
-  const merged = results
-    .flat()
-    .filter((m: unknown) => {
-      const moment = m as { id?: string }
-      const key = moment.id ?? JSON.stringify(m)
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
-    .filter((m: unknown) => {
-      if (!creator) return true
+  let merged = results.flat().filter((m: unknown) => {
+    const moment = m as { id?: string }
+    const key = moment.id ?? JSON.stringify(m)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+
+  // Creator filter (Featured / Profile feeds)
+  if (creator) {
+    merged = merged.filter((m: unknown) => {
       const moment = m as { creator?: { address?: string } }
       return moment.creator?.address?.toLowerCase() === creator
     })
-    .sort((a: unknown, b: unknown) => {
+  }
+
+  if (featured) {
+    // Fetch featured set (member = "collectionAddress:tokenId", score = featuredAt timestamp)
+    const raw = (await redis.zrange(FEATURED_KEY, 0, -1, {
+      rev: true,
+      withScores: true,
+    })) as (string | number)[]
+
+    const featuredMap = new Map<string, number>()
+    for (let i = 0; i + 1 < raw.length; i += 2) {
+      featuredMap.set(String(raw[i]), Number(raw[i + 1]))
+    }
+
+    merged = merged.filter((m: unknown) => {
+      const moment = m as { address?: string; token_id?: string }
+      return featuredMap.has(`${moment.address?.toLowerCase()}:${moment.token_id}`)
+    })
+
+    merged = merged.sort((a: unknown, b: unknown) => {
+      const ma = a as { address?: string; token_id?: string }
+      const mb = b as { address?: string; token_id?: string }
+      const scoreA = featuredMap.get(`${ma.address?.toLowerCase()}:${ma.token_id}`) ?? 0
+      const scoreB = featuredMap.get(`${mb.address?.toLowerCase()}:${mb.token_id}`) ?? 0
+      return scoreB - scoreA
+    })
+  } else if (sort === 'trending') {
+    // Fetch all trending scores from Redis in one call (flat alternating member/score array)
+    const raw = (await redis.zrange('kismetart:trending', 0, -1, {
+      rev: true,
+      withScores: true,
+    })) as (string | number)[]
+
+    const scoreMap = new Map<string, number>()
+    for (let i = 0; i + 1 < raw.length; i += 2) {
+      scoreMap.set(String(raw[i]), Number(raw[i + 1]))
+    }
+
+    merged = merged.sort((a: unknown, b: unknown) => {
+      const ma = a as { address?: string; token_id?: string; created_at: string }
+      const mb = b as { address?: string; token_id?: string; created_at: string }
+      const scoreA = scoreMap.get(`${ma.address?.toLowerCase()}:${ma.token_id}`) ?? 0
+      const scoreB = scoreMap.get(`${mb.address?.toLowerCase()}:${mb.token_id}`) ?? 0
+      if (scoreB !== scoreA) return scoreB - scoreA
+      return new Date(mb.created_at).getTime() - new Date(ma.created_at).getTime()
+    })
+  } else {
+    // Default: newest first
+    merged = merged.sort((a: unknown, b: unknown) => {
       const ma = a as { created_at: string }
       const mb = b as { created_at: string }
       return new Date(mb.created_at).getTime() - new Date(ma.created_at).getTime()
     })
+  }
+
+  // Following priority: bubble followed creators to the top, preserve internal order
+  if (followingSet && followingSet.size > 0) {
+    const followed = merged.filter((m: unknown) => {
+      const moment = m as { creator?: { address?: string } }
+      return followingSet.has(moment.creator?.address?.toLowerCase() ?? '')
+    })
+    const rest = merged.filter((m: unknown) => {
+      const moment = m as { creator?: { address?: string } }
+      return !followingSet.has(moment.creator?.address?.toLowerCase() ?? '')
+    })
+    merged = [...followed, ...rest]
+  }
 
   const start = (page - 1) * limit
   const moments = merged.slice(start, start + limit)

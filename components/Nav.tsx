@@ -48,14 +48,6 @@ export function Nav() {
               >
                 Mint
               </Link>
-              <Link
-                href="/market"
-                className={`px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
-                  pathname === '/market' ? 'accent-grad' : 'text-[#888] hover:text-[#efefef]'
-                }`}
-              >
-                Market
-              </Link>
               <button
                 onClick={() => setSearchOpen(true)}
                 className="px-3 py-1.5 text-[#888] hover:text-[#efefef] transition-colors"
