@@ -7,7 +7,7 @@ const redis = new Redis({
   token: process.env.UPSTASH_REDIS_REST_TOKEN!,
 })
 
-const ADMIN_ADDRESS = (process.env.NEXT_PUBLIC_ADMIN_ADDRESS ?? '').toLowerCase()
+const ADMIN_ADDRESS = (process.env.ADMIN_ADDRESS ?? '').toLowerCase()
 const FEATURED_KEY = 'kismetart:featured'
 const SESSION_TTL = 4 * 60 * 60 * 1000 // 4 hours in ms
 

@@ -4,7 +4,6 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef } f
 import { useAccount, useSignMessage } from 'wagmi'
 import { toast } from 'sonner'
 
-const ADMIN_ADDRESS = (process.env.NEXT_PUBLIC_ADMIN_ADDRESS ?? '').toLowerCase()
 const SESSION_KEY = 'kismetart:admin-session'
 const SESSION_TTL = 4 * 60 * 60 * 1000 // 4 hours
 
@@ -37,8 +36,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
   const { address } = useAccount()
   const { signMessageAsync } = useSignMessage()
 
-  const isAdmin = !!ADMIN_ADDRESS && address?.toLowerCase() === ADMIN_ADDRESS
-
+  const [isAdmin, setIsAdmin] = useState(false)
   const [session, setSession] = useState<AdminSession | null>(null)
   const sessionRef = useRef<AdminSession | null>(null)
   const [featuredKeys, setFeaturedKeys] = useState<Set<string>>(new Set())
@@ -47,6 +45,15 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     sessionRef.current = s
     setSession(s)
   }
+
+  // Check admin status server-side so the address never ships in the client bundle
+  useEffect(() => {
+    if (!address) { setIsAdmin(false); return }
+    fetch(`/api/admin/me?address=${address}`)
+      .then((r) => r.json())
+      .then((d) => setIsAdmin(d.isAdmin === true))
+      .catch(() => setIsAdmin(false))
+  }, [address])
 
   // Restore session from sessionStorage on mount
   useEffect(() => {
