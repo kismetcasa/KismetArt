@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { useAccount, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
@@ -10,6 +11,7 @@ import { MomentCard } from './MomentCard'
 import { MarketCard } from './MarketCard'
 import type { Listing } from '@/lib/listings'
 import type { Moment } from '@/lib/inprocess'
+import { shortAddress } from '@/lib/inprocess'
 
 interface ProfileViewProps {
   address: string
@@ -42,11 +44,16 @@ export function ProfileView({ address }: ProfileViewProps) {
   const [following, setFollowing] = useState(false)
   const [followLoading, setFollowLoading] = useState(false)
 
+  const [followingCount, setFollowingCount] = useState<number | null>(null)
+  const [followerCount, setFollowerCount] = useState<number | null>(null)
+  const [activeList, setActiveList] = useState<'following' | 'followers' | null>(null)
+  const [listAddresses, setListAddresses] = useState<string[]>([])
+  const [loadingList, setLoadingList] = useState(false)
+
   useEffect(() => {
     if (!isOwner) setEditing(false)
   }, [isOwner])
 
-  // Check follow status when viewer changes
   useEffect(() => {
     if (!connectedAddress || isOwner) { setFollowing(false); return }
     fetch(`/api/follow/${address}?follower=${connectedAddress}`)
@@ -54,6 +61,16 @@ export function ProfileView({ address }: ProfileViewProps) {
       .then((d) => setFollowing(d.following === true))
       .catch(() => {})
   }, [address, connectedAddress, isOwner])
+
+  useEffect(() => {
+    fetch(`/api/follow/${address}?count=1`)
+      .then((r) => r.json())
+      .then((d) => {
+        setFollowingCount(d.followingCount ?? 0)
+        setFollowerCount(d.followerCount ?? 0)
+      })
+      .catch(() => { setFollowingCount(0); setFollowerCount(0) })
+  }, [address])
 
   useEffect(() => {
     fetch(`/api/profile/${address}`)
@@ -78,6 +95,23 @@ export function ProfileView({ address }: ProfileViewProps) {
       .catch(() => setListings([]))
       .finally(() => setLoadingListings(false))
   }, [address])
+
+  async function openList(type: 'following' | 'followers') {
+    if (activeList === type) { setActiveList(null); return }
+    setActiveList(type)
+    setListAddresses([])
+    setLoadingList(true)
+    try {
+      const param = type === 'following' ? 'list=1' : 'followers=1'
+      const res = await fetch(`/api/follow/${address}?${param}`)
+      const d = await res.json()
+      setListAddresses(Array.isArray(d.addresses) ? d.addresses : [])
+    } catch {
+      setListAddresses([])
+    } finally {
+      setLoadingList(false)
+    }
+  }
 
   function openEdit() {
     setUsernameInput(profile?.username ?? '')
@@ -144,8 +178,10 @@ export function ProfileView({ address }: ProfileViewProps) {
         const d = await res.json()
         throw new Error(d.error ?? 'Failed')
       }
-      setFollowing(!following)
-      toast.success(following ? 'Unfollowed' : 'Following')
+      const wasFollowing = following
+      setFollowing(!wasFollowing)
+      setFollowerCount((c) => c === null ? null : wasFollowing ? c - 1 : c + 1)
+      toast.success(wasFollowing ? 'Unfollowed' : 'Following')
     } catch (err) {
       toast.error('Failed', { description: err instanceof Error ? err.message : 'Unknown error' })
     } finally {
@@ -159,52 +195,109 @@ export function ProfileView({ address }: ProfileViewProps) {
   return (
     <div className="max-w-4xl mx-auto px-4 py-12 flex flex-col gap-12">
       {/* Profile header */}
-      <div className="flex items-center gap-6">
-        <div className="relative">
-          {!loadingProfile ? (
-            <ProfileAvatar
-              address={address}
-              avatarUrl={profile?.avatarUrl}
-              size={80}
-              editable={isOwner}
-              onEdit={openEdit}
-            />
-          ) : (
-            <div className="w-20 h-20 rounded-full bg-[#1a1a1a] animate-pulse" />
-          )}
-        </div>
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center gap-2">
-            {loadingProfile ? (
-              <div className="h-4 w-28 bg-[#1a1a1a] animate-pulse rounded" />
+      <div className="flex flex-col gap-4">
+        <div className="flex items-center gap-6">
+          <div className="relative">
+            {!loadingProfile ? (
+              <ProfileAvatar
+                address={address}
+                avatarUrl={profile?.avatarUrl}
+                size={80}
+                editable={isOwner}
+                onEdit={openEdit}
+              />
             ) : (
-              <p className="text-[#efefef] font-mono text-sm">{displayName}</p>
-            )}
-            {isOwner && !loadingProfile && (
-              <button
-                onClick={openEdit}
-                className="text-[#555] hover:text-[#888] transition-colors"
-                title="Edit profile"
-              >
-                <Pencil size={12} />
-              </button>
-            )}
-            {!isOwner && connectedAddress && !loadingProfile && (
-              <button
-                onClick={handleFollow}
-                disabled={followLoading}
-                className={`text-xs font-mono px-2.5 py-1 border transition-colors disabled:opacity-40 ${
-                  following
-                    ? 'border-[#555] text-[#888] hover:border-red-900/50 hover:text-red-400'
-                    : 'border-[#2a2a2a] text-[#555] hover:border-[#555] hover:text-[#efefef]'
-                }`}
-              >
-                {followLoading ? '…' : following ? 'following' : 'follow'}
-              </button>
+              <div className="w-20 h-20 rounded-full bg-[#1a1a1a] animate-pulse" />
             )}
           </div>
-          <p className="text-[#555] font-mono text-xs break-all">{address}</p>
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-2">
+              {loadingProfile ? (
+                <div className="h-4 w-28 bg-[#1a1a1a] animate-pulse rounded" />
+              ) : (
+                <p className="text-[#efefef] font-mono text-sm">{displayName}</p>
+              )}
+              {isOwner && !loadingProfile && (
+                <button
+                  onClick={openEdit}
+                  className="text-[#555] hover:text-[#888] transition-colors"
+                  title="Edit profile"
+                >
+                  <Pencil size={12} />
+                </button>
+              )}
+              {!isOwner && connectedAddress && !loadingProfile && (
+                <button
+                  onClick={handleFollow}
+                  disabled={followLoading}
+                  className={`text-xs font-mono px-2.5 py-1 border transition-colors disabled:opacity-40 ${
+                    following
+                      ? 'border-[#555] text-[#888] hover:border-red-900/50 hover:text-red-400'
+                      : 'border-[#2a2a2a] text-[#555] hover:border-[#555] hover:text-[#efefef]'
+                  }`}
+                >
+                  {followLoading ? '…' : following ? 'following' : 'follow'}
+                </button>
+              )}
+            </div>
+            <p className="text-[#555] font-mono text-xs break-all">{address}</p>
+            {/* Following / follower counts */}
+            <div className="flex items-center gap-3 mt-0.5">
+              <button
+                onClick={() => openList('following')}
+                className={`text-xs font-mono transition-colors ${
+                  activeList === 'following' ? 'text-[#efefef]' : 'text-[#555] hover:text-[#888]'
+                }`}
+              >
+                <span className="text-[#efefef]">{followingCount ?? '—'}</span>
+                {' '}following
+              </button>
+              <span className="text-[#333] text-xs">·</span>
+              <button
+                onClick={() => openList('followers')}
+                className={`text-xs font-mono transition-colors ${
+                  activeList === 'followers' ? 'text-[#efefef]' : 'text-[#555] hover:text-[#888]'
+                }`}
+              >
+                <span className="text-[#efefef]">{followerCount ?? '—'}</span>
+                {' '}followers
+              </button>
+            </div>
+          </div>
         </div>
+
+        {/* Expandable following / followers list */}
+        {activeList && (
+          <div className="flex flex-col gap-2 pl-[calc(80px+24px)]">
+            {loadingList ? (
+              <div className="flex flex-col gap-2.5">
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="flex items-center gap-3">
+                    <div className="w-7 h-7 rounded-full bg-[#1a1a1a] animate-pulse flex-shrink-0" />
+                    <div className="h-3 w-24 bg-[#1a1a1a] animate-pulse rounded" />
+                  </div>
+                ))}
+              </div>
+            ) : listAddresses.length === 0 ? (
+              <p className="text-[#555] font-mono text-xs">no {activeList} yet</p>
+            ) : (
+              <div className="flex flex-col">
+                {listAddresses.map((addr) => (
+                  <Link
+                    key={addr}
+                    href={`/profile/${addr}`}
+                    className="flex items-center gap-3 py-1.5 group"
+                  >
+                    <ProfileAvatar address={addr} size={28} clickable />
+                    <span className="text-xs font-mono text-[#555] group-hover:text-[#888] transition-colors">
+                      {shortAddress(addr)}
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Edit profile panel */}

@@ -1,18 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyMessage, isAddress } from 'viem'
-import { follow, unfollow, isFollowing, getFollowing } from '@/lib/follows'
+import { follow, unfollow, isFollowing, getFollowing, getFollowers, getFollowerCount, getFollowingCount } from '@/lib/follows'
 import { consumeNonce } from '@/lib/profile'
 import { checkRateLimit } from '@/lib/ratelimit'
 
 type Params = { params: Promise<{ address: string }> }
 
 // GET /api/follow/[address]?follower=0x...  → { following: bool }
-// GET /api/follow/[address]?list=1          → { addresses: string[] }
+// GET /api/follow/[address]?list=1          → { addresses: string[] }  (following)
+// GET /api/follow/[address]?followers=1     → { addresses: string[] }  (followers)
+// GET /api/follow/[address]?count=1         → { followingCount: number, followerCount: number }
 export async function GET(req: NextRequest, { params }: Params) {
   const { address } = await params
   if (!isAddress(address)) return NextResponse.json({ error: 'Invalid address' }, { status: 400 })
 
   const { searchParams } = new URL(req.url)
+
+  if (searchParams.get('count')) {
+    const [followingCount, followerCount] = await Promise.all([
+      getFollowingCount(address),
+      getFollowerCount(address),
+    ])
+    return NextResponse.json({ followingCount, followerCount })
+  }
+
+  if (searchParams.get('followers')) {
+    const addresses = await getFollowers(address)
+    return NextResponse.json({ addresses })
+  }
 
   if (searchParams.get('list')) {
     const addresses = await getFollowing(address)

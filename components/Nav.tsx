@@ -69,7 +69,7 @@ export function Nav() {
             <WalletButton />
             {isConnected && address && (
               <Link href={`/profile/${address}`} className="flex-shrink-0">
-                <ProfileAvatar address={address} avatarUrl={avatarUrl} size={32} />
+                <ProfileAvatar address={address} avatarUrl={avatarUrl} size={32} clickable />
               </Link>
             )}
           </div>
