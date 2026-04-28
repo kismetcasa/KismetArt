@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useAccount, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
@@ -49,6 +49,13 @@ export function ProfileView({ address }: ProfileViewProps) {
   const [activeList, setActiveList] = useState<'following' | 'followers' | null>(null)
   const [listAddresses, setListAddresses] = useState<string[]>([])
   const [loadingList, setLoadingList] = useState(false)
+  const listReqRef = useRef(0)
+
+  // Reset list panel when navigating between profiles
+  useEffect(() => {
+    setActiveList(null)
+    setListAddresses([])
+  }, [address])
 
   useEffect(() => {
     if (!isOwner) setEditing(false)
@@ -101,15 +108,17 @@ export function ProfileView({ address }: ProfileViewProps) {
     setActiveList(type)
     setListAddresses([])
     setLoadingList(true)
+    const reqId = ++listReqRef.current
     try {
       const param = type === 'following' ? 'list=1' : 'followers=1'
       const res = await fetch(`/api/follow/${address}?${param}`)
       const d = await res.json()
+      if (reqId !== listReqRef.current) return
       setListAddresses(Array.isArray(d.addresses) ? d.addresses : [])
     } catch {
-      setListAddresses([])
+      if (reqId === listReqRef.current) setListAddresses([])
     } finally {
-      setLoadingList(false)
+      if (reqId === listReqRef.current) setLoadingList(false)
     }
   }
 
