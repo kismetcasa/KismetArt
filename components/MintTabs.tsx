@@ -22,7 +22,7 @@ export function MintTabs() {
           onClick={() => setTab('mint')}
           className={`px-4 py-2 text-xs font-mono tracking-wider uppercase transition-colors border-b-2 -mb-px ${
             tab === 'mint'
-              ? 'border-[#8B5CF6] accent-grad'
+              ? 'border-[#efefef] text-[#efefef]'
               : 'border-transparent text-[#888] hover:text-[#efefef]'
           }`}
         >
@@ -32,7 +32,7 @@ export function MintTabs() {
           onClick={() => setTab('create')}
           className={`px-4 py-2 text-xs font-mono tracking-wider uppercase transition-colors border-b-2 -mb-px ${
             tab === 'create'
-              ? 'border-[#8B5CF6] accent-grad'
+              ? 'border-[#efefef] text-[#efefef]'
               : 'border-transparent text-[#888] hover:text-[#efefef]'
           }`}
         >
