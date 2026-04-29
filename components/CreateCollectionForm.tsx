@@ -285,7 +285,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
       {/* Collection name */}
       <div>
         <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
-          Collection Name <span className="accent-grad">*</span>
+          Collection Name <span className="text-[#efefef]">*</span>
         </label>
         <input
           type="text"

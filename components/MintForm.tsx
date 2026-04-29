@@ -275,7 +275,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
       {/* Title */}
       <div>
         <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
-          Title <span className="accent-grad">*</span>
+          Title <span className="text-[#efefef]">*</span>
         </label>
         <input
           type="text"
