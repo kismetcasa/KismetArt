@@ -25,7 +25,7 @@ export function Nav() {
 
   return (
     <>
-      <header className="fixed top-0 left-0 right-0 z-50 border-b border-[#e5e5e5] bg-white/90 backdrop-blur-sm">
+      <header className="fixed top-0 left-0 right-0 z-50 border-b border-[#2a2a2a] bg-[#0d0d0d]/90 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-8">
             <Link href="/" className="text-sm font-mono tracking-widest uppercase accent-grad">
@@ -35,7 +35,7 @@ export function Nav() {
               <Link
                 href="/"
                 className={`px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
-                  pathname === '/' ? 'text-black' : 'text-[#888] hover:text-black'
+                  pathname === '/' ? 'text-[#888] font-bold' : 'text-[#888] hover:text-[#efefef]'
                 }`}
               >
                 Discover
@@ -43,14 +43,14 @@ export function Nav() {
               <Link
                 href="/mint"
                 className={`px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
-                  pathname === '/mint' ? 'text-black' : 'text-[#888] hover:text-black'
+                  pathname === '/mint' ? 'text-[#888] font-bold' : 'text-[#888] hover:text-[#efefef]'
                 }`}
               >
                 Mint
               </Link>
               <button
                 onClick={() => setSearchOpen(true)}
-                className="px-3 py-1.5 text-[#888] hover:text-black transition-colors"
+                className="px-3 py-1.5 text-[#888] hover:text-[#efefef] transition-colors"
                 title="Search"
               >
                 <Search size={14} />
@@ -62,7 +62,7 @@ export function Nav() {
             {/* Search icon on mobile */}
             <button
               onClick={() => setSearchOpen(true)}
-              className="sm:hidden text-[#888] hover:text-black transition-colors p-1"
+              className="sm:hidden text-[#888] hover:text-[#efefef] transition-colors p-1"
             >
               <Search size={18} />
             </button>
