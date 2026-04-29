@@ -27,7 +27,7 @@ export function WalletButton() {
                   fontWeight: 600,
                   color: 'black',
                   padding: '7px 18px',
-                  border: 'none',
+                  border: '1.5px solid black',
                   cursor: 'pointer',
                   whiteSpace: 'nowrap',
                   letterSpacing: '0.05em',
