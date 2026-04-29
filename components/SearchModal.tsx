@@ -16,14 +16,15 @@ interface SearchResults {
 
 interface SearchModalProps {
   onClose: () => void
+  initialQuery?: string
 }
 
 function shortAddr(address: string) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`
 }
 
-export function SearchModal({ onClose }: SearchModalProps) {
-  const [query, setQuery] = useState('')
+export function SearchModal({ onClose, initialQuery = '' }: SearchModalProps) {
+  const [query, setQuery] = useState(initialQuery)
   const [results, setResults] = useState<SearchResults | null>(null)
   const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)

@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 import { Search } from 'lucide-react'
 import { WalletButton } from './WalletButton'
 import { ProfileAvatar } from './ProfileAvatar'
+import { SearchBar } from './SearchBar'
 import { SearchModal } from './SearchModal'
 
 export function Nav() {
@@ -15,6 +16,7 @@ export function Nav() {
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined)
   const [displayName, setDisplayName] = useState<string | undefined>(undefined)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [modalQuery, setModalQuery] = useState('')
 
   useEffect(() => {
     if (!address) { setAvatarUrl(undefined); setDisplayName(undefined); return }
@@ -52,20 +54,14 @@ export function Nav() {
               >
                 Mint
               </Link>
-              <button
-                onClick={() => setSearchOpen(true)}
-                className="px-3 py-1.5 text-[#888] hover:text-[#efefef] transition-colors"
-                title="Search"
-              >
-                <Search size={14} />
-              </button>
+              <SearchBar onOpenModal={(q) => { setModalQuery(q); setSearchOpen(true) }} />
             </nav>
           </div>
 
           <div className="flex items-center gap-3">
             {/* Search icon on mobile */}
             <button
-              onClick={() => setSearchOpen(true)}
+              onClick={() => { setModalQuery(''); setSearchOpen(true) }}
               className="sm:hidden text-[#888] hover:text-[#efefef] transition-colors p-1"
             >
               <Search size={18} />
@@ -80,7 +76,7 @@ export function Nav() {
         </div>
       </header>
 
-      {searchOpen && <SearchModal onClose={() => setSearchOpen(false)} />}
+      {searchOpen && <SearchModal onClose={() => { setSearchOpen(false); setModalQuery('') }} initialQuery={modalQuery} />}
     </>
   )
 }
