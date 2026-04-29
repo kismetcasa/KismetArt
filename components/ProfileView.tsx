@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useAccount, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
-import { Pencil, ChevronRight } from 'lucide-react'
+import { Pencil, ChevronRight, Copy, Check } from 'lucide-react'
 import { ProfileAvatar } from './ProfileAvatar'
 import { MomentCard } from './MomentCard'
 import { MarketCard } from './MarketCard'
@@ -76,6 +76,7 @@ export function ProfileView({ address }: ProfileViewProps) {
   const [saving, setSaving] = useState(false)
   const [following, setFollowing] = useState(false)
   const [followLoading, setFollowLoading] = useState(false)
+  const [addrCopied, setAddrCopied] = useState(false)
 
   const [followingCount, setFollowingCount] = useState<number | null>(null)
   const [followerCount, setFollowerCount] = useState<number | null>(null)
@@ -293,7 +294,7 @@ export function ProfileView({ address }: ProfileViewProps) {
       ? <p className="text-[#555] font-mono text-xs">no mints yet</p>
       : <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">{moments.map((m) => <MomentCard key={m.id} moment={m} />)}</div>,
     collected: loadingCollected ? skeleton(6) : collected.length === 0
-      ? <p className="text-[#555] font-mono text-xs">no collects yet</p>
+      ? <p className="text-[#555] font-mono text-xs">none collected yet</p>
       : <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">{collected.map((m) => <MomentCard key={m.id} moment={m} />)}</div>,
     listings: loadingListings ? skeleton(3) : listings.length === 0
       ? <p className="text-[#555] font-mono text-xs">no active listings</p>
@@ -343,7 +344,20 @@ export function ProfileView({ address }: ProfileViewProps) {
                 </button>
               )}
             </div>
-            <p className="text-[#555] font-mono text-xs break-all">{address}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="text-[#555] font-mono text-xs break-all">{address}</p>
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(address).catch(() => {})
+                  setAddrCopied(true)
+                  setTimeout(() => setAddrCopied(false), 1500)
+                }}
+                className="text-[#444] hover:text-[#888] transition-colors flex-shrink-0"
+                title="Copy address"
+              >
+                {addrCopied ? <Check size={11} className="text-[#6ee7b7]" /> : <Copy size={11} />}
+              </button>
+            </div>
             <div className="flex items-center gap-3 mt-0.5">
               <button
                 onClick={() => openList('following')}

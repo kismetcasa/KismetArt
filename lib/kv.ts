@@ -58,7 +58,7 @@ export async function searchCollections(query: string): Promise<CollectionMeta[]
     const meta: CollectionMeta = typeof raw === 'string' ? JSON.parse(raw) : raw
     if (meta.name.toLowerCase().includes(q) || address.startsWith(q)) {
       results.push(meta)
-      if (results.length >= 5) break
+      if (results.length >= 20) break
     }
   }
   return results

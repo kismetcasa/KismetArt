@@ -61,7 +61,7 @@ export async function searchProfiles(query: string): Promise<Profile[]> {
         if (!raw) continue
         const p: Profile = typeof raw === 'string' ? JSON.parse(raw) : raw
         results.push(p)
-        if (results.length >= 5) break
+        if (results.length >= 20) break
       }
     }
     // If querying a full address and not already found, do a direct lookup
@@ -78,7 +78,7 @@ export async function searchProfiles(query: string): Promise<Profile[]> {
       const p: Profile = typeof raw === 'string' ? JSON.parse(raw) : raw
       if ((p.username ?? '').toLowerCase().includes(q)) {
         results.push(p)
-        if (results.length >= 5) break
+        if (results.length >= 20) break
       }
     }
   }

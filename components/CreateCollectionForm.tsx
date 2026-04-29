@@ -409,7 +409,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
           ? 'connect wallet to deploy'
           : isBusy
           ? stepLabel(step, uploadProgress)
-          : 'deploy collection'}
+          : 'create'}
       </button>
     </form>
   )
