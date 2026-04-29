@@ -21,11 +21,11 @@ export function MobileNav() {
             key={href}
             href={href}
             className={`flex-1 flex flex-col items-center justify-center gap-0.5 transition-colors ${
-              active ? 'text-[#8B5CF6]' : 'text-[#555] hover:text-[#888]'
+              active ? 'text-[#888]' : 'text-[#555] hover:text-[#888]'
             }`}
           >
             <Icon size={18} />
-            <span className="text-[9px] font-mono uppercase tracking-wider">{label}</span>
+            <span className={`text-[9px] font-mono uppercase tracking-wider ${active ? 'font-bold' : ''}`}>{label}</span>
           </Link>
         )
       })}
