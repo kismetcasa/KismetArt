@@ -27,7 +27,7 @@ async function fetchCollectionMoments(collection: string): Promise<Moment[]> {
   }
 }
 
-const MAX_SEARCH_COLLECTIONS = 10
+const MAX_SEARCH_COLLECTIONS = 25
 
 export async function searchMoments(query: string): Promise<MomentSearchResult[]> {
   const allCollections = await getTrackedCollections()
@@ -37,7 +37,7 @@ export async function searchMoments(query: string): Promise<MomentSearchResult[]
   const seen = new Set<string>()
   const results: MomentSearchResult[] = []
   for (const moment of all.flat()) {
-    if (results.length >= 5) break
+    if (results.length >= 20) break
     const key = `${moment.address}:${moment.token_id}`
     if (seen.has(key)) continue
     seen.add(key)
