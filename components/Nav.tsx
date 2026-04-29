@@ -35,7 +35,7 @@ export function Nav() {
               <Link
                 href="/"
                 className={`px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
-                  pathname === '/' ? 'text-[#efefef] font-bold' : 'text-[#888] hover:text-[#efefef]'
+                  pathname === '/' ? 'text-[#888] font-bold' : 'text-[#888] hover:text-[#efefef]'
                 }`}
               >
                 Discover
@@ -43,7 +43,7 @@ export function Nav() {
               <Link
                 href="/mint"
                 className={`px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
-                  pathname === '/mint' ? 'text-[#efefef] font-bold' : 'text-[#888] hover:text-[#efefef]'
+                  pathname === '/mint' ? 'text-[#888] font-bold' : 'text-[#888] hover:text-[#efefef]'
                 }`}
               >
                 Mint
