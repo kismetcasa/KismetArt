@@ -3,10 +3,12 @@
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import { Star } from 'lucide-react'
+import { useAccount, useReadContract } from 'wagmi'
 import { CollectButton } from './CollectButton'
 import { ListButton } from './ListButton'
 import { resolveUri, formatPrice, shortAddress, type Moment, type MomentDetail } from '@/lib/inprocess'
 import { useAdmin } from '@/contexts/AdminContext'
+import { ERC1155_ABI } from '@/lib/seaport'
 
 interface MomentCardProps {
   moment: Moment
@@ -16,6 +18,15 @@ export function MomentCard({ moment }: MomentCardProps) {
   const [imgError, setImgError] = useState(false)
   const [price, setPrice] = useState<string | null>(null)
   const { isAdmin, featuredKeys, toggleFeatured } = useAdmin()
+  const { address: connectedAddress } = useAccount()
+  const { data: ownedBalance } = useReadContract({
+    address: moment.address as `0x${string}`,
+    abi: ERC1155_ABI,
+    functionName: 'balanceOf',
+    args: connectedAddress ? [connectedAddress, BigInt(moment.token_id)] : undefined,
+    query: { enabled: !!connectedAddress },
+  })
+  const owned = ownedBalance ? Number(ownedBalance) : 0
 
   const meta = moment.metadata ?? {}
   const isFeatured = featuredKeys.has(`${moment.address.toLowerCase()}:${moment.token_id}`)
@@ -45,6 +56,11 @@ export function MomentCard({ moment }: MomentCardProps) {
     <article className="group flex flex-col bg-[#161616] border border-[#2a2a2a] overflow-hidden">
       {/* Media */}
       <div className="relative aspect-square bg-[#111] overflow-hidden">
+        {owned > 0 && (
+          <span className="absolute top-2 left-2 z-10 px-1.5 py-0.5 bg-[#0d0d0d]/80 border border-[#2a2a2a] text-[#efefef] font-mono text-[10px] leading-tight">
+            ×{owned}
+          </span>
+        )}
         {isAdmin && (
           <button
             onClick={(e) => {
