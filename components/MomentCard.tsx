@@ -10,6 +10,24 @@ import { resolveUri, formatPrice, shortAddress, type Moment, type MomentDetail }
 import { useAdmin } from '@/contexts/AdminContext'
 import { ERC1155_ABI } from '@/lib/seaport'
 
+// Module-level cache — deduplicates profile fetches across all mounted cards
+const profileCache = new Map<string, { name: string; ts: number }>()
+const CACHE_TTL = 5 * 60 * 1000
+
+async function fetchCreatorName(address: string): Promise<string> {
+  const cached = profileCache.get(address)
+  if (cached && Date.now() - cached.ts < CACHE_TTL) return cached.name
+  try {
+    const res = await fetch(`/api/profile/${address}`)
+    const d = await res.json()
+    const name: string = d.profile?.username || shortAddress(address)
+    profileCache.set(address, { name, ts: Date.now() })
+    return name
+  } catch {
+    return shortAddress(address)
+  }
+}
+
 interface MomentCardProps {
   moment: Moment
 }
@@ -17,6 +35,11 @@ interface MomentCardProps {
 export function MomentCard({ moment }: MomentCardProps) {
   const [imgError, setImgError] = useState(false)
   const [price, setPrice] = useState<string | null>(null)
+  const [creatorName, setCreatorName] = useState(() => shortAddress(moment.creator.address))
+
+  useEffect(() => {
+    fetchCreatorName(moment.creator.address).then(setCreatorName)
+  }, [moment.creator.address])
   const { isAdmin, featuredKeys, toggleFeatured } = useAdmin()
   const { address: connectedAddress } = useAccount()
   const { data: ownedBalance } = useReadContract({
@@ -123,7 +146,7 @@ export function MomentCard({ moment }: MomentCardProps) {
               className="text-xs text-[#555] font-mono hover:text-[#888] transition-colors"
               title={moment.creator.address}
             >
-              {shortAddress(moment.creator.address)}
+              {creatorName}
             </a>
             {price !== null && (
               <span className="text-xs font-mono accent-grad">{price}</span>
