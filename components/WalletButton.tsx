@@ -2,7 +2,11 @@
 
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 
-export function WalletButton() {
+interface WalletButtonProps {
+  displayName?: string
+}
+
+export function WalletButton({ displayName }: WalletButtonProps = {}) {
   return (
     <ConnectButton.Custom>
       {({ account, chain, openAccountModal, openConnectModal, mounted }) => {
@@ -51,7 +55,7 @@ export function WalletButton() {
                   letterSpacing: '0.05em',
                 }}
               >
-                {account.displayName}
+                {displayName ?? account.displayName}
               </button>
             )}
           </div>
