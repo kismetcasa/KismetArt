@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useAccount, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
-import { Pencil, ChevronRight, GripVertical } from 'lucide-react'
+import { Pencil, ChevronRight } from 'lucide-react'
 import { ProfileAvatar } from './ProfileAvatar'
 import { MomentCard } from './MomentCard'
 import { MarketCard } from './MarketCard'
@@ -86,6 +86,7 @@ export function ProfileView({ address }: ProfileViewProps) {
   // Section state — hydrated from localStorage after mount
   const [sectionOrder, setSectionOrder] = useState<SectionId[]>(DEFAULT_ORDER)
   const [sectionCollapsed, setSectionCollapsed] = useState<Partial<Record<SectionId, boolean>>>({})
+  const [draggingSection, setDraggingSection] = useState<SectionId | null>(null)
   const dragIdx = useRef<number | null>(null)
 
   useEffect(() => {
@@ -160,11 +161,19 @@ export function ProfileView({ address }: ProfileViewProps) {
     try { localStorage.setItem(SECTIONS_KEY, JSON.stringify({ order, collapsed })) } catch {}
   }
 
-  function onDragStart(idx: number) { dragIdx.current = idx }
+  function onDragStart(idx: number) {
+    dragIdx.current = idx
+    setDraggingSection(sectionOrder[idx])
+  }
 
   function onDragOver(e: React.DragEvent, idx: number) {
     e.preventDefault()
     if (dragIdx.current === null || dragIdx.current === idx) return
+    // Only swap once the cursor crosses the midpoint of the target section
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const mid = rect.top + rect.height / 2
+    if (dragIdx.current < idx && e.clientY < mid) return
+    if (dragIdx.current > idx && e.clientY > mid) return
     const next = [...sectionOrder]
     const [moved] = next.splice(dragIdx.current, 1)
     next.splice(idx, 0, moved)
@@ -173,7 +182,10 @@ export function ProfileView({ address }: ProfileViewProps) {
     persistSections(next, sectionCollapsed)
   }
 
-  function onDragEnd() { dragIdx.current = null }
+  function onDragEnd() {
+    dragIdx.current = null
+    setDraggingSection(null)
+  }
 
   function toggleCollapsed(section: SectionId) {
     const next = { ...sectionCollapsed, [section]: !sectionCollapsed[section] }
@@ -426,25 +438,22 @@ export function ProfileView({ address }: ProfileViewProps) {
             <div
               key={section}
               onDragOver={(e) => onDragOver(e, idx)}
-              className="border-t border-[#2a2a2a]"
+              className={`border-t border-[#2a2a2a] transition-opacity duration-150 ${draggingSection === section ? 'opacity-40' : 'opacity-100'}`}
             >
               <div
                 draggable
                 onDragStart={() => onDragStart(idx)}
                 onDragEnd={onDragEnd}
                 onClick={() => toggleCollapsed(section)}
-                className="flex items-center justify-between py-4 cursor-grab active:cursor-grabbing select-none"
+                className="flex items-center gap-2 py-4 cursor-grab active:cursor-grabbing select-none"
               >
-                <div className="flex items-center gap-2">
-                  <ChevronRight
-                    size={12}
-                    className={`text-[#555] transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}`}
-                  />
-                  <h2 className="text-xs font-mono text-[#888] uppercase tracking-wider">
-                    {sectionLabel[section]}{count !== null ? ` (${count})` : ''}
-                  </h2>
-                </div>
-                <GripVertical size={12} className="text-[#333]" />
+                <ChevronRight
+                  size={12}
+                  className={`text-[#555] transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}`}
+                />
+                <h2 className="text-xs font-mono text-[#888] uppercase tracking-wider">
+                  {sectionLabel[section]}{count !== null ? ` (${count})` : ''}
+                </h2>
               </div>
               {!isCollapsed && (
                 <div className="pb-8">
