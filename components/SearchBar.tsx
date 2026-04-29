@@ -103,7 +103,7 @@ export function SearchBar({ onOpenModal }: SearchBarProps) {
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="search…"
+            placeholder=""
             className="w-64 bg-white text-[#111] font-mono text-xs rounded-full px-4 py-1.5 focus:outline-none placeholder-[#999]"
           />
           {loading && (

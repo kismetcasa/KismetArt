@@ -146,7 +146,7 @@ export function MomentCard({ moment }: MomentCardProps) {
               className="text-xs text-[#555] font-mono hover:text-[#888] transition-colors"
               title={moment.creator.address}
             >
-              {creatorName}
+              by {creatorName}
             </a>
             {price !== null && (
               <span className="text-xs font-mono accent-grad">{price}</span>
