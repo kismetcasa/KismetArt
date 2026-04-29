@@ -30,6 +30,7 @@ export async function GET(req: NextRequest) {
   const page = parseInt(searchParams.get('page') ?? '1') || 1
   const limit = parseInt(searchParams.get('limit') ?? '20') || 20
   const creator = searchParams.get('creator')?.toLowerCase() ?? undefined
+  const collector = searchParams.get('collector')?.toLowerCase() ?? undefined
   const sort = searchParams.get('sort') // 'trending' | null
   const featured = searchParams.get('featured') === '1'
   // Comma-separated addresses to prioritise in the feed (following mode)
@@ -60,6 +61,16 @@ export async function GET(req: NextRequest) {
     merged = merged.filter((m: unknown) => {
       const moment = m as { creator?: { address?: string } }
       return moment.creator?.address?.toLowerCase() === creator
+    })
+  }
+
+  // Collector filter — returns only moments this address has collected through the app
+  if (collector) {
+    const pairs = (await redis.zrange(`kismetart:collected:${collector}`, 0, -1, { rev: true })) as string[]
+    const collectedSet = new Set(pairs)
+    merged = merged.filter((m: unknown) => {
+      const moment = m as { address?: string; token_id?: string }
+      return collectedSet.has(`${moment.address?.toLowerCase()}:${moment.token_id}`)
     })
   }
 

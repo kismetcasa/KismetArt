@@ -5,13 +5,43 @@ import Link from 'next/link'
 import { useAccount, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
-import { Pencil } from 'lucide-react'
+import { Pencil, ChevronRight, GripVertical } from 'lucide-react'
 import { ProfileAvatar } from './ProfileAvatar'
 import { MomentCard } from './MomentCard'
 import { MarketCard } from './MarketCard'
 import type { Listing } from '@/lib/listings'
 import type { Moment } from '@/lib/inprocess'
 import { shortAddress } from '@/lib/inprocess'
+
+// ─── section ordering / collapse ─────────────────────────────────────────────
+
+type SectionId = 'mints' | 'collected' | 'listings'
+
+const DEFAULT_ORDER: SectionId[] = ['mints', 'collected', 'listings']
+const SECTIONS_KEY = 'kismetart:profile-sections'
+
+interface SectionsConfig {
+  order: SectionId[]
+  collapsed: Partial<Record<SectionId, boolean>>
+}
+
+function loadSectionsConfig(): SectionsConfig {
+  if (typeof window === 'undefined') return { order: DEFAULT_ORDER, collapsed: {} }
+  try {
+    const raw = localStorage.getItem(SECTIONS_KEY)
+    if (!raw) return { order: DEFAULT_ORDER, collapsed: {} }
+    const parsed = JSON.parse(raw) as SectionsConfig
+    const validOrder =
+      Array.isArray(parsed.order) &&
+      parsed.order.length === DEFAULT_ORDER.length &&
+      DEFAULT_ORDER.every((s) => parsed.order.includes(s))
+    return { order: validOrder ? parsed.order : DEFAULT_ORDER, collapsed: parsed.collapsed ?? {} }
+  } catch {
+    return { order: DEFAULT_ORDER, collapsed: {} }
+  }
+}
+
+// ─── component ───────────────────────────────────────────────────────────────
 
 interface ProfileViewProps {
   address: string
@@ -33,9 +63,11 @@ export function ProfileView({ address }: ProfileViewProps) {
 
   const [profile, setProfile] = useState<Profile | null>(null)
   const [moments, setMoments] = useState<Moment[]>([])
+  const [collected, setCollected] = useState<Moment[]>([])
   const [listings, setListings] = useState<Listing[]>([])
   const [loadingProfile, setLoadingProfile] = useState(true)
   const [loadingMoments, setLoadingMoments] = useState(true)
+  const [loadingCollected, setLoadingCollected] = useState(true)
   const [loadingListings, setLoadingListings] = useState(true)
   const [editing, setEditing] = useState(false)
   const [usernameInput, setUsernameInput] = useState('')
@@ -51,7 +83,18 @@ export function ProfileView({ address }: ProfileViewProps) {
   const [loadingList, setLoadingList] = useState(false)
   const listReqRef = useRef(0)
 
-  // Reset list panel when navigating between profiles
+  // Section state — hydrated from localStorage after mount
+  const [sectionOrder, setSectionOrder] = useState<SectionId[]>(DEFAULT_ORDER)
+  const [sectionCollapsed, setSectionCollapsed] = useState<Partial<Record<SectionId, boolean>>>({})
+  const dragIdx = useRef<number | null>(null)
+
+  useEffect(() => {
+    const config = loadSectionsConfig()
+    setSectionOrder(config.order)
+    setSectionCollapsed(config.collapsed)
+  }, [])
+
+  // Reset list panel on profile navigation
   useEffect(() => {
     setActiveList(null)
     setListAddresses([])
@@ -96,12 +139,49 @@ export function ProfileView({ address }: ProfileViewProps) {
   }, [address])
 
   useEffect(() => {
+    fetch(`/api/timeline?collector=${address}&limit=50`)
+      .then((r) => r.json())
+      .then((d) => setCollected(Array.isArray(d.moments) ? d.moments : []))
+      .catch(() => setCollected([]))
+      .finally(() => setLoadingCollected(false))
+  }, [address])
+
+  useEffect(() => {
     fetch(`/api/listings?seller=${address}&limit=50`)
       .then((r) => r.json())
       .then((d) => setListings(Array.isArray(d.listings) ? d.listings.filter((l: Listing) => l.status === 'active') : []))
       .catch(() => setListings([]))
       .finally(() => setLoadingListings(false))
   }, [address])
+
+  // ─── section drag / collapse ──────────────────────────────────────────────
+
+  function persistSections(order: SectionId[], collapsed: Partial<Record<SectionId, boolean>>) {
+    try { localStorage.setItem(SECTIONS_KEY, JSON.stringify({ order, collapsed })) } catch {}
+  }
+
+  function onDragStart(idx: number) { dragIdx.current = idx }
+
+  function onDragOver(e: React.DragEvent, idx: number) {
+    e.preventDefault()
+    if (dragIdx.current === null || dragIdx.current === idx) return
+    const next = [...sectionOrder]
+    const [moved] = next.splice(dragIdx.current, 1)
+    next.splice(idx, 0, moved)
+    dragIdx.current = idx
+    setSectionOrder(next)
+    persistSections(next, sectionCollapsed)
+  }
+
+  function onDragEnd() { dragIdx.current = null }
+
+  function toggleCollapsed(section: SectionId) {
+    const next = { ...sectionCollapsed, [section]: !sectionCollapsed[section] }
+    setSectionCollapsed(next)
+    persistSections(sectionOrder, next)
+  }
+
+  // ─── follow / list helpers ────────────────────────────────────────────────
 
   async function openList(type: 'following' | 'followers') {
     if (activeList === type) { setActiveList(null); return }
@@ -129,41 +209,25 @@ export function ProfileView({ address }: ProfileViewProps) {
   }
 
   async function saveProfile() {
-    if (!isOwner) return
-    if (!connectedAddress) { openConnectModal?.(); return }
-
+    if (!isOwner || !connectedAddress) { openConnectModal?.(); return }
     setSaving(true)
     try {
       const nonceRes = await fetch(`/api/profile/${address}/nonce`)
       const { nonce } = await nonceRes.json()
-
       const message = `Update Kismet Art profile\nAddress: ${address.toLowerCase()}\nNonce: ${nonce}`
       const signature = await signMessageAsync({ message })
-
       const res = await fetch(`/api/profile/${address}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username: usernameInput.trim() || undefined,
-          avatarUrl: avatarInput.trim() || undefined,
-          signature,
-          nonce,
-        }),
+        body: JSON.stringify({ username: usernameInput.trim() || undefined, avatarUrl: avatarInput.trim() || undefined, signature, nonce }),
       })
-
-      if (!res.ok) {
-        const d = await res.json()
-        throw new Error(d.error ?? 'Failed to save')
-      }
-
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? 'Failed to save') }
       const { profile: updated } = await res.json()
       setProfile(updated)
       setEditing(false)
       toast.success('Profile updated')
     } catch (err) {
-      toast.error('Failed to update profile', {
-        description: err instanceof Error ? err.message : 'Unknown error',
-      })
+      toast.error('Failed to update profile', { description: err instanceof Error ? err.message : 'Unknown error' })
     } finally {
       setSaving(false)
     }
@@ -183,10 +247,7 @@ export function ProfileView({ address }: ProfileViewProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ follower: connectedAddress, signature, nonce }),
       })
-      if (!res.ok) {
-        const d = await res.json()
-        throw new Error(d.error ?? 'Failed')
-      }
+      if (!res.ok) { const d = await res.json(); throw new Error(d.error ?? 'Failed') }
       const wasFollowing = following
       setFollowing(!wasFollowing)
       setFollowerCount((c) => c === null ? null : wasFollowing ? c - 1 : c + 1)
@@ -198,6 +259,36 @@ export function ProfileView({ address }: ProfileViewProps) {
     }
   }
 
+  // ─── section content map ──────────────────────────────────────────────────
+
+  const skeleton = (n: number) => (
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+      {Array.from({ length: n }).map((_, i) => (
+        <div key={i} className="aspect-square bg-[#111] animate-pulse border border-[#1a1a1a]" />
+      ))}
+    </div>
+  )
+
+  const sectionLabel: Record<SectionId, string> = { mints: 'Mints', collected: 'Collected', listings: 'Active Listings' }
+  const sectionCount: Record<SectionId, number | null> = {
+    mints: loadingMoments ? null : moments.length,
+    collected: loadingCollected ? null : collected.length,
+    listings: loadingListings ? null : listings.length,
+  }
+  const sectionContent: Record<SectionId, React.ReactNode> = {
+    mints: loadingMoments ? skeleton(6) : moments.length === 0
+      ? <p className="text-[#555] font-mono text-xs">no mints yet</p>
+      : <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">{moments.map((m) => <MomentCard key={m.id} moment={m} />)}</div>,
+    collected: loadingCollected ? skeleton(6) : collected.length === 0
+      ? <p className="text-[#555] font-mono text-xs">no collects yet</p>
+      : <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">{collected.map((m) => <MomentCard key={m.id} moment={m} />)}</div>,
+    listings: loadingListings ? skeleton(3) : listings.length === 0
+      ? <p className="text-[#555] font-mono text-xs">no active listings</p>
+      : <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">{listings.map((l) => <MarketCard key={l.id} listing={l} onRemove={() => setListings((prev) => prev.filter((x) => x.id !== l.id))} />)}</div>,
+  }
+
+  // ─── render ───────────────────────────────────────────────────────────────
+
   const shortAddr = `${address.slice(0, 6)}…${address.slice(-4)}`
   const displayName = profile?.username || shortAddr
 
@@ -208,13 +299,7 @@ export function ProfileView({ address }: ProfileViewProps) {
         <div className="flex items-center gap-6">
           <div className="relative">
             {!loadingProfile ? (
-              <ProfileAvatar
-                address={address}
-                avatarUrl={profile?.avatarUrl}
-                size={80}
-                editable={isOwner}
-                onEdit={openEdit}
-              />
+              <ProfileAvatar address={address} avatarUrl={profile?.avatarUrl} size={80} editable={isOwner} onEdit={openEdit} />
             ) : (
               <div className="w-20 h-20 rounded-full bg-[#1a1a1a] animate-pulse" />
             )}
@@ -227,11 +312,7 @@ export function ProfileView({ address }: ProfileViewProps) {
                 <p className="text-[#efefef] font-mono text-sm">{displayName}</p>
               )}
               {isOwner && !loadingProfile && (
-                <button
-                  onClick={openEdit}
-                  className="text-[#555] hover:text-[#888] transition-colors"
-                  title="Edit profile"
-                >
+                <button onClick={openEdit} className="text-[#555] hover:text-[#888] transition-colors" title="Edit profile">
                   <Pencil size={12} />
                 </button>
               )}
@@ -250,26 +331,19 @@ export function ProfileView({ address }: ProfileViewProps) {
               )}
             </div>
             <p className="text-[#555] font-mono text-xs break-all">{address}</p>
-            {/* Following / follower counts */}
             <div className="flex items-center gap-3 mt-0.5">
               <button
                 onClick={() => openList('following')}
-                className={`text-xs font-mono transition-colors ${
-                  activeList === 'following' ? 'text-[#efefef]' : 'text-[#555] hover:text-[#888]'
-                }`}
+                className={`text-xs font-mono transition-colors ${activeList === 'following' ? 'text-[#efefef]' : 'text-[#555] hover:text-[#888]'}`}
               >
-                <span className="text-[#efefef]">{followingCount ?? '—'}</span>
-                {' '}following
+                <span className="text-[#efefef]">{followingCount ?? '—'}</span>{' '}following
               </button>
               <span className="text-[#333] text-xs">·</span>
               <button
                 onClick={() => openList('followers')}
-                className={`text-xs font-mono transition-colors ${
-                  activeList === 'followers' ? 'text-[#efefef]' : 'text-[#555] hover:text-[#888]'
-                }`}
+                className={`text-xs font-mono transition-colors ${activeList === 'followers' ? 'text-[#efefef]' : 'text-[#555] hover:text-[#888]'}`}
               >
-                <span className="text-[#efefef]">{followerCount ?? '—'}</span>
-                {' '}followers
+                <span className="text-[#efefef]">{followerCount ?? '—'}</span>{' '}followers
               </button>
             </div>
           </div>
@@ -292,15 +366,9 @@ export function ProfileView({ address }: ProfileViewProps) {
             ) : (
               <div className="flex flex-col">
                 {listAddresses.map((addr) => (
-                  <Link
-                    key={addr}
-                    href={`/profile/${addr}`}
-                    className="flex items-center gap-3 py-1.5 group"
-                  >
+                  <Link key={addr} href={`/profile/${addr}`} className="flex items-center gap-3 py-1.5 group">
                     <ProfileAvatar address={addr} size={28} clickable />
-                    <span className="text-xs font-mono text-[#555] group-hover:text-[#888] transition-colors">
-                      {shortAddress(addr)}
-                    </span>
+                    <span className="text-xs font-mono text-[#555] group-hover:text-[#888] transition-colors">{shortAddress(addr)}</span>
                   </Link>
                 ))}
               </div>
@@ -335,11 +403,7 @@ export function ProfileView({ address }: ProfileViewProps) {
             />
           </div>
           <div className="flex gap-3">
-            <button
-              onClick={saveProfile}
-              disabled={saving}
-              className="px-4 py-2.5 text-xs font-mono btn-accent"
-            >
+            <button onClick={saveProfile} disabled={saving} className="px-4 py-2.5 text-xs font-mono btn-accent">
               {saving ? 'saving…' : 'save'}
             </button>
             <button
@@ -353,53 +417,44 @@ export function ProfileView({ address }: ProfileViewProps) {
         </div>
       )}
 
-      {/* Mints */}
-      <section className="flex flex-col gap-4">
-        <h2 className="text-xs font-mono text-[#888] uppercase tracking-wider">
-          Mints {!loadingMoments && `(${moments.length})`}
-        </h2>
-        {loadingMoments ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="aspect-square bg-[#111] animate-pulse border border-[#1a1a1a]" />
-            ))}
-          </div>
-        ) : moments.length === 0 ? (
-          <p className="text-[#555] font-mono text-xs">no mints yet</p>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            {moments.map((m) => (
-              <MomentCard key={m.id} moment={m} />
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* Listings */}
-      <section className="flex flex-col gap-4">
-        <h2 className="text-xs font-mono text-[#888] uppercase tracking-wider">
-          Active Listings {!loadingListings && `(${listings.length})`}
-        </h2>
-        {loadingListings ? (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            {Array.from({ length: 3 }).map((_, i) => (
-              <div key={i} className="aspect-square bg-[#111] animate-pulse border border-[#1a1a1a]" />
-            ))}
-          </div>
-        ) : listings.length === 0 ? (
-          <p className="text-[#555] font-mono text-xs">no active listings</p>
-        ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-            {listings.map((l) => (
-              <MarketCard
-                key={l.id}
-                listing={l}
-                onRemove={() => setListings((prev) => prev.filter((x) => x.id !== l.id))}
-              />
-            ))}
-          </div>
-        )}
-      </section>
+      {/* Draggable / collapsible sections */}
+      <div className="flex flex-col">
+        {sectionOrder.map((section, idx) => {
+          const isCollapsed = sectionCollapsed[section] ?? false
+          const count = sectionCount[section]
+          return (
+            <div
+              key={section}
+              onDragOver={(e) => onDragOver(e, idx)}
+              className="border-t border-[#2a2a2a]"
+            >
+              <div
+                draggable
+                onDragStart={() => onDragStart(idx)}
+                onDragEnd={onDragEnd}
+                onClick={() => toggleCollapsed(section)}
+                className="flex items-center justify-between py-4 cursor-grab active:cursor-grabbing select-none"
+              >
+                <div className="flex items-center gap-2">
+                  <ChevronRight
+                    size={12}
+                    className={`text-[#555] transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}`}
+                  />
+                  <h2 className="text-xs font-mono text-[#888] uppercase tracking-wider">
+                    {sectionLabel[section]}{count !== null ? ` (${count})` : ''}
+                  </h2>
+                </div>
+                <GripVertical size={12} className="text-[#333]" />
+              </div>
+              {!isCollapsed && (
+                <div className="pb-8">
+                  {sectionContent[section]}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
     </div>
   )
 }
