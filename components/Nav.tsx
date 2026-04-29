@@ -13,13 +13,17 @@ export function Nav() {
   const pathname = usePathname()
   const { address, isConnected } = useAccount()
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined)
+  const [displayName, setDisplayName] = useState<string | undefined>(undefined)
   const [searchOpen, setSearchOpen] = useState(false)
 
   useEffect(() => {
-    if (!address) { setAvatarUrl(undefined); return }
+    if (!address) { setAvatarUrl(undefined); setDisplayName(undefined); return }
     fetch(`/api/profile/${address}`)
       .then((r) => r.json())
-      .then((d) => setAvatarUrl(d.profile?.avatarUrl))
+      .then((d) => {
+        setAvatarUrl(d.profile?.avatarUrl)
+        setDisplayName(d.profile?.username || d.profile?.ensName)
+      })
       .catch(() => {})
   }, [address])
 
@@ -66,7 +70,7 @@ export function Nav() {
             >
               <Search size={18} />
             </button>
-            <WalletButton />
+            <WalletButton displayName={displayName} />
             {isConnected && address && (
               <Link href={`/profile/${address}`} className="flex-shrink-0">
                 <ProfileAvatar address={address} avatarUrl={avatarUrl} size={32} clickable />
