@@ -50,6 +50,7 @@ interface ProfileViewProps {
 interface Profile {
   address: string
   username?: string
+  ensName?: string
   avatarUrl?: string
   updatedAt: number
 }
@@ -302,7 +303,7 @@ export function ProfileView({ address }: ProfileViewProps) {
   // ─── render ───────────────────────────────────────────────────────────────
 
   const shortAddr = `${address.slice(0, 6)}…${address.slice(-4)}`
-  const displayName = profile?.username || shortAddr
+  const displayName = profile?.username || profile?.ensName || shortAddr
 
   return (
     <div className="max-w-4xl mx-auto px-4 py-12 flex flex-col gap-12">

@@ -22,7 +22,7 @@ export function Nav() {
       .then((r) => r.json())
       .then((d) => {
         setAvatarUrl(d.profile?.avatarUrl)
-        setDisplayName(d.profile?.username)
+        setDisplayName(d.profile?.username || d.profile?.ensName)
       })
       .catch(() => {})
   }, [address])

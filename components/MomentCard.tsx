@@ -20,7 +20,7 @@ async function fetchCreatorName(address: string): Promise<string> {
   try {
     const res = await fetch(`/api/profile/${address}`)
     const d = await res.json()
-    const name: string = d.profile?.username || shortAddress(address)
+    const name: string = d.profile?.username || d.profile?.ensName || shortAddress(address)
     profileCache.set(address, { name, ts: Date.now() })
     return name
   } catch {
@@ -36,12 +36,12 @@ export function MomentCard({ moment }: MomentCardProps) {
   const [imgError, setImgError] = useState(false)
   const [price, setPrice] = useState<string | null>(null)
   const [creatorName, setCreatorName] = useState(() => shortAddress(moment.creator.address))
+  const { isAdmin, featuredKeys, toggleFeatured } = useAdmin()
+  const { address: connectedAddress } = useAccount()
 
   useEffect(() => {
     fetchCreatorName(moment.creator.address).then(setCreatorName)
   }, [moment.creator.address])
-  const { isAdmin, featuredKeys, toggleFeatured } = useAdmin()
-  const { address: connectedAddress } = useAccount()
   const { data: ownedBalance } = useReadContract({
     address: moment.address as `0x${string}`,
     abi: ERC1155_ABI,

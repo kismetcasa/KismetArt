@@ -37,7 +37,7 @@ export async function GET(
   const profile = await getProfile(address)
   if (!profile.username) {
     const ensName = await resolveEns(address)
-    if (ensName) return NextResponse.json({ profile: { ...profile, username: ensName } })
+    if (ensName) return NextResponse.json({ profile: { ...profile, ensName } })
   }
   return NextResponse.json({ profile })
 }
