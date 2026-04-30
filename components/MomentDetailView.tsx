@@ -67,9 +67,6 @@ export function MomentDetailView({ address, tokenId }: Props) {
     !!connectedAddress &&
     !!creatorAddress &&
     connectedAddress.toLowerCase() === creatorAddress.toLowerCase()
-  const isAdminOfMoment =
-    !!connectedAddress &&
-    !!detail?.momentAdmins.some((a) => a.toLowerCase() === connectedAddress.toLowerCase())
 
   // Fetch moment detail
   useEffect(() => {
@@ -220,7 +217,7 @@ export function MomentDetailView({ address, tokenId }: Props) {
       </div>
 
       {/* Two-column on desktop, stacked on mobile */}
-      <div className="md:grid md:grid-cols-2 md:items-start">
+      <div className="md:grid md:grid-cols-2 border-b border-[#2a2a2a]">
 
         {/* Left: media — sticky on desktop */}
         <div className="border-b border-[#2a2a2a] md:border-b-0 md:border-r md:border-r-[#2a2a2a] md:sticky md:top-14">
@@ -264,7 +261,7 @@ export function MomentDetailView({ address, tokenId }: Props) {
         </div>
 
         {/* Right: details */}
-        <div className="border-b border-[#2a2a2a]">
+        <div>
 
           {/* Title + creator + description */}
           <div className="px-5 py-4 flex flex-col gap-3">
@@ -343,63 +340,64 @@ export function MomentDetailView({ address, tokenId }: Props) {
             </button>
           </div>
 
-          {/* Actions */}
-          <div className="px-5 py-4 border-t border-[#2a2a2a]">
-            <ListButton
-              collectionAddress={address}
-              tokenId={tokenId}
-              name={meta.name}
-              image={meta.image ? resolveUri(meta.image) : undefined}
-              creatorAddress={creatorAddress}
-            />
-          </div>
+          {/* Actions — only shown when user holds the token */}
+          {alreadyOwned && (
+            <div className="px-5 py-4 border-t border-[#2a2a2a]">
+              <ListButton
+                collectionAddress={address}
+                tokenId={tokenId}
+                name={meta.name}
+                image={meta.image ? resolveUri(meta.image) : undefined}
+                creatorAddress={creatorAddress}
+              />
+            </div>
+          )}
 
-          {/* Admin / creator tools */}
-          {(isAdmin || isAdminOfMoment) && (
-            <div className="px-5 py-4 flex flex-col gap-3 border-t border-[#2a2a2a]">
-              <p className="text-[10px] font-mono text-[#333] uppercase tracking-wider">creator</p>
-              {isAdmin && (
+          {/* Distribute earnings — creator with splits only */}
+          {isCreator && hasSplits && (
+            <div className="px-5 py-4 flex flex-col gap-2.5 border-t border-[#2a2a2a]">
+              <p className="text-[10px] font-mono text-[#333] uppercase tracking-wider">distribute earnings</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={splitAddress}
+                  onChange={(e) => setSplitAddress(e.target.value)}
+                  placeholder="0x… split address"
+                  className="flex-1 bg-[#111] border border-[#2a2a2a] px-3 py-2 text-xs text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+                />
                 <button
-                  onClick={() => toggleFeatured(address, tokenId)}
-                  className={`flex items-center gap-1.5 text-xs font-mono transition-colors w-fit ${
-                    isFeatured ? 'text-yellow-400' : 'text-[#555] hover:text-[#888]'
-                  }`}
+                  onClick={handleDistribute}
+                  disabled={distributing || !splitAddress.trim()}
+                  className="text-xs font-mono px-3 py-2 border border-[#2a2a2a] text-[#555] hover:border-[#555] hover:text-[#efefef] transition-colors disabled:opacity-40"
                 >
-                  <Star size={12} fill={isFeatured ? 'currentColor' : 'none'} strokeWidth={1.5} />
-                  {isFeatured ? 'unfeature' : 'feature'}
+                  {distributing ? '…' : '→'}
                 </button>
+              </div>
+              {distributeHash && (
+                <a
+                  href={`https://basescan.org/tx/${distributeHash}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] font-mono text-[#555] hover:text-[#888]"
+                >
+                  distributed: {distributeHash.slice(0, 10)}…{distributeHash.slice(-8)}
+                </a>
               )}
-              {isCreator && hasSplits && (
-                <div className="flex flex-col gap-2">
-                  <p className="text-[10px] font-mono text-[#555] uppercase tracking-wider">distribute earnings</p>
-                  <div className="flex gap-2">
-                    <input
-                      type="text"
-                      value={splitAddress}
-                      onChange={(e) => setSplitAddress(e.target.value)}
-                      placeholder="0x… split address"
-                      className="flex-1 bg-[#111] border border-[#2a2a2a] px-3 py-2 text-xs text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
-                    />
-                    <button
-                      onClick={handleDistribute}
-                      disabled={distributing || !splitAddress.trim()}
-                      className="text-xs font-mono px-3 py-2 border border-[#2a2a2a] text-[#555] hover:border-[#555] hover:text-[#efefef] transition-colors disabled:opacity-40"
-                    >
-                      {distributing ? '…' : '→'}
-                    </button>
-                  </div>
-                  {distributeHash && (
-                    <a
-                      href={`https://basescan.org/tx/${distributeHash}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-[10px] font-mono text-[#555] hover:text-[#888]"
-                    >
-                      distributed: {distributeHash.slice(0, 10)}…{distributeHash.slice(-8)}
-                    </a>
-                  )}
-                </div>
-              )}
+            </div>
+          )}
+
+          {/* Site admin — feature/unfeature */}
+          {isAdmin && (
+            <div className="px-5 py-4 border-t border-[#2a2a2a]">
+              <button
+                onClick={() => toggleFeatured(address, tokenId)}
+                className={`flex items-center gap-1.5 text-xs font-mono transition-colors w-fit ${
+                  isFeatured ? 'text-yellow-400' : 'text-[#555] hover:text-[#888]'
+                }`}
+              >
+                <Star size={12} fill={isFeatured ? 'currentColor' : 'none'} strokeWidth={1.5} />
+                {isFeatured ? 'unfeature' : 'feature'}
+              </button>
             </div>
           )}
 
