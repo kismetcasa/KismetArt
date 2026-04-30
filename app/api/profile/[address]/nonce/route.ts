@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAddress } from 'viem'
 import { createNonce } from '@/lib/profile'
 
 export async function GET(
@@ -6,6 +7,9 @@ export async function GET(
   { params }: { params: Promise<{ address: string }> }
 ) {
   const { address } = await params
+  if (!isAddress(address)) {
+    return NextResponse.json({ error: 'Invalid address' }, { status: 400 })
+  }
   const nonce = await createNonce(address)
   return NextResponse.json({ nonce })
 }

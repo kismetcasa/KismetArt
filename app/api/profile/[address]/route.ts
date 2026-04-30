@@ -1,13 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyMessage, isAddress, createPublicClient, http } from 'viem'
 import { mainnet } from 'viem/chains'
-import { Redis } from '@upstash/redis'
+import { redis } from '@/lib/redis'
 import { getProfile, upsertProfile, consumeNonce } from '@/lib/profile'
-
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-})
 
 const mainnetClient = createPublicClient({ chain: mainnet, transport: http() })
 
@@ -73,6 +68,10 @@ export async function PUT(
 
   if (!verified) {
     return NextResponse.json({ error: 'Signature verification failed' }, { status: 401 })
+  }
+
+  if (body.avatarUrl && !body.avatarUrl.startsWith('https://')) {
+    return NextResponse.json({ error: 'avatarUrl must be an https URL' }, { status: 400 })
   }
 
   const username = body.username?.trim().slice(0, 30) || undefined

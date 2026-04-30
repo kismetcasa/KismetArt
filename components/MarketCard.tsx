@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useAccount, useWriteContract } from 'wagmi'
+import { useAccount, useWriteContract, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
 import { formatEther } from 'viem'
@@ -20,6 +20,7 @@ export function MarketCard({ listing, onRemove }: MarketCardProps) {
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { writeContractAsync } = useWriteContract()
+  const { signMessageAsync } = useSignMessage()
   const [cancelling, setCancelling] = useState(false)
 
   const isSeller = address?.toLowerCase() === listing.seller.toLowerCase()
@@ -59,10 +60,16 @@ export function MarketCard({ listing, onRemove }: MarketCardProps) {
         }]],
       })
 
+      // Fetch nonce, sign cancel message, then update listing status
+      const nonceRes = await fetch(`/api/profile/${address}/nonce`)
+      const { nonce } = await nonceRes.json()
+      const message = `Cancel Kismet Art listing\nListing: ${listing.id}\nSeller: ${address.toLowerCase()}\nNonce: ${nonce}`
+      const signature = await signMessageAsync({ message })
+
       await fetch(`/api/listings/${listing.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'cancelled' }),
+        body: JSON.stringify({ status: 'cancelled', signature, nonce, signer: address }),
       })
 
       toast.success('Listing cancelled', { id: 'cancel' })

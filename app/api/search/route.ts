@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
   }
 
   const q = req.nextUrl.searchParams.get('q')?.trim() ?? ''
-  if (q.length < 2) {
+  if (q.length < 2 || q.length > 100) {
     return NextResponse.json({ users: [], collections: [], mints: [] })
   }
   const [users, collections, mints] = await Promise.all([

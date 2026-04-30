@@ -21,12 +21,17 @@ export async function POST(req: NextRequest) {
 
   if (!body.hash) return NextResponse.json({ error: 'Missing hash' }, { status: 400 })
 
+  const hashBytes = Buffer.from(body.hash, 'base64')
+  // Arweave deep-hash chunks are exactly 48 bytes (SHA-384)
+  if (hashBytes.length !== 48) {
+    return NextResponse.json({ error: 'Invalid hash length' }, { status: 400 })
+  }
+
   const key = process.env.ARWEAVE_JWK
   if (!key) return NextResponse.json({ error: 'Not configured' }, { status: 500 })
 
   try {
     const jwk = JSON.parse(Buffer.from(key, 'base64').toString())
-    const hashBytes = Buffer.from(body.hash, 'base64')
 
     const cryptoKey = await crypto.subtle.importKey(
       'jwk',
