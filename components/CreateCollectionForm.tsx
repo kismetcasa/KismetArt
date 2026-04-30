@@ -347,9 +347,6 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
           placeholder={address ?? '0x… (defaults to your wallet)'}
           className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
         />
-        <p className="text-xs text-[#555] font-mono mt-1">
-          address that receives royalties on secondary sales — enter a 0xSplits contract to split
-        </p>
       </div>
 
       {/* Authorized minters */}
@@ -394,9 +391,6 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
             ))}
           </ul>
         )}
-        <p className="text-xs text-[#555] font-mono mt-1">
-          these addresses can adminMint to this collection — leave empty for open access
-        </p>
       </div>
 
       {/* Submit */}
