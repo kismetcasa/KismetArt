@@ -29,8 +29,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [price, setPrice] = useState('0')
-  const [maxSupplyEnabled, setMaxSupplyEnabled] = useState(false)
-  const [maxSupply, setMaxSupply] = useState('100')
+  const [maxSupply, setMaxSupply] = useState('')
   const [splits, setSplits] = useState<Split[]>([])
   const [splitInput, setSplitInput] = useState({ address: '', pct: '' })
   const [step, setStep] = useState<'idle' | 'uploading-media' | 'uploading-metadata' | 'minting' | 'done'>('idle')
@@ -106,7 +105,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
       saleStart: String(now),
       saleEnd: '18446744073709551615',
     }
-    const maxSupplyVal = maxSupplyEnabled && maxSupply ? parseInt(maxSupply) : undefined
+    const maxSupplyVal = maxSupply.trim() ? parseInt(maxSupply) : undefined
 
     try {
       if (mintMode === 'text') {
@@ -252,8 +251,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
             setName('')
             setDescription('')
             setPrice('0')
-            setMaxSupplyEnabled(false)
-            setMaxSupply('100')
+            setMaxSupply('')
             setSplits([])
             setSplitInput({ address: '', pct: '' })
           }}
@@ -401,40 +399,18 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
         <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
           Edition size
         </label>
-        <div className="flex gap-1 items-center">
-          <button
-            type="button"
-            onClick={() => setMaxSupplyEnabled(false)}
-            className={`px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider border transition-colors ${
-              !maxSupplyEnabled ? 'border-[#555] text-[#efefef]' : 'border-[#2a2a2a] text-[#555] hover:text-[#888]'
-            }`}
-          >
-            unlimited
-          </button>
-          <button
-            type="button"
-            onClick={() => setMaxSupplyEnabled(true)}
-            className={`px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider border transition-colors ${
-              maxSupplyEnabled ? 'border-[#555] text-[#efefef]' : 'border-[#2a2a2a] text-[#555] hover:text-[#888]'
-            }`}
-          >
-            limited
-          </button>
-          {maxSupplyEnabled && (
-            <input
-              type="number"
-              value={maxSupply}
-              onChange={(e) => setMaxSupply(e.target.value)}
-              min="1"
-              step="1"
-              className="flex-1 bg-[#111] border border-[#2a2a2a] px-3 py-2 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
-              placeholder="quantity"
-            />
-          )}
-        </div>
-        {!maxSupplyEnabled && (
-          <p className="text-xs text-[#555] font-mono mt-1">no mint limit</p>
-        )}
+        <input
+          type="number"
+          value={maxSupply}
+          onChange={(e) => setMaxSupply(e.target.value)}
+          min="1"
+          step="1"
+          placeholder="unlimited"
+          className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+        />
+        <p className="text-xs text-[#555] font-mono mt-1">
+          {maxSupply.trim() ? `limited to ${maxSupply} editions` : 'leave blank for unlimited'}
+        </p>
       </div>
 
       {/* Revenue splits */}
