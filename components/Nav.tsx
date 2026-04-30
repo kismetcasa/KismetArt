@@ -44,7 +44,8 @@ export function Nav() {
                   pathname === '/' ? 'text-[#888] font-bold' : 'text-[#888] hover:text-[#efefef]'
                 }`}
               >
-                enjoy
+                <span className="sm:hidden">enjoy</span>
+                <span className="hidden sm:inline">Discover</span>
               </Link>
               <Link
                 href="/mint"
