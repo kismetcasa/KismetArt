@@ -9,10 +9,18 @@ import type { CollectPayload } from '@/lib/inprocess'
 interface CollectButtonProps {
   collectionAddress: string
   tokenId: string
+  comment?: string
+  onCollected?: () => void
   className?: string
 }
 
-export function CollectButton({ collectionAddress, tokenId, className = '' }: CollectButtonProps) {
+export function CollectButton({
+  collectionAddress,
+  tokenId,
+  comment,
+  onCollected,
+  className = '',
+}: CollectButtonProps) {
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const [loading, setLoading] = useState(false)
@@ -29,7 +37,7 @@ export function CollectButton({ collectionAddress, tokenId, className = '' }: Co
       const payload: CollectPayload & { account: string } = {
         moment: { collectionAddress, tokenId, chainId: 8453 },
         amount: 1,
-        comment: 'collected via Kismet Art',
+        comment: comment ?? 'collected via Kismet Art',
         account: address,
       }
 
@@ -40,15 +48,11 @@ export function CollectButton({ collectionAddress, tokenId, className = '' }: Co
       })
 
       const data = await res.json()
-
-      if (!res.ok) {
-        throw new Error(data.error ?? data.message ?? 'Collect failed')
-      }
+      if (!res.ok) throw new Error(data.error ?? data.message ?? 'Collect failed')
 
       setCollected(true)
-      toast.success('Collected!', {
-        description: `tx: ${data.hash?.slice(0, 10)}…`,
-      })
+      toast.success('Collected!', { description: `tx: ${data.hash?.slice(0, 10)}…` })
+      onCollected?.()
     } catch (err) {
       toast.error('Collect failed', {
         description: err instanceof Error ? err.message : 'Unknown error',

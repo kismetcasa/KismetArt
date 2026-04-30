@@ -91,6 +91,12 @@ export interface CollectResponse {
   chainId: number
 }
 
+export interface MomentComment {
+  sender: string
+  comment: string
+  timestamp: number // unix seconds
+}
+
 /** Convert ar:// or ipfs:// URIs to fetchable HTTPS URLs */
 export function resolveUri(uri: string): string {
   if (!uri) return ''
