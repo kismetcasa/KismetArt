@@ -52,6 +52,10 @@ export async function PUT(
     return NextResponse.json({ error: 'signature and nonce required' }, { status: 400 })
   }
 
+  if (body.avatarUrl && !body.avatarUrl.startsWith('https://')) {
+    return NextResponse.json({ error: 'avatarUrl must be an https URL' }, { status: 400 })
+  }
+
   // Verify the nonce was issued for this address and hasn't been used
   const valid = await consumeNonce(address, body.nonce)
   if (!valid) {
@@ -68,10 +72,6 @@ export async function PUT(
 
   if (!verified) {
     return NextResponse.json({ error: 'Signature verification failed' }, { status: 401 })
-  }
-
-  if (body.avatarUrl && !body.avatarUrl.startsWith('https://')) {
-    return NextResponse.json({ error: 'avatarUrl must be an https URL' }, { status: 400 })
   }
 
   const username = body.username?.trim().slice(0, 30) || undefined
