@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
+import Link from 'next/link'
 import { Star } from 'lucide-react'
 import { useAccount, useReadContract } from 'wagmi'
 import { CollectButton } from './CollectButton'
@@ -77,8 +78,8 @@ export function MomentCard({ moment }: MomentCardProps) {
 
   return (
     <article className="group flex flex-col bg-[#161616] border border-[#2a2a2a] overflow-hidden">
-      {/* Media */}
-      <div className="relative aspect-square bg-[#111] overflow-hidden">
+      {/* Media — clickable to detail page */}
+      <Link href={`/moment/${moment.address}/${moment.token_id}`} className="block relative aspect-square bg-[#111] overflow-hidden">
         {owned > 0 && (
           <span className="absolute top-2 left-2 z-10 px-1.5 py-0.5 bg-[#0d0d0d]/80 border border-[#2a2a2a] text-[#efefef] font-mono text-[10px] leading-tight">
             ×{owned}
@@ -122,14 +123,19 @@ export function MomentCard({ moment }: MomentCardProps) {
             <span className="text-[#2a2a2a] font-mono text-xs">no preview</span>
           </div>
         )}
-      </div>
+      </Link>
 
       {/* Info */}
       <div className="p-4 flex flex-col gap-3">
         <div>
-          <h3 className="text-sm text-[#efefef] font-mono truncate">
-            {meta.name ?? `#${moment.token_id}`}
-          </h3>
+          <Link
+            href={`/moment/${moment.address}/${moment.token_id}`}
+            className="block"
+          >
+            <h3 className="text-sm text-[#efefef] font-mono truncate hover:text-[#bbb] transition-colors">
+              {meta.name ?? `#${moment.token_id}`}
+            </h3>
+          </Link>
           {meta.description && (
             <p className="text-xs text-[#888] mt-1 line-clamp-2 leading-relaxed">
               {meta.description}
