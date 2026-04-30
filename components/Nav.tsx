@@ -33,28 +33,30 @@ export function Nav() {
     <>
       <header className="fixed top-0 left-0 right-0 z-50 border-b border-[#2a2a2a] bg-[#0d0d0d]/90 backdrop-blur-sm">
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
-          <div className="flex items-center gap-8">
+          <div className="flex items-center gap-3 sm:gap-8">
             <Link href="/" className="text-sm font-mono tracking-widest uppercase accent-grad">
               Kismet Art
             </Link>
-            <nav className="hidden sm:flex items-center gap-1">
+            <nav className="flex items-center gap-0.5 sm:gap-1">
               <Link
                 href="/"
-                className={`px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
+                className={`px-2 sm:px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
                   pathname === '/' ? 'text-[#888] font-bold' : 'text-[#888] hover:text-[#efefef]'
                 }`}
               >
-                Discover
+                enjoy
               </Link>
               <Link
                 href="/mint"
-                className={`px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
+                className={`px-2 sm:px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
                   pathname === '/mint' ? 'text-[#888] font-bold' : 'text-[#888] hover:text-[#efefef]'
                 }`}
               >
                 Mint
               </Link>
-              <SearchBar onOpenModal={(q) => { setModalQuery(q); setSearchOpen(true) }} />
+              <div className="hidden sm:block">
+                <SearchBar onOpenModal={(q) => { setModalQuery(q); setSearchOpen(true) }} />
+              </div>
             </nav>
           </div>
 
