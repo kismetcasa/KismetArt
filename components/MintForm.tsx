@@ -271,26 +271,15 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
           <label className="block text-xs font-mono text-[#888] uppercase tracking-wider">
             {mintMode === 'media' ? 'Media' : 'Content'}
           </label>
-          <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={() => switchMode('media')}
-              className={`px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider border transition-colors ${
-                mintMode === 'media' ? 'border-[#555] text-[#efefef]' : 'border-[#2a2a2a] text-[#555] hover:text-[#888]'
-              }`}
-            >
-              image / video / gif
-            </button>
-            <button
-              type="button"
-              onClick={() => switchMode('text')}
-              className={`px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider border transition-colors ${
-                mintMode === 'text' ? 'border-[#555] text-[#efefef]' : 'border-[#2a2a2a] text-[#555] hover:text-[#888]'
-              }`}
-            >
-              text
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => switchMode(mintMode === 'text' ? 'media' : 'text')}
+            className={`px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider border transition-colors ${
+              mintMode === 'text' ? 'border-[#555] text-[#efefef]' : 'border-[#2a2a2a] text-[#555] hover:text-[#888]'
+            }`}
+          >
+            text
+          </button>
         </div>
 
         {mintMode === 'media' ? (
@@ -394,10 +383,10 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
         )}
       </div>
 
-      {/* Edition size */}
+      {/* Supply */}
       <div>
         <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
-          Edition size
+          Supply
         </label>
         <input
           type="number"
@@ -408,9 +397,6 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
           placeholder="unlimited"
           className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
         />
-        <p className="text-xs text-[#555] font-mono mt-1">
-          {maxSupply.trim() ? `limited to ${maxSupply} editions` : 'leave blank for unlimited'}
-        </p>
       </div>
 
       {/* Revenue splits */}
@@ -466,11 +452,6 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
         {splits.length > 0 && (
           <p className={`text-xs font-mono ${splitsTotal === 100 ? 'text-[#555]' : 'accent-grad'}`}>
             {splitsTotal}% allocated{splitsTotal < 100 ? ` — ${100 - splitsTotal}% remaining` : ' ✓'}
-          </p>
-        )}
-        {splits.length === 0 && (
-          <p className="text-xs text-[#555] font-mono">
-            optional — split primary sale proceeds among multiple addresses
           </p>
         )}
       </div>
