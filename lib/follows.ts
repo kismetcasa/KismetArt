@@ -1,9 +1,4 @@
-import { Redis } from '@upstash/redis'
-
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-})
+import { redis } from './redis'
 
 const keyFollowing = (a: string) => `kismetart:following:${a.toLowerCase()}`
 const keyFollowers = (a: string) => `kismetart:followers:${a.toLowerCase()}`

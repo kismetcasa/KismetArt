@@ -1,11 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyMessage, isAddress } from 'viem'
-import { Redis } from '@upstash/redis'
-
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-})
+import { redis } from '@/lib/redis'
 
 const ADMIN_ADDRESS = (process.env.ADMIN_ADDRESS ?? '').toLowerCase()
 const FEATURED_KEY = 'kismetart:featured'
@@ -88,7 +83,7 @@ export async function DELETE(req: NextRequest) {
   if (err) return NextResponse.json({ error: err.error }, { status: err.status })
 
   const { collectionAddress, tokenId } = body
-  if (!collectionAddress || !tokenId) {
+  if (!collectionAddress || !isAddress(collectionAddress) || !tokenId) {
     return NextResponse.json({ error: 'collectionAddress and tokenId required' }, { status: 400 })
   }
 

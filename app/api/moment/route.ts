@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { isAddress } from 'viem'
 import { INPROCESS_API } from '@/lib/inprocess'
 
 export async function GET(req: NextRequest) {
@@ -9,6 +10,12 @@ export async function GET(req: NextRequest) {
 
   if (!collectionAddress || !tokenId) {
     return NextResponse.json({ error: 'collectionAddress and tokenId are required' }, { status: 400 })
+  }
+  if (!isAddress(collectionAddress)) {
+    return NextResponse.json({ error: 'Invalid collectionAddress' }, { status: 400 })
+  }
+  if (!/^\d+$/.test(tokenId)) {
+    return NextResponse.json({ error: 'Invalid tokenId' }, { status: 400 })
   }
 
   const url = new URL(`${INPROCESS_API}/moment`)

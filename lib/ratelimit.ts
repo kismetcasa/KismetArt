@@ -1,9 +1,4 @@
-import { Redis } from '@upstash/redis'
-
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-})
+import { redis } from './redis'
 
 // Fixed-window rate limiter. Fails open if Redis is unavailable.
 export async function checkRateLimit(

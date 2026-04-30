@@ -21,12 +21,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <Providers>
           <Nav />
           <MobileNav />
-          <main className="pt-14 pb-14 sm:pb-0 min-h-screen bg-[#0d0d0d]">
+          <main className="pt-14 min-h-screen bg-[#0d0d0d]">
             {children}
           </main>
           <Toaster
             position="bottom-center"
-            offset={{ bottom: 72 }}
+            offset={{ bottom: 16 }}
             theme="dark"
             toastOptions={{
               style: {

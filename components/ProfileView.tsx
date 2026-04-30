@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { isAddress } from 'viem'
 import Link from 'next/link'
 import { useAccount, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
@@ -278,6 +279,10 @@ export function ProfileView({ address }: ProfileViewProps) {
 
   async function handleDistribute() {
     if (!splitAddress.trim()) return
+    if (!isAddress(splitAddress.trim())) {
+      toast.error('Invalid split address')
+      return
+    }
     setDistributing(true)
     try {
       const res = await fetch('/api/distribute', {

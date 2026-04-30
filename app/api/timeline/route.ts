@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getTrackedCollections } from '@/lib/kv'
 import { INPROCESS_API } from '@/lib/inprocess'
-import { Redis } from '@upstash/redis'
-
-const redis = new Redis({
-  url: process.env.UPSTASH_REDIS_REST_URL!,
-  token: process.env.UPSTASH_REDIS_REST_TOKEN!,
-})
+import { redis } from '@/lib/redis'
 
 async function fetchCollection(collection: string, limit: number): Promise<unknown[]> {
   const url = new URL(`${INPROCESS_API}/timeline`)
@@ -27,8 +22,8 @@ const FEATURED_KEY = 'kismetart:featured'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const page = parseInt(searchParams.get('page') ?? '1') || 1
-  const limit = parseInt(searchParams.get('limit') ?? '20') || 20
+  const page = Math.max(1, parseInt(searchParams.get('page') ?? '1') || 1)
+  const limit = Math.min(100, Math.max(1, parseInt(searchParams.get('limit') ?? '20') || 20))
   const creator = searchParams.get('creator')?.toLowerCase() ?? undefined
   const collector = searchParams.get('collector')?.toLowerCase() ?? undefined
   const sort = searchParams.get('sort') // 'trending' | null

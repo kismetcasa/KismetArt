@@ -1,10 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { INPROCESS_API } from '@/lib/inprocess'
 import { trackWallet } from '@/lib/profile'
+import { checkRateLimit } from '@/lib/ratelimit'
 
 export async function POST(req: NextRequest) {
+  const ip =
+    req.headers.get('x-forwarded-for')?.split(',')[0].trim() ??
+    req.headers.get('x-real-ip') ??
+    'unknown'
+  const allowed = await checkRateLimit(`mint:${ip}`, 10, 60)
+  if (!allowed) return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+
   const body = await req.json()
-  if (body?.account) trackWallet(body.account)
+  if (body?.account) void trackWallet(body.account)
+
+  // Validate maxSupply if provided
+  if (body?.maxSupply !== undefined) {
+    const ms = Number(body.maxSupply)
+    if (!Number.isInteger(ms) || ms < 1) {
+      return NextResponse.json({ error: 'maxSupply must be a positive integer' }, { status: 400 })
+    }
+  }
 
   const headers: Record<string, string> = { 'Content-Type': 'application/json' }
   const apiKey = process.env.INPROCESS_API_KEY
