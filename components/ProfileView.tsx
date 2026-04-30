@@ -77,6 +77,9 @@ export function ProfileView({ address }: ProfileViewProps) {
   const [following, setFollowing] = useState(false)
   const [followLoading, setFollowLoading] = useState(false)
   const [addrCopied, setAddrCopied] = useState(false)
+  const [splitAddress, setSplitAddress] = useState('')
+  const [distributing, setDistributing] = useState(false)
+  const [distributeHash, setDistributeHash] = useState<string | null>(null)
 
   const [followingCount, setFollowingCount] = useState<number | null>(null)
   const [followerCount, setFollowerCount] = useState<number | null>(null)
@@ -273,6 +276,26 @@ export function ProfileView({ address }: ProfileViewProps) {
     }
   }
 
+  async function handleDistribute() {
+    if (!splitAddress.trim()) return
+    setDistributing(true)
+    try {
+      const res = await fetch('/api/distribute', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ splitAddress: splitAddress.trim(), chainId: 8453 }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error ?? 'Distribution failed')
+      setDistributeHash(data.hash)
+      toast.success('Distributed!')
+    } catch (err) {
+      toast.error('Distribution failed', { description: err instanceof Error ? err.message : 'Unknown error' })
+    } finally {
+      setDistributing(false)
+    }
+  }
+
   // ─── section content map ──────────────────────────────────────────────────
 
   const skeleton = (n: number) => (
@@ -441,6 +464,42 @@ export function ProfileView({ address }: ProfileViewProps) {
               cancel
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Distribute split earnings — owner only */}
+      {isOwner && (
+        <div className="border border-[#2a2a2a] p-4 flex flex-col gap-3">
+          <p className="text-xs font-mono text-[#888] uppercase tracking-wider">Distribute split earnings</p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={splitAddress}
+              onChange={(e) => setSplitAddress(e.target.value)}
+              placeholder="0x… split contract address"
+              className="flex-1 bg-[#111] border border-[#2a2a2a] px-3 py-2 text-xs text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+            />
+            <button
+              onClick={handleDistribute}
+              disabled={distributing || !splitAddress.trim()}
+              className="px-4 py-2 text-xs font-mono border border-[#2a2a2a] text-[#888] hover:border-[#555] hover:text-[#efefef] transition-colors disabled:opacity-40"
+            >
+              {distributing ? '…' : 'distribute →'}
+            </button>
+          </div>
+          {distributeHash && (
+            <a
+              href={`https://basescan.org/tx/${distributeHash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-xs font-mono text-[#555] hover:text-[#888] transition-colors"
+            >
+              distributed: {distributeHash.slice(0, 10)}…{distributeHash.slice(-8)}
+            </a>
+          )}
+          <p className="text-xs font-mono text-[#333]">
+            paste the split contract address from any moment you minted with revenue splits
+          </p>
         </div>
       )}
 

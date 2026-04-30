@@ -11,6 +11,8 @@ import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { uploadJson } from '@/lib/arweave/uploadJson'
 import { PLATFORM_COLLECTION, CREATE_REFERRAL } from '@/lib/config'
 
+type MintMode = 'media' | 'text'
+
 interface MintFormProps {
   collectionAddress?: string
 }
@@ -20,11 +22,14 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
 
+  const [mintMode, setMintMode] = useState<MintMode>('media')
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<string | null>(null)
+  const [textContent, setTextContent] = useState('')
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [price, setPrice] = useState('0')
+  const [maxSupply, setMaxSupply] = useState('')
   const [splits, setSplits] = useState<Split[]>([])
   const [splitInput, setSplitInput] = useState({ address: '', pct: '' })
   const [step, setStep] = useState<'idle' | 'uploading-media' | 'uploading-metadata' | 'minting' | 'done'>('idle')
@@ -32,8 +37,13 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
   const [result, setResult] = useState<{ hash: string; contractAddress: string; tokenId: string } | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
-
   const splitsTotal = splits.reduce((s, r) => s + r.percentAllocation, 0)
+
+  function switchMode(mode: MintMode) {
+    setMintMode(mode)
+    if (mode === 'text') clearFile()
+    else setTextContent('')
+  }
 
   function addSplit() {
     const addr = splitInput.address.trim()
@@ -46,7 +56,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
     setSplitInput({ address: '', pct: '' })
   }
 
-  const MAX_FILE_BYTES = 50 * 1024 * 1024 // 50 MB
+  const MAX_FILE_BYTES = 50 * 1024 * 1024
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
@@ -77,96 +87,121 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
   async function handleMint(e: React.FormEvent) {
     e.preventDefault()
 
-    if (!isConnected || !address) {
-      openConnectModal?.()
-      return
-    }
-
-    if (!file) {
-      toast.error('Please select a file to mint')
-      return
-    }
-    if (!name.trim()) {
-      toast.error('Please enter a title')
-      return
-    }
-    if (splits.length === 1) {
-      toast.error('Splits require at least 2 recipients')
-      return
-    }
+    if (!isConnected || !address) { openConnectModal?.(); return }
+    if (!name.trim()) { toast.error('Please enter a title'); return }
+    if (mintMode === 'media' && !file) { toast.error('Please select a file to mint'); return }
+    if (mintMode === 'text' && !textContent.trim()) { toast.error('Please enter text content'); return }
+    if (splits.length === 1) { toast.error('Splits require at least 2 recipients'); return }
     if (splits.length > 1 && Math.round(splitsTotal * 100) !== 10000) {
       toast.error(`Split allocations must sum to 100% (currently ${splitsTotal}%)`)
       return
     }
 
+    const priceInWei = parseEther(price || '0').toString()
+    const now = Math.floor(Date.now() / 1000)
+    const salesConfig = {
+      type: 'fixedPrice' as const,
+      pricePerToken: priceInWei,
+      saleStart: String(now),
+      saleEnd: '18446744073709551615',
+    }
+    const maxSupplyVal = maxSupply.trim() ? parseInt(maxSupply) : undefined
+
     try {
-      // 1. Upload media to Arweave
-      setStep('uploading-media')
-      setUploadProgress(0)
-      toast.loading('Uploading media to Arweave…', { id: 'mint' })
-      const mediaUri = await uploadToArweave(file, (pct) => {
-        setUploadProgress(pct)
-        toast.loading(`Uploading media… ${pct}%`, { id: 'mint' })
-      })
+      if (mintMode === 'text') {
+        setStep('minting')
+        toast.loading('Minting moment…', { id: 'mint' })
 
-      // 2. Upload metadata to Arweave
-      setStep('uploading-metadata')
-      setUploadProgress(0)
-      toast.loading('Uploading metadata…', { id: 'mint' })
-      const metadata = {
-        name: name.trim(),
-        description: description.trim(),
-        image: mediaUri,
-        ...(file.type.startsWith('video/') ? { animation_url: mediaUri } : {}),
-      }
-      const metadataUri = await uploadJson(metadata)
-
-      // 3. Mint moment via inprocess API
-      setStep('minting')
-      toast.loading('Minting moment…', { id: 'mint' })
-
-      const priceInWei = parseEther(price || '0').toString()
-      const now = Math.floor(Date.now() / 1000)
-
-      const payload: CreateMomentPayload = {
-        contract: targetCollection
-          ? { address: targetCollection }
-          : {
-              name: `${name.trim()} by ${address}`,
-              uri: metadataUri,
-            },
-        token: {
-          tokenMetadataURI: metadataUri,
-          createReferral: CREATE_REFERRAL,
-          salesConfig: {
-            type: 'fixedPrice',
-            pricePerToken: priceInWei,
-            saleStart: String(now),
-            saleEnd: '18446744073709551615',
+        const payload = {
+          contract: targetCollection
+            ? { address: targetCollection }
+            : { name: `${name.trim()} by ${address}` },
+          token: {
+            name: name.trim(),
+            ...(description.trim() ? { description: description.trim() } : {}),
+            content: textContent.trim(),
+            createReferral: CREATE_REFERRAL,
+            salesConfig,
+            mintToCreatorCount: 1,
+            ...(maxSupplyVal !== undefined ? { maxSupply: maxSupplyVal } : {}),
+            ...(splits.length < 2 ? { payoutRecipient: address } : {}),
           },
-          mintToCreatorCount: 1,
-          ...(splits.length < 2 ? { payoutRecipient: address } : {}),
-        },
-        account: address!,
-        ...(splits.length >= 2 ? { splits } : {}),
-      }
+          account: address,
+          ...(splits.length >= 2 ? { splits } : {}),
+        }
 
-      const res = await fetch('/api/mint', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const data = await res.json()
-      if (!res.ok) {
-        const errors = Array.isArray(data.errors)
-          ? ': ' + data.errors.map((e: { field?: string; message?: string }) => `${e.field ?? ''} ${e.message ?? ''}`.trim()).join(', ')
-          : ''
-        throw new Error((data.detail ?? data.error ?? data.message ?? 'Mint failed') + errors)
-      }
+        const res = await fetch('/api/write', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          const errors = Array.isArray(data.errors)
+            ? ': ' + data.errors.map((e: { field?: string; message?: string }) => `${e.field ?? ''} ${e.message ?? ''}`.trim()).join(', ')
+            : ''
+          throw new Error((data.detail ?? data.error ?? data.message ?? 'Mint failed') + errors)
+        }
+        setResult(data)
+        setStep('done')
+        toast.success('Minted!', { id: 'mint', description: `Token #${data.tokenId}` })
 
-      setResult(data)
-      setStep('done')
-      toast.success('Minted!', { id: 'mint', description: `Token #${data.tokenId}` })
+      } else {
+        // media mode
+        setStep('uploading-media')
+        setUploadProgress(0)
+        toast.loading('Uploading media to Arweave…', { id: 'mint' })
+        const mediaUri = await uploadToArweave(file!, (pct) => {
+          setUploadProgress(pct)
+          toast.loading(`Uploading media… ${pct}%`, { id: 'mint' })
+        })
+
+        setStep('uploading-metadata')
+        setUploadProgress(0)
+        toast.loading('Uploading metadata…', { id: 'mint' })
+        const metadata = {
+          name: name.trim(),
+          description: description.trim(),
+          image: mediaUri,
+          ...(file!.type.startsWith('video/') ? { animation_url: mediaUri } : {}),
+        }
+        const metadataUri = await uploadJson(metadata)
+
+        setStep('minting')
+        toast.loading('Minting moment…', { id: 'mint' })
+
+        const payload: CreateMomentPayload = {
+          contract: targetCollection
+            ? { address: targetCollection }
+            : { name: `${name.trim()} by ${address}`, uri: metadataUri },
+          token: {
+            tokenMetadataURI: metadataUri,
+            createReferral: CREATE_REFERRAL,
+            salesConfig,
+            mintToCreatorCount: 1,
+            ...(maxSupplyVal !== undefined ? { maxSupply: maxSupplyVal } : {}),
+            ...(splits.length < 2 ? { payoutRecipient: address } : {}),
+          },
+          account: address!,
+          ...(splits.length >= 2 ? { splits } : {}),
+        }
+
+        const res = await fetch('/api/mint', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const data = await res.json()
+        if (!res.ok) {
+          const errors = Array.isArray(data.errors)
+            ? ': ' + data.errors.map((e: { field?: string; message?: string }) => `${e.field ?? ''} ${e.message ?? ''}`.trim()).join(', ')
+            : ''
+          throw new Error((data.detail ?? data.error ?? data.message ?? 'Mint failed') + errors)
+        }
+        setResult(data)
+        setStep('done')
+        toast.success('Minted!', { id: 'mint', description: `Token #${data.tokenId}` })
+      }
     } catch (err) {
       setStep('idle')
       setUploadProgress(0)
@@ -212,9 +247,11 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
             setStep('idle')
             setResult(null)
             clearFile()
+            setTextContent('')
             setName('')
             setDescription('')
             setPrice('0')
+            setMaxSupply('')
             setSplits([])
             setSplitInput({ address: '', pct: '' })
           }}
@@ -228,48 +265,83 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
 
   return (
     <form onSubmit={handleMint} className="flex flex-col gap-6">
-      {/* File upload */}
+      {/* Media / Text toggle */}
       <div>
-        <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
-          Media
-        </label>
-        {preview ? (
-          <div className="relative aspect-square bg-[#111] border border-[#2a2a2a] overflow-hidden">
-            {file?.type.startsWith('video/') ? (
-              <video src={preview} className="w-full h-full object-cover" muted autoPlay loop playsInline />
-            ) : (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={preview} alt="preview" className="w-full h-full object-cover" />
-            )}
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-xs font-mono text-[#888] uppercase tracking-wider">
+            {mintMode === 'media' ? 'Media' : 'Content'}
+          </label>
+          <div className="flex gap-1">
             <button
               type="button"
-              onClick={clearFile}
-              className="absolute top-2 right-2 w-7 h-7 bg-[#0d0d0d]/80 border border-[#2a2a2a] flex items-center justify-center hover:border-[#888]"
+              onClick={() => switchMode('media')}
+              className={`px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider border transition-colors ${
+                mintMode === 'media' ? 'border-[#555] text-[#efefef]' : 'border-[#2a2a2a] text-[#555] hover:text-[#888]'
+              }`}
             >
-              <X size={14} className="text-[#888]" />
+              image / video / gif
+            </button>
+            <button
+              type="button"
+              onClick={() => switchMode('text')}
+              className={`px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider border transition-colors ${
+                mintMode === 'text' ? 'border-[#555] text-[#efefef]' : 'border-[#2a2a2a] text-[#555] hover:text-[#888]'
+              }`}
+            >
+              text
             </button>
           </div>
+        </div>
+
+        {mintMode === 'media' ? (
+          <>
+            {preview ? (
+              <div className="relative aspect-square bg-[#111] border border-[#2a2a2a] overflow-hidden">
+                {file?.type.startsWith('video/') ? (
+                  <video src={preview} className="w-full h-full object-cover" muted autoPlay loop playsInline />
+                ) : (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={preview} alt="preview" className="w-full h-full object-cover" />
+                )}
+                <button
+                  type="button"
+                  onClick={clearFile}
+                  className="absolute top-2 right-2 w-7 h-7 bg-[#0d0d0d]/80 border border-[#2a2a2a] flex items-center justify-center hover:border-[#888]"
+                >
+                  <X size={14} className="text-[#888]" />
+                </button>
+              </div>
+            ) : (
+              <div
+                onClick={() => fileInputRef.current?.click()}
+                onDrop={handleDrop}
+                onDragOver={(e) => e.preventDefault()}
+                className="aspect-square border border-dashed border-[#2a2a2a] flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-[#888] transition-colors bg-[#111]"
+              >
+                <Upload size={24} className="text-[#555]" />
+                <div className="text-center">
+                  <p className="text-xs font-mono text-[#555]">drop file or click to upload</p>
+                  <p className="text-xs font-mono text-[#333] mt-1">image, video, gif</p>
+                </div>
+              </div>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*,video/*,.gif"
+              onChange={handleFileChange}
+              className="hidden"
+            />
+          </>
         ) : (
-          <div
-            onClick={() => fileInputRef.current?.click()}
-            onDrop={handleDrop}
-            onDragOver={(e) => e.preventDefault()}
-            className="aspect-square border border-dashed border-[#2a2a2a] flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-[#888] transition-colors bg-[#111]"
-          >
-            <Upload size={24} className="text-[#555]" />
-            <div className="text-center">
-              <p className="text-xs font-mono text-[#555]">drop file or click to upload</p>
-              <p className="text-xs font-mono text-[#333] mt-1">image, video, gif</p>
-            </div>
-          </div>
+          <textarea
+            value={textContent}
+            onChange={(e) => setTextContent(e.target.value)}
+            placeholder="write your moment…"
+            rows={12}
+            className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] resize-none"
+          />
         )}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*,video/*,.gif"
-          onChange={handleFileChange}
-          className="hidden"
-        />
       </div>
 
       {/* Title */}
@@ -318,8 +390,27 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-mono text-[#555]">ETH</span>
         </div>
         {price === '0' && (
-          <p className="text-xs text-[#555] font-mono mt-1">Free mint (open edition)</p>
+          <p className="text-xs text-[#555] font-mono mt-1">free mint</p>
         )}
+      </div>
+
+      {/* Edition size */}
+      <div>
+        <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
+          Edition size
+        </label>
+        <input
+          type="number"
+          value={maxSupply}
+          onChange={(e) => setMaxSupply(e.target.value)}
+          min="1"
+          step="1"
+          placeholder="unlimited"
+          className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+        />
+        <p className="text-xs text-[#555] font-mono mt-1">
+          {maxSupply.trim() ? `limited to ${maxSupply} editions` : 'leave blank for unlimited'}
+        </p>
       </div>
 
       {/* Revenue splits */}
