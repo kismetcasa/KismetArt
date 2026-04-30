@@ -264,7 +264,7 @@ export function MomentDetailView({ address, tokenId }: Props) {
         <div>
 
           {/* Title + creator + description */}
-          <div className="px-5 py-4 flex flex-col gap-3 border-t border-[#2a2a2a]">
+          <div className="px-5 py-4 flex flex-col gap-3">
             <div className="flex items-start justify-between gap-4">
               <h1 className="text-sm font-mono text-[#efefef] leading-snug">
                 {meta.name ?? `#${tokenId}`}
