@@ -362,41 +362,42 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
         />
       </div>
 
-      {/* Price */}
-      <div>
-        <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
-          Price (ETH)
-        </label>
-        <div className="relative">
+      {/* Price + Supply */}
+      <div className="flex gap-3">
+        <div className="flex-1">
+          <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
+            Price (ETH)
+          </label>
+          <div className="relative">
+            <input
+              type="number"
+              value={price}
+              onChange={(e) => setPrice(e.target.value)}
+              min="0"
+              step="0.001"
+              className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] pr-12"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-mono text-[#555]">ETH</span>
+          </div>
+          {price === '0' && (
+            <p className="text-xs text-[#555] font-mono mt-1">free mint</p>
+          )}
+        </div>
+
+        <div className="flex-1">
+          <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
+            Supply
+          </label>
           <input
             type="number"
-            value={price}
-            onChange={(e) => setPrice(e.target.value)}
-            min="0"
-            step="0.001"
-            className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] pr-16"
+            value={maxSupply}
+            onChange={(e) => setMaxSupply(e.target.value)}
+            min="1"
+            step="1"
+            placeholder="unlimited"
+            className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
           />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-mono text-[#555]">ETH</span>
         </div>
-        {price === '0' && (
-          <p className="text-xs text-[#555] font-mono mt-1">free mint</p>
-        )}
-      </div>
-
-      {/* Supply */}
-      <div>
-        <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
-          Supply
-        </label>
-        <input
-          type="number"
-          value={maxSupply}
-          onChange={(e) => setMaxSupply(e.target.value)}
-          min="1"
-          step="1"
-          placeholder="unlimited"
-          className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
-        />
       </div>
 
       {/* Revenue splits */}
