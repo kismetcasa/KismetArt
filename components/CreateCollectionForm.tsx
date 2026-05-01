@@ -96,7 +96,9 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
             image: deployedImageUri,
           })
           const now = Math.floor(Date.now() / 1000)
-          const priceWei = parseEther(coverPrice || '0').toString()
+          const rawCoverPrice = coverPrice.trim()
+          const normalizedCoverPrice = !rawCoverPrice || rawCoverPrice === '.' ? '0' : rawCoverPrice.startsWith('.') ? `0${rawCoverPrice}` : rawCoverPrice
+          const priceWei = parseEther(normalizedCoverPrice).toString()
           const maxSupplyVal = coverSupply.trim() ? parseInt(coverSupply, 10) : undefined
           const res = await fetch('/api/mint', {
             method: 'POST',
@@ -171,6 +173,10 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
     if (royaltyRecipient.trim() && !isAddress(royaltyRecipient.trim())) {
       toast.error('Invalid royalty recipient address')
       return
+    }
+    if (mintCover && coverSupply.trim()) {
+      const s = parseInt(coverSupply.trim(), 10)
+      if (isNaN(s) || s < 1) { toast.error('Cover supply must be at least 1'); return }
     }
 
     setDeployedImageUri(undefined)
@@ -307,23 +313,21 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
               <>
                 <div className="flex items-center gap-1">
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="decimal"
                     value={coverPrice}
-                    onChange={(e) => setCoverPrice(e.target.value)}
+                    onChange={(e) => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setCoverPrice(v) }}
                     placeholder="0"
-                    min="0"
-                    step="0.001"
                     className="w-14 bg-[#111] border border-[#2a2a2a] px-2 py-0.5 text-[11px] text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
                   />
                   <span className="text-[10px] font-mono text-[#555]">eth</span>
                 </div>
                 <input
-                  type="number"
+                  type="text"
+                  inputMode="numeric"
                   value={coverSupply}
-                  onChange={(e) => setCoverSupply(e.target.value)}
+                  onChange={(e) => { const v = e.target.value; if (v === '' || /^[1-9]\d*$/.test(v)) setCoverSupply(v) }}
                   placeholder="∞"
-                  min="1"
-                  step="1"
                   className="w-14 bg-[#111] border border-[#2a2a2a] px-2 py-0.5 text-[11px] text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
                 />
               </>
