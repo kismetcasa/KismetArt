@@ -12,27 +12,29 @@ import { useAdmin } from '@/contexts/AdminContext'
 import { ERC1155_ABI } from '@/lib/seaport'
 import { ListButton } from './ListButton'
 import { MomentModal } from './MomentModal'
+import { ProfileAvatar } from './ProfileAvatar'
 
 // Module-level cache — deduplicates profile fetches across all mounted cards
-const profileCache = new Map<string, { name: string; ts: number; resolved: boolean }>()
+const profileCache = new Map<string, { name: string; avatarUrl: string | undefined; ts: number; resolved: boolean }>()
 const CACHE_TTL_RESOLVED = 5 * 60 * 1000  // 5 min for real username / ENS
 const CACHE_TTL_FALLBACK = 30 * 1000       // 30 s for shortAddress — retries quickly once ENS caches
 
-async function fetchCreatorName(address: string): Promise<string> {
+async function fetchCreatorProfile(address: string): Promise<{ name: string; avatarUrl: string | undefined }> {
   const cached = profileCache.get(address)
   if (cached) {
     const ttl = cached.resolved ? CACHE_TTL_RESOLVED : CACHE_TTL_FALLBACK
-    if (Date.now() - cached.ts < ttl) return cached.name
+    if (Date.now() - cached.ts < ttl) return { name: cached.name, avatarUrl: cached.avatarUrl }
   }
   try {
     const res = await fetch(`/api/profile/${address}`)
     const d = await res.json()
     const name: string = d.profile?.username || d.profile?.ensName || ''
+    const avatarUrl: string | undefined = d.profile?.avatarUrl
     const resolved = !!name
-    profileCache.set(address, { name: name || shortAddress(address), ts: Date.now(), resolved })
-    return name || shortAddress(address)
+    profileCache.set(address, { name: name || shortAddress(address), avatarUrl, ts: Date.now(), resolved })
+    return { name: name || shortAddress(address), avatarUrl }
   } catch {
-    return shortAddress(address)
+    return { name: shortAddress(address), avatarUrl: undefined }
   }
 }
 
@@ -45,6 +47,7 @@ export function MomentCard({ moment }: MomentCardProps) {
   const [price, setPrice] = useState<string | null>(null)
   const [maxSupply, setMaxSupply] = useState<number | null | undefined>(undefined)
   const [creatorName, setCreatorName] = useState(() => shortAddress(moment.creator.address))
+  const [creatorAvatar, setCreatorAvatar] = useState<string | undefined>(undefined)
   const [modalOpen, setModalOpen] = useState(false)
   const [collecting, setCollecting] = useState(false)
   const [collected, setCollected] = useState(false)
@@ -54,7 +57,10 @@ export function MomentCard({ moment }: MomentCardProps) {
   const { openConnectModal } = useConnectModal()
 
   useEffect(() => {
-    fetchCreatorName(moment.creator.address).then(setCreatorName)
+    fetchCreatorProfile(moment.creator.address).then(({ name, avatarUrl }) => {
+      setCreatorName(name)
+      setCreatorAvatar(avatarUrl)
+    })
   }, [moment.creator.address])
 
   const { data: ownedBalance } = useReadContract({
@@ -201,17 +207,15 @@ export function MomentCard({ moment }: MomentCardProps) {
               </Link>
             </div>
           </div>
-          {meta.description && (
-            <p className="text-xs font-mono text-[#888] line-clamp-2 leading-relaxed">
-              {meta.description}
-            </p>
-          )}
-          <span
-            className="text-xs text-[#555] font-mono w-fit"
+          <Link
+            href={`/profile/${moment.creator.address}`}
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-1.5 group w-fit"
             title={moment.creator.address}
           >
-            by {creatorName}
-          </span>
+            <ProfileAvatar address={moment.creator.address} avatarUrl={creatorAvatar} size={16} />
+            <span className="text-xs text-[#555] font-mono group-hover:text-[#888] transition-colors">{creatorName}</span>
+          </Link>
         </div>
 
         {/* Actions — list (if owned) + collect + price */}
@@ -228,7 +232,7 @@ export function MomentCard({ moment }: MomentCardProps) {
             </div>
           )}
           <div className={`flex ${owned > 0 ? 'flex-1 -ml-px' : 'w-full'} border transition-colors ${
-            collected ? 'border-[#8B5CF6]' : 'border-[#2a2a2a]'
+            collected ? (owned > 0 ? 'border-[#8B5CF6] border-l-[#2a2a2a]' : 'border-[#8B5CF6]') : 'border-[#2a2a2a]'
           }`}>
             <button
               onClick={handleCollect}

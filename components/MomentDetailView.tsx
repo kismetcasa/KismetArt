@@ -278,7 +278,7 @@ export function MomentDetailView({ address, tokenId }: Props) {
                 <ProfileAvatar address={creatorAddress} avatarUrl={creatorAvatar} size={22} />
               )}
               <span className="text-xs font-mono text-[#555] group-hover:text-[#888] transition-colors">
-                by {creatorName || shortAddress(creatorAddress)}
+                {creatorName || shortAddress(creatorAddress)}
               </span>
             </Link>
             {meta.description && (
@@ -375,7 +375,7 @@ export function MomentDetailView({ address, tokenId }: Props) {
               </div>
             )}
             <div className={`flex ${alreadyOwned ? 'flex-1 -ml-px' : 'w-full'} border transition-colors ${
-              collected || alreadyOwned ? 'border-[#8B5CF6]' : 'border-[#2a2a2a]'
+              alreadyOwned ? 'border-[#8B5CF6] border-l-[#2a2a2a]' : collected ? 'border-[#8B5CF6]' : 'border-[#2a2a2a]'
             }`}>
               <button
                 onClick={handleCollect}
