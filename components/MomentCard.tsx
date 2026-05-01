@@ -210,16 +210,16 @@ export function MomentCard({ moment }: MomentCardProps) {
           <Link
             href={`/profile/${moment.creator.address}`}
             onClick={(e) => e.stopPropagation()}
-            className="flex items-center gap-1.5 group w-fit"
+            className="flex items-center gap-1.5 group/creator w-fit"
             title={moment.creator.address}
           >
             <ProfileAvatar address={moment.creator.address} avatarUrl={creatorAvatar} size={16} />
-            <span className="text-xs text-[#555] font-mono group-hover:text-[#888] transition-colors">{creatorName}</span>
+            <span className="text-xs text-[#555] font-mono group-hover/creator:text-[#888] transition-colors">{creatorName}</span>
           </Link>
         </div>
 
         {/* Actions — list (if owned) + collect + price */}
-        <div className="px-4 pb-4 flex">
+        <div className="px-4 pb-4 flex gap-2 items-stretch">
           {owned > 0 && (
             <div className="w-1/4 flex-none">
               <ListButton
@@ -231,8 +231,8 @@ export function MomentCard({ moment }: MomentCardProps) {
               />
             </div>
           )}
-          <div className={`flex ${owned > 0 ? 'flex-1 -ml-px' : 'w-full'} border transition-colors ${
-            collected ? (owned > 0 ? 'border-[#8B5CF6] border-l-[#2a2a2a]' : 'border-[#8B5CF6]') : 'border-[#2a2a2a]'
+          <div className={`flex ${owned > 0 ? 'flex-1' : 'w-full'} border transition-colors ${
+            collected ? 'border-[#8B5CF6]' : 'border-[#2a2a2a]'
           }`}>
             <button
               onClick={handleCollect}

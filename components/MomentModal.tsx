@@ -158,7 +158,7 @@ export function MomentModal({ moment, onClose }: MomentModalProps) {
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
-      <div className="relative w-full max-w-3xl bg-[#161616] border border-[#2a2a2a] flex flex-col md:grid md:grid-cols-2 max-h-[90vh] overflow-hidden">
+      <div className="relative w-full max-w-3xl bg-[#161616] border border-[#2a2a2a] flex flex-col md:grid md:grid-cols-2 max-h-[90vh] overflow-y-auto md:overflow-hidden">
         <button
           onClick={onClose}
           className="absolute top-3 right-3 z-20 p-1 text-[#555] hover:text-[#888] transition-colors"
@@ -281,7 +281,7 @@ export function MomentModal({ moment, onClose }: MomentModalProps) {
               </div>
             )}
             <div className={`flex flex-1 border transition-colors ${
-              alreadyOwned ? 'border-[#8B5CF6] border-l-[#2a2a2a]' : collected ? 'border-[#8B5CF6]' : 'border-[#2a2a2a]'
+              alreadyOwned || collected ? 'border-[#8B5CF6]' : 'border-[#2a2a2a]'
             }`}>
               <button
                 onClick={handleCollect}
