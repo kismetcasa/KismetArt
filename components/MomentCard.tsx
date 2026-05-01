@@ -17,9 +17,10 @@ import { ProfileAvatar } from './ProfileAvatar'
 
 interface MomentCardProps {
   moment: Moment
+  hidePriceSupply?: boolean
 }
 
-export function MomentCard({ moment }: MomentCardProps) {
+export function MomentCard({ moment, hidePriceSupply }: MomentCardProps) {
   const [imgError, setImgError] = useState(false)
   const [price, setPrice] = useState<string | null>(null)
   const [maxSupply, setMaxSupply] = useState<number | null | undefined>(undefined)
@@ -54,6 +55,7 @@ export function MomentCard({ moment }: MomentCardProps) {
 
   // Fetch sale config for price + supply display
   useEffect(() => {
+    if (hidePriceSupply) return
     const params = new URLSearchParams({
       collectionAddress: moment.address,
       tokenId: moment.token_id,
@@ -66,7 +68,7 @@ export function MomentCard({ moment }: MomentCardProps) {
         setMaxSupply(detail.maxSupply ?? null)
       })
       .catch(() => {})
-  }, [moment.address, moment.token_id])
+  }, [moment.address, moment.token_id, hidePriceSupply])
 
   function handleCopyLink() {
     navigator.clipboard.writeText(`${window.location.origin}/moment/${moment.address}/${moment.token_id}`).catch(() => {})
@@ -220,14 +222,18 @@ export function MomentCard({ moment }: MomentCardProps) {
             >
               {collecting ? 'collecting…' : collected ? 'collected' : 'collect'}
             </button>
-            <div className="border-l border-[#2a2a2a] px-2 py-1.5 flex items-center justify-center min-w-[3rem]">
-              <span className="text-[11px] font-mono text-[#444]">
-                {maxSupply === undefined ? '…' : (maxSupply === null || maxSupply === 0 ? 'open' : maxSupply.toLocaleString())}
-              </span>
-            </div>
-            <div className="border-l border-[#2a2a2a] px-2 py-1.5 flex items-center justify-center min-w-[3rem]">
-              <span className="text-[11px] font-mono accent-grad">{price ?? '…'}</span>
-            </div>
+            {!hidePriceSupply && (
+              <>
+                <div className="border-l border-[#2a2a2a] px-2 py-1.5 flex items-center justify-center min-w-[3rem]">
+                  <span className="text-[11px] font-mono text-[#444]">
+                    {maxSupply === undefined ? '…' : (maxSupply === null || maxSupply === 0 ? 'open' : maxSupply.toLocaleString())}
+                  </span>
+                </div>
+                <div className="border-l border-[#2a2a2a] px-2 py-1.5 flex items-center justify-center min-w-[3rem]">
+                  <span className="text-[11px] font-mono accent-grad">{price ?? '…'}</span>
+                </div>
+              </>
+            )}
           </div>
         </div>
       </article>
