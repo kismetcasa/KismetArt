@@ -216,7 +216,7 @@ export function MomentCard({ moment, hidePriceSupply }: MomentCardProps) {
             <button
               onClick={handleCollect}
               disabled={collecting || collected || owned > 0}
-              className={`flex-1 py-2.5 text-xs font-mono tracking-wider uppercase transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+              className={`flex-1 py-2.5 text-xs font-mono tracking-wider uppercase transition-all disabled:opacity-50 ${collecting ? 'cursor-not-allowed' : ''} ${
                 collected || owned > 0 ? 'text-[#8B5CF6] bg-[#8B5CF6]/10' : 'text-[#555] hover:bg-gradient-to-r hover:from-[#8B5CF6] hover:to-[#C084FC] hover:text-white'
               }`}
             >
@@ -224,12 +224,12 @@ export function MomentCard({ moment, hidePriceSupply }: MomentCardProps) {
             </button>
             {!hidePriceSupply && (
               <>
-                <div className="border-l border-[#2a2a2a] px-2 py-1.5 flex items-center justify-center min-w-[3rem]">
+                <div className="border-l border-[#2a2a2a] px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
                   <span className="text-[11px] font-mono text-[#444]">
                     {maxSupply === undefined ? '…' : (maxSupply === null || maxSupply === 0 ? 'open' : maxSupply.toLocaleString())}
                   </span>
                 </div>
-                <div className="border-l border-[#2a2a2a] px-2 py-1.5 flex items-center justify-center min-w-[3rem]">
+                <div className="border-l border-[#2a2a2a] px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
                   <span className="text-[11px] font-mono accent-grad">{price ?? '…'}</span>
                 </div>
               </>
