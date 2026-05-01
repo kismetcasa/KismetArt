@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { X, Star, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
@@ -55,6 +55,9 @@ export function MomentModal({
   const [commentsLoading, setCommentsLoading] = useState(true)
   const [showAllComments, setShowAllComments] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
+  const [showFullDesc, setShowFullDesc] = useState(false)
+  const [descOverflows, setDescOverflows] = useState(false)
+  const descRef = useRef<HTMLParagraphElement>(null)
   const { address: connectedAddress, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { isAdmin, featuredKeys, toggleFeatured } = useAdmin()
@@ -147,6 +150,13 @@ export function MomentModal({
 
   useEffect(() => { fetchComments() }, [fetchComments])
 
+  // Measure description overflow once after mount (element is clamped at that point)
+  useEffect(() => {
+    const el = descRef.current
+    if (!el) return
+    setDescOverflows(el.scrollHeight > el.clientHeight)
+  }, [])
+
   // Lock body scroll while open
   useEffect(() => {
     document.body.style.overflow = 'hidden'
@@ -207,12 +217,12 @@ export function MomentModal({
           <X size={16} />
         </button>
 
-        {/* Left: media */}
+        {/* Left: media — click navigates to detail page */}
         <div className="relative aspect-square bg-[#111] flex-shrink-0 border-b border-[#2a2a2a] md:border-b-0 md:border-r md:border-r-[#2a2a2a]">
           {isAdmin && (
             <button
               onClick={() => toggleFeatured(moment.address, moment.token_id)}
-              className={`absolute top-2 left-2 z-10 p-1 transition-colors ${
+              className={`absolute top-2 left-2 z-20 p-1 transition-colors ${
                 isFeatured ? 'text-yellow-400' : 'text-[#333] hover:text-[#888]'
               }`}
               title={isFeatured ? 'Unfeature' : 'Feature'}
@@ -220,6 +230,11 @@ export function MomentModal({
               <Star size={16} fill={isFeatured ? 'currentColor' : 'none'} strokeWidth={1.5} />
             </button>
           )}
+          <Link
+            href={`/moment/${moment.address}/${moment.token_id}`}
+            onClick={onClose}
+            className="absolute inset-0 z-10 cursor-pointer"
+          />
           {isVideo && mediaUrl ? (
             <video
               src={mediaUrl}
@@ -276,9 +291,20 @@ export function MomentModal({
             {meta.description && (
               <div className="flex flex-col gap-1">
                 <p className="text-[10px] font-mono text-[#333] uppercase tracking-wider">description</p>
-                <p className="text-xs font-mono text-[#888] leading-relaxed line-clamp-4">
+                <p
+                  ref={descRef}
+                  className={`text-xs font-mono text-[#888] leading-relaxed ${showFullDesc ? '' : 'line-clamp-2'}`}
+                >
                   {meta.description}
                 </p>
+                {(descOverflows || showFullDesc) && (
+                  <button
+                    onClick={() => setShowFullDesc(v => !v)}
+                    className="flex items-center gap-1 text-[10px] font-mono text-[#555] hover:text-[#888] transition-colors w-fit"
+                  >
+                    {showFullDesc ? <><ChevronUp size={10} /> show less</> : <><ChevronDown size={10} /> show more</>}
+                  </button>
+                )}
               </div>
             )}
 
