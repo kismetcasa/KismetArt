@@ -3,7 +3,11 @@
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { shortAddress } from '@/lib/inprocess'
 
-export function WalletButton() {
+interface WalletButtonProps {
+  displayName?: string
+}
+
+export function WalletButton({ displayName }: WalletButtonProps) {
   return (
     <ConnectButton.Custom>
       {({ account, chain, openAccountModal, openConnectModal, mounted }) => {
@@ -51,7 +55,7 @@ export function WalletButton() {
                   letterSpacing: '0.05em',
                 }}
               >
-                {shortAddress(account.address)}
+                {displayName ?? shortAddress(account.address)}
               </button>
             )}
           </div>
