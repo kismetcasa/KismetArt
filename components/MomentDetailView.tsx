@@ -9,6 +9,7 @@ import { toast } from 'sonner'
 import { isAddress } from 'viem'
 import { ArrowLeft, Copy, Check, ChevronDown, ChevronUp, Star } from 'lucide-react'
 import { resolveUri, formatPrice, shortAddress, type MomentDetail, type MomentComment } from '@/lib/inprocess'
+import { fetchCreatorProfile } from '@/lib/profileCache'
 import { ERC1155_ABI } from '@/lib/seaport'
 import { ListButton } from './ListButton'
 import { ProfileAvatar } from './ProfileAvatar'
@@ -88,16 +89,13 @@ export function MomentDetailView({ address, tokenId }: Props) {
       .catch(() => {})
   }, [detail])
 
-  // Fetch creator profile
+  // Fetch creator profile via shared cache
   useEffect(() => {
     if (!creatorAddress) return
-    fetch(`/api/profile/${creatorAddress}`)
-      .then((r) => r.json())
-      .then((d) => {
-        setCreatorName(d.profile?.username || d.profile?.ensName || shortAddress(creatorAddress))
-        setCreatorAvatar(d.profile?.avatarUrl)
-      })
-      .catch(() => setCreatorName(shortAddress(creatorAddress)))
+    fetchCreatorProfile(creatorAddress).then(({ name, avatarUrl }) => {
+      setCreatorName(name)
+      setCreatorAvatar(avatarUrl)
+    })
   }, [creatorAddress])
 
   // Fetch comments

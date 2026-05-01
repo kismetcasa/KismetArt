@@ -8,35 +8,12 @@ import { useAccount, useReadContract } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
 import { resolveUri, formatPrice, shortAddress, type Moment, type MomentDetail } from '@/lib/inprocess'
+import { fetchCreatorProfile } from '@/lib/profileCache'
 import { useAdmin } from '@/contexts/AdminContext'
 import { ERC1155_ABI } from '@/lib/seaport'
 import { ListButton } from './ListButton'
 import { MomentModal } from './MomentModal'
 import { ProfileAvatar } from './ProfileAvatar'
-
-// Module-level cache — deduplicates profile fetches across all mounted cards
-const profileCache = new Map<string, { name: string; avatarUrl: string | undefined; ts: number; resolved: boolean }>()
-const CACHE_TTL_RESOLVED = 5 * 60 * 1000  // 5 min for real username / ENS
-const CACHE_TTL_FALLBACK = 30 * 1000       // 30 s for shortAddress — retries quickly once ENS caches
-
-async function fetchCreatorProfile(address: string): Promise<{ name: string; avatarUrl: string | undefined }> {
-  const cached = profileCache.get(address)
-  if (cached) {
-    const ttl = cached.resolved ? CACHE_TTL_RESOLVED : CACHE_TTL_FALLBACK
-    if (Date.now() - cached.ts < ttl) return { name: cached.name, avatarUrl: cached.avatarUrl }
-  }
-  try {
-    const res = await fetch(`/api/profile/${address}`)
-    const d = await res.json()
-    const name: string = d.profile?.username || d.profile?.ensName || ''
-    const avatarUrl: string | undefined = d.profile?.avatarUrl
-    const resolved = !!name
-    profileCache.set(address, { name: name || shortAddress(address), avatarUrl, ts: Date.now(), resolved })
-    return { name: name || shortAddress(address), avatarUrl }
-  } catch {
-    return { name: shortAddress(address), avatarUrl: undefined }
-  }
-}
 
 interface MomentCardProps {
   moment: Moment
@@ -256,7 +233,15 @@ export function MomentCard({ moment }: MomentCardProps) {
       </article>
 
       {modalOpen && (
-        <MomentModal moment={moment} onClose={() => setModalOpen(false)} />
+        <MomentModal
+          moment={moment}
+          onClose={() => setModalOpen(false)}
+          initialPrice={price ?? undefined}
+          initialMaxSupply={maxSupply !== undefined ? maxSupply : undefined}
+          initialCreatorName={creatorName}
+          initialCreatorAvatar={creatorAvatar}
+          initialOwnedBalance={ownedBalance !== undefined ? Number(ownedBalance) : undefined}
+        />
       )}
     </>
   )
