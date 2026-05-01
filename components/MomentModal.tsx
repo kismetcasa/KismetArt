@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { X, Star, ChevronDown, ChevronUp } from 'lucide-react'
+import { X, Star, ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
 import { useAccount, useReadContract } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
@@ -54,6 +54,7 @@ export function MomentModal({
   const [comments, setComments] = useState<MomentComment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(true)
   const [showAllComments, setShowAllComments] = useState(false)
+  const [linkCopied, setLinkCopied] = useState(false)
   const { address: connectedAddress, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { isAdmin, featuredKeys, toggleFeatured } = useAdmin()
@@ -159,6 +160,12 @@ export function MomentModal({
     return () => window.removeEventListener('keydown', handler)
   }, [onClose])
 
+  function handleCopyLink() {
+    navigator.clipboard.writeText(`${window.location.origin}/moment/${moment.address}/${moment.token_id}`).catch(() => {})
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 1500)
+  }
+
   async function handleCollect() {
     if (!isConnected || !connectedAddress) { openConnectModal?.(); return }
     setCollecting(true)
@@ -239,10 +246,19 @@ export function MomentModal({
         <div className="flex flex-col md:min-h-0 md:overflow-y-auto">
 
           <div className="px-5 py-4 flex flex-col gap-3">
-            {/* Title */}
-            <h2 className="text-sm font-mono text-[#efefef] leading-snug pr-6">
-              {meta.name ?? `#${moment.token_id}`}
-            </h2>
+            {/* Title + copy link */}
+            <div className="flex items-start gap-2 pr-6">
+              <h2 className="text-sm font-mono text-[#efefef] leading-snug flex-1 min-w-0">
+                {meta.name ?? `#${moment.token_id}`}
+              </h2>
+              <button
+                onClick={handleCopyLink}
+                title="copy link"
+                className="flex-shrink-0 mt-0.5 text-[#444] hover:text-[#888] transition-colors"
+              >
+                {linkCopied ? <Check size={11} className="text-[#6ee7b7]" /> : <Copy size={11} />}
+              </button>
+            </div>
 
             {/* Creator */}
             <Link
@@ -303,7 +319,7 @@ export function MomentModal({
           {/* Collect row — list to the left when owned */}
           <div className="px-5 pb-2 flex flex-col gap-1.5 sm:flex-row sm:gap-2 sm:items-stretch">
             {alreadyOwned && (
-              <div className="w-full sm:w-1/3 sm:flex-shrink-0">
+              <div className="w-full sm:flex-none sm:w-1/3">
                 <ListButton
                   collectionAddress={moment.address}
                   tokenId={moment.token_id}

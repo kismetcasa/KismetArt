@@ -224,12 +224,12 @@ export function MomentCard({ moment, hidePriceSupply }: MomentCardProps) {
             </button>
             {!hidePriceSupply && (
               <>
-                <div className="border-l border-[#2a2a2a] px-2 py-1.5 flex items-center justify-center min-w-[3rem]">
+                <div className="border-l border-[#2a2a2a] px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
                   <span className="text-[11px] font-mono text-[#444]">
                     {maxSupply === undefined ? '…' : (maxSupply === null || maxSupply === 0 ? 'open' : maxSupply.toLocaleString())}
                   </span>
                 </div>
-                <div className="border-l border-[#2a2a2a] px-2 py-1.5 flex items-center justify-center min-w-[3rem]">
+                <div className="border-l border-[#2a2a2a] px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
                   <span className="text-[11px] font-mono accent-grad">{price ?? '…'}</span>
                 </div>
               </>
