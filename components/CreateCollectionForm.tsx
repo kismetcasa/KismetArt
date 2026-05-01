@@ -5,7 +5,7 @@ import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagm
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { parseEventLogs, isAddress } from 'viem'
 import { toast } from 'sonner'
-import { Upload, X, Plus, Trash2 } from 'lucide-react'
+import { Upload, X, Plus, Trash2, Check } from 'lucide-react'
 import { FACTORY_ADDRESS, FACTORY_ABI, encodeMinterPermission } from '@/lib/collections'
 import { CREATE_REFERRAL } from '@/lib/config'
 import uploadToArweave from '@/lib/arweave/uploadToArweave'
@@ -27,7 +27,8 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
   const [royaltyRecipient, setRoyaltyRecipient] = useState('')
   const [minters, setMinters] = useState<string[]>([])
   const [minterInput, setMinterInput] = useState('')
-  const [step, setStep] = useState<'idle' | 'uploading-image' | 'uploading-metadata' | 'deploying' | 'done'>('idle')
+  const [mintCover, setMintCover] = useState(false)
+  const [step, setStep] = useState<'idle' | 'uploading-image' | 'uploading-metadata' | 'deploying' | 'minting-cover' | 'done'>('idle')
   const [uploadProgress, setUploadProgress] = useState(0)
   const [collectionAddress, setCollectionAddress] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined)
@@ -67,8 +68,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
     const found = logs[0]?.args?.newContract as string | undefined
     const deployedAddress = found ?? receipt.logs[0]?.address ?? null
     setCollectionAddress(deployedAddress)
-    setStep('done')
-    toast.success('Collection deployed!', { id: 'create-collection' })
+
     if (deployedAddress) {
       fetch('/api/collections', {
         method: 'POST',
@@ -82,6 +82,55 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
       }).catch(() => {})
       onDeployed?.(deployedAddress, name)
     }
+
+    if (mintCover && deployedAddress && deployedImageUri) {
+      setStep('minting-cover')
+      toast.loading('Minting cover token…', { id: 'create-collection' })
+      ;(async () => {
+        try {
+          const tokenMetadataUri = await uploadJson({
+            name: name.trim(),
+            ...(description.trim() ? { description: description.trim() } : {}),
+            image: deployedImageUri,
+          })
+          const now = Math.floor(Date.now() / 1000)
+          const res = await fetch('/api/mint', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contract: { address: deployedAddress },
+              token: {
+                tokenMetadataURI: tokenMetadataUri,
+                createReferral: CREATE_REFERRAL,
+                salesConfig: {
+                  type: 'fixedPrice',
+                  pricePerToken: '0',
+                  saleStart: String(now),
+                  saleEnd: '18446744073709551615',
+                },
+                mintToCreatorCount: 1,
+                payoutRecipient: address,
+              },
+              account: address,
+            }),
+          })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error ?? 'Mint failed')
+          toast.success('Collection deployed + cover minted!', { id: 'create-collection' })
+        } catch (err) {
+          toast.error('Cover mint failed', {
+            id: 'create-collection',
+            description: err instanceof Error ? err.message : 'Unknown error',
+          })
+        } finally {
+          setStep('done')
+        }
+      })()
+    } else {
+      setStep('done')
+      toast.success('Collection deployed!', { id: 'create-collection' })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receipt, step])
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -284,6 +333,22 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
           onChange={handleFileChange}
           className="hidden"
         />
+        <label className="flex items-center gap-2 mt-2 cursor-pointer group w-fit">
+          <input
+            type="checkbox"
+            checked={mintCover}
+            onChange={(e) => setMintCover(e.target.checked)}
+            className="sr-only"
+          />
+          <div className={`w-3.5 h-3.5 border flex items-center justify-center flex-shrink-0 transition-colors ${
+            mintCover ? 'border-[#8B5CF6] bg-[#8B5CF6]/10' : 'border-[#2a2a2a] group-hover:border-[#555]'
+          }`}>
+            {mintCover && <Check size={9} className="text-[#8B5CF6]" />}
+          </div>
+          <span className="text-xs font-mono text-[#555] group-hover:text-[#888] transition-colors">
+            also mint as first token
+          </span>
+        </label>
       </div>
 
       {/* Collection name */}
@@ -418,6 +483,7 @@ function stepLabel(step: string, progress: number): string {
     case 'uploading-image': return progress > 0 ? `uploading image… ${progress}%` : 'uploading image…'
     case 'uploading-metadata': return 'uploading metadata…'
     case 'deploying': return 'deploying…'
+    case 'minting-cover': return 'minting cover…'
     default: return 'working…'
   }
 }
