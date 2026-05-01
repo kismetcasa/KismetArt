@@ -210,11 +210,11 @@ export function MomentCard({ moment }: MomentCardProps) {
           <Link
             href={`/profile/${moment.creator.address}`}
             onClick={(e) => e.stopPropagation()}
-            className="flex items-center gap-1.5 group w-fit"
+            className="flex items-center gap-1.5 group/creator w-fit"
             title={moment.creator.address}
           >
             <ProfileAvatar address={moment.creator.address} avatarUrl={creatorAvatar} size={16} />
-            <span className="text-xs text-[#555] font-mono group-hover:text-[#888] transition-colors">{creatorName}</span>
+            <span className="text-xs text-[#555] font-mono group-hover/creator:text-[#888] transition-colors">{creatorName}</span>
           </Link>
         </div>
 
