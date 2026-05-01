@@ -1,13 +1,13 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useAccount, useReadContract } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
 import { isAddress } from 'viem'
-import { ArrowLeft, Copy, Check, ChevronDown, ChevronUp, Star } from 'lucide-react'
+import { ArrowLeft, Copy, Check, ChevronDown, ChevronUp, Star, X } from 'lucide-react'
 import { resolveUri, formatPrice, shortAddress, formatRelativeTime, type MomentDetail, type MomentComment } from '@/lib/inprocess'
 import { fetchCreatorProfile } from '@/lib/profileCache'
 import { ERC1155_ABI } from '@/lib/seaport'
@@ -40,6 +40,10 @@ export function MomentDetailView({ address, tokenId, initialDetail }: Props) {
   const [creatorName, setCreatorName] = useState('')
   const [creatorAvatar, setCreatorAvatar] = useState<string | undefined>(undefined)
   const [linkCopied, setLinkCopied] = useState(false)
+  const [lightboxOpen, setLightboxOpen] = useState(false)
+  const [showFullDesc, setShowFullDesc] = useState(false)
+  const [descOverflows, setDescOverflows] = useState(false)
+  const descRef = useRef<HTMLParagraphElement>(null)
   const [hasSplits, setHasSplits] = useState(false)
   const [splitAddress, setSplitAddress] = useState('')
   const [distributing, setDistributing] = useState(false)
@@ -109,6 +113,19 @@ export function MomentDetailView({ address, tokenId, initialDetail }: Props) {
   }, [address, tokenId])
 
   useEffect(() => { fetchComments() }, [fetchComments])
+
+  useEffect(() => {
+    const el = descRef.current
+    if (!el) return
+    setDescOverflows(el.scrollHeight > el.clientHeight)
+  }, [detail])
+
+  useEffect(() => {
+    if (!lightboxOpen) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightboxOpen(false) }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [lightboxOpen])
 
   // Check splits flag (only for creator)
   useEffect(() => {
@@ -212,7 +229,10 @@ export function MomentDetailView({ address, tokenId, initialDetail }: Props) {
               </p>
             </div>
           ) : (
-            <div className="relative aspect-square bg-[#111]">
+            <div
+              className={`relative aspect-square bg-[#111] ${(imageUrl || (isVideo && mediaUrl)) ? 'cursor-zoom-in' : ''}`}
+              onClick={() => { if (imageUrl || (isVideo && mediaUrl)) setLightboxOpen(true) }}
+            >
               {isVideo && mediaUrl ? (
                 <video
                   src={mediaUrl}
@@ -275,7 +295,20 @@ export function MomentDetailView({ address, tokenId, initialDetail }: Props) {
             {meta.description && (
               <div className="flex flex-col gap-1.5">
                 <p className="text-[10px] font-mono text-[#333] uppercase tracking-wider">description</p>
-                <p className="text-xs font-mono text-[#888] leading-relaxed">{meta.description}</p>
+                <p
+                  ref={descRef}
+                  className={`text-xs font-mono text-[#888] leading-relaxed ${showFullDesc ? '' : 'line-clamp-4'}`}
+                >
+                  {meta.description}
+                </p>
+                {(descOverflows || showFullDesc) && (
+                  <button
+                    onClick={() => setShowFullDesc(v => !v)}
+                    className="flex items-center gap-1 text-[10px] font-mono text-[#555] hover:text-[#888] transition-colors w-fit"
+                  >
+                    {showFullDesc ? <><ChevronUp size={10} /> show less</> : <><ChevronDown size={10} /> show more</>}
+                  </button>
+                )}
               </div>
             )}
             {!commentsLoading && comments.length > 0 && (
@@ -406,6 +439,37 @@ export function MomentDetailView({ address, tokenId, initialDetail }: Props) {
 
         </div>
       </div>
+
+      {/* Lightbox */}
+      {lightboxOpen && (
+        <div
+          className="fixed inset-0 z-[200] bg-black/95 flex items-center justify-center"
+          onClick={() => setLightboxOpen(false)}
+        >
+          <button
+            onClick={() => setLightboxOpen(false)}
+            className="absolute top-4 right-4 z-10 p-2 text-[#888] hover:text-[#efefef] transition-colors"
+          >
+            <X size={18} />
+          </button>
+          {isVideo && mediaUrl ? (
+            <video
+              src={mediaUrl}
+              className="max-h-[95vh] max-w-[95vw] object-contain"
+              autoPlay muted loop playsInline
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : imageUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={imageUrl}
+              alt={meta.name ?? 'moment'}
+              className="max-h-[95vh] max-w-[95vw] object-contain"
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : null}
+        </div>
+      )}
     </div>
   )
 }
