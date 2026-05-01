@@ -43,6 +43,7 @@ interface MomentCardProps {
 export function MomentCard({ moment }: MomentCardProps) {
   const [imgError, setImgError] = useState(false)
   const [price, setPrice] = useState<string | null>(null)
+  const [maxSupply, setMaxSupply] = useState<number | null | undefined>(undefined)
   const [creatorName, setCreatorName] = useState(() => shortAddress(moment.creator.address))
   const [modalOpen, setModalOpen] = useState(false)
   const [collecting, setCollecting] = useState(false)
@@ -77,7 +78,10 @@ export function MomentCard({ moment }: MomentCardProps) {
     })
     fetch(`/api/moment?${params}`)
       .then((r) => r.ok ? r.json() as Promise<MomentDetail> : Promise.reject())
-      .then((detail) => setPrice(formatPrice(detail.saleConfig.pricePerToken)))
+      .then((detail) => {
+        setPrice(formatPrice(detail.saleConfig.pricePerToken))
+        setMaxSupply(detail.maxSupply ?? null)
+      })
       .catch(() => {})
   }, [moment.address, moment.token_id])
 
@@ -235,7 +239,12 @@ export function MomentCard({ moment }: MomentCardProps) {
             >
               {collecting ? 'collecting…' : collected ? 'collected' : 'collect'}
             </button>
-            <div className="border-l border-[#2a2a2a] px-2 py-1.5 flex items-center justify-end min-w-[3rem]">
+            <div className="border-l border-[#2a2a2a] px-2 py-1.5 flex items-center justify-center min-w-[3rem]">
+              <span className="text-[11px] font-mono text-[#444]">
+                {maxSupply === undefined ? '…' : (maxSupply === null || maxSupply === 0 ? 'open' : maxSupply.toLocaleString())}
+              </span>
+            </div>
+            <div className="border-l border-[#2a2a2a] px-2 py-1.5 flex items-center justify-center min-w-[3rem]">
               <span className="text-[11px] font-mono accent-grad">{price ?? '…'}</span>
             </div>
           </div>
