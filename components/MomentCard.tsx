@@ -236,7 +236,7 @@ export function MomentCard({ moment }: MomentCardProps) {
               {collecting ? 'collecting…' : collected ? 'collected' : 'collect'}
             </button>
             <div className="border-l border-[#2a2a2a] px-2 py-1.5 flex items-center justify-end min-w-[3rem]">
-              <span className="text-[9px] font-mono accent-grad">{price ?? '…'}</span>
+              <span className="text-[11px] font-mono accent-grad">{price ?? '…'}</span>
             </div>
           </div>
         </div>
