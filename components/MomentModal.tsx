@@ -320,7 +320,7 @@ export function MomentModal({
               <button
                 onClick={handleCollect}
                 disabled={collecting || alreadyOwned || collected}
-                className={`flex-1 py-2.5 text-xs font-mono tracking-wider uppercase transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
+                className={`flex-1 py-2.5 text-xs font-mono tracking-wider uppercase transition-all disabled:opacity-50 ${collecting ? 'cursor-not-allowed' : ''} ${
                   collected || alreadyOwned ? 'text-[#8B5CF6] bg-[#8B5CF6]/10' : 'text-[#555] hover:bg-gradient-to-r hover:from-[#8B5CF6] hover:to-[#C084FC] hover:text-white'
                 }`}
               >
