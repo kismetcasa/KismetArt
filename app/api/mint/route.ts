@@ -15,8 +15,9 @@ export async function POST(req: NextRequest) {
   const body = await req.json()
   if (body?.account) void trackWallet(body.account)
 
-  if (body?.maxSupply !== undefined) {
-    const ms = Number(body.maxSupply)
+  const maxSupplyRaw = body?.token?.maxSupply ?? body?.maxSupply
+  if (maxSupplyRaw !== undefined) {
+    const ms = Number(maxSupplyRaw)
     if (!Number.isInteger(ms) || ms < 1) {
       return NextResponse.json({ error: 'maxSupply must be a positive integer' }, { status: 400 })
     }

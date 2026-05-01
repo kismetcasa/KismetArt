@@ -97,7 +97,9 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
       return
     }
 
-    const priceInWei = parseEther(price || '0').toString()
+    const rawPrice = price.trim()
+    const normalizedPrice = !rawPrice || rawPrice === '.' ? '0' : rawPrice.startsWith('.') ? `0${rawPrice}` : rawPrice
+    const priceInWei = parseEther(normalizedPrice).toString()
     const now = Math.floor(Date.now() / 1000)
     const salesConfig = {
       type: 'fixedPrice' as const,
@@ -105,7 +107,12 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
       saleStart: String(now),
       saleEnd: '18446744073709551615',
     }
-    const maxSupplyVal = maxSupply.trim() ? parseInt(maxSupply) : undefined
+    const supplyTrimmed = maxSupply.trim()
+    if (supplyTrimmed) {
+      const supplyNum = parseInt(supplyTrimmed, 10)
+      if (isNaN(supplyNum) || supplyNum < 1) { toast.error('Supply must be at least 1'); return }
+    }
+    const maxSupplyVal = supplyTrimmed ? parseInt(supplyTrimmed, 10) : undefined
 
     try {
       if (mintMode === 'text') {
@@ -370,11 +377,10 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
           </label>
           <div className="relative">
             <input
-              type="number"
+              type="text"
+              inputMode="decimal"
               value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              min="0"
-              step="0.001"
+              onChange={(e) => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setPrice(v) }}
               className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] pr-12"
             />
             <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-mono text-[#555]">ETH</span>
@@ -389,11 +395,10 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
             Supply
           </label>
           <input
-            type="number"
+            type="text"
+            inputMode="numeric"
             value={maxSupply}
-            onChange={(e) => setMaxSupply(e.target.value)}
-            min="1"
-            step="1"
+            onChange={(e) => { const v = e.target.value; if (v === '' || /^[1-9]\d*$/.test(v)) setMaxSupply(v) }}
             placeholder="unlimited"
             className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
           />

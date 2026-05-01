@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useAccount, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
-import { Pencil, ChevronRight, Copy, Check, X } from 'lucide-react'
+import { Pencil, ChevronRight, Copy, Check, X, Search } from 'lucide-react'
 import { ProfileAvatar } from './ProfileAvatar'
 import { MomentCard } from './MomentCard'
 import { MarketCard } from './MarketCard'
@@ -43,7 +43,7 @@ function loadSectionsConfig(): SectionsConfig {
 
 // ─── follow row (lazy-loads display name) ────────────────────────────────────
 
-function FollowRow({ addr, onClose }: { addr: string; onClose: () => void }) {
+function FollowRow({ addr, onClose, onNameLoaded }: { addr: string; onClose: () => void; onNameLoaded?: (addr: string, name: string) => void }) {
   const [name, setName] = useState(() => shortAddress(addr))
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined)
 
@@ -52,10 +52,12 @@ function FollowRow({ addr, onClose }: { addr: string; onClose: () => void }) {
       .then((r) => r.json())
       .then((d) => {
         const n = d.profile?.username || d.profile?.ensName
-        if (n) setName(n)
+        if (n) { setName(n); onNameLoaded?.(addr, n) }
         if (d.profile?.avatarUrl) setAvatarUrl(d.profile.avatarUrl)
       })
       .catch(() => {})
+  // onNameLoaded is a ref-mutating callback — intentionally excluded from deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [addr])
 
   return (
@@ -112,7 +114,10 @@ export function ProfileView({ address }: ProfileViewProps) {
   const [activeList, setActiveList] = useState<'following' | 'followers' | null>(null)
   const [listAddresses, setListAddresses] = useState<string[]>([])
   const [loadingList, setLoadingList] = useState(false)
+  const [searchOpen, setSearchOpen] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const listReqRef = useRef(0)
+  const nameMapRef = useRef<Record<string, string>>({})
 
   // Section state — hydrated from localStorage after mount
   const [sectionOrder, setSectionOrder] = useState<SectionId[]>(DEFAULT_ORDER)
@@ -243,6 +248,9 @@ export function ProfileView({ address }: ProfileViewProps) {
     setActiveList(type)
     setListAddresses([])
     setLoadingList(true)
+    setSearchOpen(false)
+    setSearchQuery('')
+    nameMapRef.current = {}
     const reqId = ++listReqRef.current
     try {
       const param = type === 'following' ? 'list=1' : 'followers=1'
@@ -433,13 +441,34 @@ export function ProfileView({ address }: ProfileViewProps) {
                   ? `Following${followingCount !== null ? ` (${followingCount})` : ''}`
                   : `Followers${followerCount !== null ? ` (${followerCount})` : ''}`}
               </p>
-              <button
-                onClick={() => setActiveList(null)}
-                className="p-1 text-[#555] hover:text-[#888] transition-colors"
-              >
-                <X size={14} />
-              </button>
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => { setSearchOpen((v) => !v); setSearchQuery('') }}
+                  className={`p-1 transition-colors ${searchOpen ? 'text-[#efefef]' : 'text-[#555] hover:text-[#888]'}`}
+                  title="search"
+                >
+                  <Search size={14} />
+                </button>
+                <button
+                  onClick={() => setActiveList(null)}
+                  className="p-1 text-[#555] hover:text-[#888] transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              </div>
             </div>
+            {searchOpen && (
+              <div className="px-5 py-2 border-b border-[#2a2a2a]">
+                <input
+                  autoFocus
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="search…"
+                  className="w-full bg-transparent text-xs font-mono text-[#efefef] placeholder-[#333] focus:outline-none"
+                />
+              </div>
+            )}
             <div className="overflow-y-auto max-h-[280px]">
               {loadingList ? (
                 <div className="flex flex-col">
@@ -452,13 +481,29 @@ export function ProfileView({ address }: ProfileViewProps) {
                 </div>
               ) : listAddresses.length === 0 ? (
                 <p className="px-5 py-6 text-xs font-mono text-[#555]">no {activeList} yet</p>
-              ) : (
-                <div className="flex flex-col">
-                  {listAddresses.map((addr) => (
-                    <FollowRow key={addr} addr={addr} onClose={() => setActiveList(null)} />
-                  ))}
-                </div>
-              )}
+              ) : (() => {
+                const q = searchQuery.toLowerCase().trim()
+                const filtered = q
+                  ? listAddresses.filter((a) =>
+                      a.toLowerCase().includes(q) ||
+                      (nameMapRef.current[a] ?? '').toLowerCase().includes(q)
+                    )
+                  : listAddresses
+                return filtered.length === 0
+                  ? <p className="px-5 py-6 text-xs font-mono text-[#555]">no results</p>
+                  : (
+                    <div className="flex flex-col">
+                      {filtered.map((addr) => (
+                        <FollowRow
+                          key={addr}
+                          addr={addr}
+                          onClose={() => setActiveList(null)}
+                          onNameLoaded={(a, n) => { nameMapRef.current[a] = n }}
+                        />
+                      ))}
+                    </div>
+                  )
+              })()}
             </div>
           </div>
         </div>
