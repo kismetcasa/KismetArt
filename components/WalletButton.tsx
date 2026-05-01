@@ -32,45 +32,56 @@ const addressStyle: React.CSSProperties = {
 
 export function WalletButton() {
   const [mounted, setMounted] = useState(false)
-  const { address, isConnected } = useAccount()
+  const { address, isConnected, status } = useAccount()
   const { openAccountModal } = useAccountModal()
   const { openConnectModal } = useConnectModal()
   const [displayName, setDisplayName] = useState<string | null>(null)
+  const [nameResolved, setNameResolved] = useState(false)
 
   useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {
-    if (!address) { setDisplayName(null); return }
+    if (!address) { setDisplayName(null); setNameResolved(false); return }
+    setNameResolved(false)
     fetch(`/api/profile/${address}`)
       .then((r) => r.json())
       .then((d) => setDisplayName(d.profile?.username || d.profile?.ensName || null))
       .catch(() => {})
+      .finally(() => setNameResolved(true))
   }, [address])
 
-  // Hidden placeholder during SSR / before hydration to avoid layout shift
-  if (!mounted) {
-    return (
-      <div aria-hidden style={{ opacity: 0, pointerEvents: 'none', userSelect: 'none' }}>
-        <button style={connectStyle}>connect</button>
-      </div>
-    )
-  }
-
-  if (!isConnected || !address) {
-    return (
-      <button onClick={openConnectModal} style={connectStyle}>
-        connect
-      </button>
-    )
-  }
+  // Hide until state is truly settled:
+  // - 'reconnecting'/'connecting': wagmi is replaying localStorage — don't show anything yet
+  // - 'disconnected': safe to show connect button immediately
+  // - 'connected': wait for profile fetch so we jump straight to the final name, never 0x → name
+  const settled = mounted && (
+    status === 'disconnected' ||
+    (status === 'connected' && nameResolved)
+  )
 
   return (
-    <button
-      onClick={() => openAccountModal?.()}
-      className="text-[#888] hover:text-[#efefef] transition-colors"
-      style={addressStyle}
+    <div
+      style={{
+        opacity: settled ? 1 : 0,
+        pointerEvents: settled ? 'auto' : 'none',
+        // Only apply transition on reveal (not on hide) so it fades in cleanly
+        transition: settled ? 'opacity 0.15s' : 'none',
+      }}
+      aria-hidden={!settled}
     >
-      {displayName ?? shortAddress(address)}
-    </button>
+      {!isConnected || !address ? (
+        <button onClick={openConnectModal} style={connectStyle}>
+          connect
+        </button>
+      ) : (
+        <button
+          onClick={() => openAccountModal?.()}
+          className="text-[#888] hover:text-[#efefef] transition-colors"
+          style={addressStyle}
+        >
+          {displayName ?? shortAddress(address)}
+        </button>
+      )}
+    </div>
   )
 }
