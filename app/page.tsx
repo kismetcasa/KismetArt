@@ -12,7 +12,7 @@ import { useAdmin } from '@/contexts/AdminContext'
 
 type TabId = 'featured' | 'trending' | 'main' | 'market'
 
-const DRAGGABLE: TabId[] = ['featured', 'trending', 'main']
+const DRAGGABLE: TabId[] = ['main', 'featured', 'trending']
 const LABEL: Record<TabId, string> = {
   featured: 'featured',
   trending: 'trending',
@@ -279,11 +279,13 @@ function MainFeed() {
 export default function DiscoverPage() {
   const { isAdmin, session, startSession, featuredKeys } = useAdmin()
   const [order, setOrder] = useState<TabId[]>(DRAGGABLE)
-  const [active, setActive] = useState<TabId>('featured')
+  const [active, setActive] = useState<TabId>(DRAGGABLE[0])
 
-  // Hydrate from localStorage after mount
+  // Hydrate from localStorage after mount; activate leftmost tab
   useEffect(() => {
-    setOrder(loadOrder())
+    const saved = loadOrder()
+    setOrder(saved)
+    setActive(saved[0])
   }, [])
 
   function handleReorder(next: TabId[]) {
