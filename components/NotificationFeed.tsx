@@ -107,7 +107,9 @@ export function NotificationFeed({ address }: NotificationFeedProps) {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address, id }),
-    }).catch(() => {})
+    })
+      .then(() => window.dispatchEvent(new CustomEvent('kismetart:notif-refetch')))
+      .catch(() => {})
   }
 
   function handleMute(actor: string) {

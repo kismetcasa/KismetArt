@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAddress } from 'viem'
-import { INPROCESS_API } from '@/lib/inprocess'
+import { INPROCESS_API, DEFAULT_COLLECT_COMMENT } from '@/lib/inprocess'
 import { redis } from '@/lib/redis'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
 import { getMomentMeta, writeNotification } from '@/lib/notifications'
@@ -43,7 +43,6 @@ export async function POST(req: NextRequest) {
     const account = (body as { account?: string }).account?.toLowerCase()
     const amount = Number((body as { amount?: number }).amount ?? 1)
     const comment = (body as { comment?: string }).comment
-    const DEFAULT_COMMENT = 'collected via Kismet Art'
 
     if (col && tok) {
       const colLower = col.toLowerCase()
@@ -62,7 +61,7 @@ export async function POST(req: NextRequest) {
             tokenName: meta.name,
             amount: Number.isFinite(amount) && amount > 0 ? amount : 1,
             ...(pricePerToken ? { price: pricePerToken } : {}),
-            ...(comment && comment !== DEFAULT_COMMENT ? { comment } : {}),
+            ...(comment && comment !== DEFAULT_COLLECT_COMMENT ? { comment } : {}),
           })
         })()
       }

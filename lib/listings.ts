@@ -131,11 +131,19 @@ export async function getListings({
   const all = await Promise.all(ids.map((id) => getListing(id)))
   const now = Date.now()
   const expired: Listing[] = []
+  const ghosts: string[] = [] // ZSET entries with no/non-active data — clean up
 
-  const active = all.filter((l): l is Listing => {
-    if (!l) return false
-    if (l.status !== 'active' || l.expiresAt <= now) {
-      if (l.status === 'active') expired.push(l)
+  const active = all.filter((l, idx): l is Listing => {
+    if (!l) {
+      ghosts.push(ids[idx])
+      return false
+    }
+    if (l.status === 'active' && l.expiresAt <= now) {
+      expired.push(l)
+      return false
+    }
+    if (l.status !== 'active') {
+      ghosts.push(l.id)
       return false
     }
     return !collection || l.collectionAddress.toLowerCase() === collection.toLowerCase()
@@ -143,6 +151,9 @@ export async function getListings({
 
   if (expired.length > 0) {
     void handleExpiredListings(expired).catch(() => {})
+  }
+  if (ghosts.length > 0) {
+    redis.zrem(KEY_ALL, ...ghosts).catch(() => {})
   }
 
   const total = active.length
