@@ -110,7 +110,7 @@ export function MomentCard({ moment }: MomentCardProps) {
     meta.animation_url?.endsWith('.mp4') ||
     meta.animation_url?.endsWith('.webm')
   const mediaUrl = isVideo && meta.animation_url ? resolveUri(meta.animation_url) : imageUrl
-  const supplyLabel = !maxSupply ? 'open' : maxSupply.toLocaleString()
+  const supplyLabel = maxSupply === undefined ? '…' : (maxSupply === 0 ? 'open' : maxSupply.toLocaleString())
 
   return (
     <>
@@ -167,7 +167,7 @@ export function MomentCard({ moment }: MomentCardProps) {
         {/* Info — click navigates to detail page */}
         <Link
           href={`/moment/${moment.address}/${moment.token_id}`}
-          className="block px-4 pt-4 pb-3 flex flex-col gap-1.5"
+          className="px-4 pt-4 pb-3 flex flex-col gap-1.5"
         >
           <h3 className="text-sm text-[#efefef] font-mono truncate hover:text-[#bbb] transition-colors">
             {meta.name ?? `#${moment.token_id}`}

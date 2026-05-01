@@ -3,12 +3,14 @@
 import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { X } from 'lucide-react'
-import { useAccount } from 'wagmi'
+import { X, Star } from 'lucide-react'
+import { useAccount, useReadContract } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
 import { resolveUri, formatPrice, shortAddress, type Moment, type MomentDetail } from '@/lib/inprocess'
+import { ERC1155_ABI } from '@/lib/seaport'
 import { ListButton } from './ListButton'
+import { useAdmin } from '@/contexts/AdminContext'
 
 interface MomentModalProps {
   moment: Moment
@@ -21,6 +23,7 @@ export function MomentModal({ moment, onClose }: MomentModalProps) {
   const [collected, setCollected] = useState(false)
   const { address: connectedAddress, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
+  const { isAdmin, featuredKeys, toggleFeatured } = useAdmin()
 
   const meta = moment.metadata ?? {}
   const imageUrl = meta.image ? resolveUri(meta.image) : null
@@ -30,6 +33,16 @@ export function MomentModal({ moment, onClose }: MomentModalProps) {
     meta.animation_url?.endsWith('.webm')
   const mediaUrl = isVideo && meta.animation_url ? resolveUri(meta.animation_url) : imageUrl
   const creatorAddress = moment.creator.address
+  const isFeatured = featuredKeys.has(`${moment.address.toLowerCase()}:${moment.token_id}`)
+
+  const { data: ownedBalance } = useReadContract({
+    address: moment.address as `0x${string}`,
+    abi: ERC1155_ABI,
+    functionName: 'balanceOf',
+    args: connectedAddress ? [connectedAddress, BigInt(moment.token_id)] : undefined,
+    query: { enabled: !!connectedAddress },
+  })
+  const alreadyOwned = ownedBalance ? Number(ownedBalance) > 0 : false
 
   useEffect(() => {
     const params = new URLSearchParams({
@@ -83,7 +96,7 @@ export function MomentModal({ moment, onClose }: MomentModalProps) {
 
   const price = detail ? formatPrice(detail.saleConfig.pricePerToken) : null
   const maxSupply = detail?.maxSupply
-  const supplyLabel = !maxSupply ? 'open' : maxSupply.toLocaleString()
+  const supplyLabel = detail === null ? '…' : (maxSupply ? maxSupply.toLocaleString() : 'open')
 
   return (
     <div
@@ -93,15 +106,34 @@ export function MomentModal({ moment, onClose }: MomentModalProps) {
       <div className="relative w-full max-w-3xl bg-[#161616] border border-[#2a2a2a] flex flex-col md:grid md:grid-cols-2 max-h-[90vh] overflow-hidden">
         <button
           onClick={onClose}
-          className="absolute top-3 right-3 z-10 p-1 text-[#555] hover:text-[#888] transition-colors"
+          className="absolute top-3 right-3 z-20 p-1 text-[#555] hover:text-[#888] transition-colors"
         >
           <X size={16} />
         </button>
 
         {/* Left: media */}
         <div className="relative aspect-square bg-[#111] flex-shrink-0 border-b border-[#2a2a2a] md:border-b-0 md:border-r md:border-r-[#2a2a2a]">
+          {isAdmin && (
+            <button
+              onClick={() => toggleFeatured(moment.address, moment.token_id)}
+              className={`absolute top-2 left-2 z-10 p-1 transition-colors ${
+                isFeatured ? 'text-yellow-400' : 'text-[#333] hover:text-[#888]'
+              }`}
+              title={isFeatured ? 'Unfeature' : 'Feature'}
+            >
+              <Star size={16} fill={isFeatured ? 'currentColor' : 'none'} strokeWidth={1.5} />
+            </button>
+          )}
           {isVideo && mediaUrl ? (
-            <video src={mediaUrl} className="w-full h-full object-cover" autoPlay muted loop playsInline />
+            <video
+              src={mediaUrl}
+              className="w-full h-full object-cover"
+              autoPlay
+              muted
+              loop
+              playsInline
+              poster={imageUrl ?? undefined}
+            />
           ) : imageUrl ? (
             <Image src={imageUrl} alt={meta.name ?? 'moment'} fill className="object-cover" sizes="(max-width: 768px) 100vw, 50vw" />
           ) : (
@@ -142,26 +174,30 @@ export function MomentModal({ moment, onClose }: MomentModalProps) {
               view page →
             </Link>
 
-            {/* List + Collect row */}
+            {/* List (if owned) + Collect row */}
             <div className="flex">
-              <div className="flex-1">
-                <ListButton
-                  collectionAddress={moment.address}
-                  tokenId={moment.token_id}
-                  name={meta.name}
-                  image={meta.image ? resolveUri(meta.image) : undefined}
-                  creatorAddress={creatorAddress}
-                />
-              </div>
-              <div className={`flex flex-1 -ml-px border transition-colors ${collected ? 'border-[#8B5CF6]' : 'border-[#2a2a2a]'}`}>
+              {alreadyOwned && (
+                <div className="flex-1">
+                  <ListButton
+                    collectionAddress={moment.address}
+                    tokenId={moment.token_id}
+                    name={meta.name}
+                    image={meta.image ? resolveUri(meta.image) : undefined}
+                    creatorAddress={creatorAddress}
+                  />
+                </div>
+              )}
+              <div className={`flex ${alreadyOwned ? 'flex-1 -ml-px' : 'w-full'} border transition-colors ${
+                collected || alreadyOwned ? 'border-[#8B5CF6]' : 'border-[#2a2a2a]'
+              }`}>
                 <button
                   onClick={handleCollect}
-                  disabled={collecting || collected}
+                  disabled={collecting || alreadyOwned || collected}
                   className={`flex-1 py-2.5 text-xs font-mono tracking-wider uppercase transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                    collected ? 'text-[#8B5CF6] bg-[#8B5CF6]/10' : 'text-[#555] hover:text-[#8B5CF6]'
+                    collected || alreadyOwned ? 'text-[#8B5CF6] bg-[#8B5CF6]/10' : 'text-[#555] hover:text-[#8B5CF6]'
                   }`}
                 >
-                  {collecting ? 'collecting…' : collected ? 'collected' : 'collect'}
+                  {collecting ? 'collecting…' : (collected || alreadyOwned) ? 'collected' : 'collect'}
                 </button>
                 <div className="border-l border-[#2a2a2a] px-2 py-1.5 flex flex-col items-end justify-between min-w-[3.5rem]">
                   <span className="text-[9px] font-mono accent-grad">{price ?? '…'}</span>
