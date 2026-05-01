@@ -217,7 +217,7 @@ export function MomentCard({ moment }: MomentCardProps) {
         {/* Actions — list (if owned) + collect + price */}
         <div className="px-4 pb-4 flex">
           {owned > 0 && (
-            <div className="flex-1">
+            <div className="w-1/4 flex-none">
               <ListButton
                 collectionAddress={moment.address}
                 tokenId={moment.token_id}
