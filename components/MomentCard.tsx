@@ -200,7 +200,7 @@ export function MomentCard({ moment, hidePriceSupply }: MomentCardProps) {
         {/* Actions — list (if owned) + collect + price */}
         <div className="px-4 pb-4 flex flex-col gap-1.5 sm:flex-row sm:gap-2 sm:items-stretch">
           {owned > 0 && (
-            <div className={`w-full sm:flex-none ${hidePriceSupply ? 'sm:w-2/5' : 'sm:w-1/3'}`}>
+            <div className={`w-full sm:flex-none ${hidePriceSupply ? 'sm:w-1/2' : 'sm:w-1/3'}`}>
               <ListButton
                 collectionAddress={moment.address}
                 tokenId={moment.token_id}
@@ -211,16 +211,16 @@ export function MomentCard({ moment, hidePriceSupply }: MomentCardProps) {
             </div>
           )}
           <div className={`flex ${owned > 0 ? 'w-full sm:flex-1' : 'w-full'} border transition-colors ${
-            collected ? 'border-[#8B5CF6]' : 'border-[#2a2a2a]'
+            collected || owned > 0 ? 'border-[#8B5CF6]' : 'border-[#2a2a2a]'
           }`}>
             <button
               onClick={handleCollect}
-              disabled={collecting || collected}
+              disabled={collecting || collected || owned > 0}
               className={`flex-1 py-2.5 text-xs font-mono tracking-wider uppercase transition-all disabled:opacity-50 disabled:cursor-not-allowed ${
-                collected ? 'text-[#8B5CF6] bg-[#8B5CF6]/10' : 'text-[#555] hover:bg-gradient-to-r hover:from-[#8B5CF6] hover:to-[#C084FC] hover:text-white'
+                collected || owned > 0 ? 'text-[#8B5CF6] bg-[#8B5CF6]/10' : 'text-[#555] hover:bg-gradient-to-r hover:from-[#8B5CF6] hover:to-[#C084FC] hover:text-white'
               }`}
             >
-              {collecting ? 'collecting…' : collected ? 'collected' : 'collect'}
+              {collecting ? 'collecting…' : (collected || owned > 0) ? 'collected' : 'collect'}
             </button>
             {!hidePriceSupply && (
               <>

@@ -19,16 +19,17 @@ import { useAdmin } from '@/contexts/AdminContext'
 interface Props {
   address: string
   tokenId: string
+  initialDetail?: MomentDetail | null
 }
 
 const TOP_COMMENTS = 2
 
-export function MomentDetailView({ address, tokenId }: Props) {
+export function MomentDetailView({ address, tokenId, initialDetail }: Props) {
   const { address: connectedAddress, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { isAdmin, featuredKeys, toggleFeatured } = useAdmin()
 
-  const [detail, setDetail] = useState<MomentDetail | null>(null)
+  const [detail, setDetail] = useState<MomentDetail | null>(initialDetail ?? null)
   const [textContent, setTextContent] = useState<string | null>(null)
   const [comments, setComments] = useState<MomentComment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(true)
@@ -60,14 +61,15 @@ export function MomentDetailView({ address, tokenId }: Props) {
     !!creatorAddress &&
     connectedAddress.toLowerCase() === creatorAddress.toLowerCase()
 
-  // Fetch moment detail
+  // Fetch moment detail (skip if pre-populated from server)
   useEffect(() => {
+    if (initialDetail !== undefined) return
     const params = new URLSearchParams({ collectionAddress: address, tokenId, chainId: '8453' })
     fetch(`/api/moment?${params}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setDetail(d))
       .catch(() => {})
-  }, [address, tokenId])
+  }, [address, tokenId, initialDetail])
 
   // Fetch text content for writing moments
   useEffect(() => {
