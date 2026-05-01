@@ -386,11 +386,13 @@ export function MomentDetailView({ address, tokenId }: Props) {
               >
                 {collecting ? 'collecting…' : (collected || alreadyOwned) ? 'collected ✓' : 'collect'}
               </button>
-              <div className="border-l border-[#2a2a2a] px-3 py-2 flex flex-col items-end justify-between min-w-[4.5rem]">
-                <span className="text-[10px] font-mono accent-grad">{price ?? '…'}</span>
-                <span className="text-[10px] font-mono text-[#444]">
+              <div className="border-l border-[#2a2a2a] px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
+                <span className="text-[11px] font-mono text-[#444]">
                   {detail === null ? '…' : (detail.maxSupply ? detail.maxSupply.toLocaleString() : 'open')}
                 </span>
+              </div>
+              <div className="border-l border-[#2a2a2a] px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
+                <span className="text-[11px] font-mono accent-grad">{price ?? '…'}</span>
               </div>
             </div>
           </div>
