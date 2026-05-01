@@ -147,6 +147,7 @@ export function MomentDetailView({ address, tokenId, initialDetail }: Props) {
           amount: 1,
           comment: commentText.trim() || 'collected via Kismet Art',
           account: connectedAddress,
+          pricePerToken: detail?.saleConfig.pricePerToken,
         }),
       })
       const data = await res.json()

@@ -26,20 +26,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid tokenId' }, { status: 400 })
   }
 
+  // Strip pricePerToken — our internal field, not part of InProcess CollectPayload
+  const { pricePerToken, ...forwardBody } = body as Record<string, unknown> & { pricePerToken?: string }
+
   const res = await fetch(`${INPROCESS_API}/moment/collect`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-api-key': apiKey,
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(forwardBody),
   })
 
   // Fire-and-forget: increment trending score, record collector, notify creator
   if (res.ok) {
     const account = (body as { account?: string }).account?.toLowerCase()
     const amount = Number((body as { amount?: number }).amount ?? 1)
-    const price = (body as { pricePerToken?: string }).pricePerToken
+    const comment = (body as { comment?: string }).comment
+    const DEFAULT_COMMENT = 'collected via Kismet Art'
+
     if (col && tok) {
       const colLower = col.toLowerCase()
       redis.zincrby('kismetart:trending', 1, `${colLower}:${tok}`).catch(() => {})
@@ -56,7 +61,8 @@ export async function POST(req: NextRequest) {
             tokenId: tok,
             tokenName: meta.name,
             amount: Number.isFinite(amount) && amount > 0 ? amount : 1,
-            ...(price ? { price } : {}),
+            ...(pricePerToken ? { price: pricePerToken } : {}),
+            ...(comment && comment !== DEFAULT_COMMENT ? { comment } : {}),
           })
         })()
       }

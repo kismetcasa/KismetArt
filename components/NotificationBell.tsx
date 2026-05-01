@@ -33,12 +33,28 @@ export function NotificationBell({ address }: NotificationBellProps) {
     }
 
     fetchCount()
-    const interval = setInterval(fetchCount, POLL_INTERVAL_MS)
+
+    // Poll only when tab is visible; re-fetch immediately on tab focus
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchCount()
+    }, POLL_INTERVAL_MS)
+
+    const onVisibilityChange = () => { if (!document.hidden) fetchCount() }
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
     return () => {
       cancelled = true
       clearInterval(interval)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   }, [address])
+
+  // Clear badge immediately when mark-all-read fires from anywhere
+  useEffect(() => {
+    const handler = () => setCount(0)
+    window.addEventListener('kismetart:notif-read', handler)
+    return () => window.removeEventListener('kismetart:notif-read', handler)
+  }, [])
 
   function handleEnter() {
     if (closeTimer.current) {
