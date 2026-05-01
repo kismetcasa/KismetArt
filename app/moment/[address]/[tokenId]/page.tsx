@@ -1,12 +1,12 @@
 import type { Metadata } from 'next'
-import { INPROCESS_API, resolveUri } from '@/lib/inprocess'
+import { INPROCESS_API, resolveUri, type MomentDetail } from '@/lib/inprocess'
 import { MomentDetailView } from '@/components/MomentDetailView'
 
 interface Props {
   params: Promise<{ address: string; tokenId: string }>
 }
 
-async function fetchDetail(address: string, tokenId: string) {
+async function fetchDetail(address: string, tokenId: string): Promise<MomentDetail | null> {
   try {
     const url = new URL(`${INPROCESS_API}/moment`)
     url.searchParams.set('collectionAddress', address)
@@ -42,5 +42,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
 export default async function MomentPage({ params }: Props) {
   const { address, tokenId } = await params
-  return <MomentDetailView address={address} tokenId={tokenId} />
+  const detail = await fetchDetail(address, tokenId)
+  return <MomentDetailView address={address} tokenId={tokenId} initialDetail={detail} />
 }

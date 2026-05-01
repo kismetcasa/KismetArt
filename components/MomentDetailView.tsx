@@ -8,36 +8,28 @@ import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
 import { isAddress } from 'viem'
 import { ArrowLeft, Copy, Check, ChevronDown, ChevronUp, Star } from 'lucide-react'
-import { resolveUri, formatPrice, shortAddress, type MomentDetail, type MomentComment } from '@/lib/inprocess'
+import { resolveUri, formatPrice, shortAddress, formatRelativeTime, type MomentDetail, type MomentComment } from '@/lib/inprocess'
 import { fetchCreatorProfile } from '@/lib/profileCache'
 import { ERC1155_ABI } from '@/lib/seaport'
 import { ListButton } from './ListButton'
 import { ProfileAvatar } from './ProfileAvatar'
 import { useAdmin } from '@/contexts/AdminContext'
 
-function formatRelativeTime(timestamp: number): string {
-  // API may return ms or seconds; normalize to seconds
-  const secs = timestamp > 1e12 ? Math.floor(timestamp / 1000) : timestamp
-  const diff = Math.floor(Date.now() / 1000) - secs
-  if (diff < 60) return 'just now'
-  if (diff < 3600) return `${Math.floor(diff / 60)}m`
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h`
-  return `${Math.floor(diff / 86400)}d`
-}
 
 interface Props {
   address: string
   tokenId: string
+  initialDetail?: MomentDetail | null
 }
 
 const TOP_COMMENTS = 2
 
-export function MomentDetailView({ address, tokenId }: Props) {
+export function MomentDetailView({ address, tokenId, initialDetail }: Props) {
   const { address: connectedAddress, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { isAdmin, featuredKeys, toggleFeatured } = useAdmin()
 
-  const [detail, setDetail] = useState<MomentDetail | null>(null)
+  const [detail, setDetail] = useState<MomentDetail | null>(initialDetail ?? null)
   const [textContent, setTextContent] = useState<string | null>(null)
   const [comments, setComments] = useState<MomentComment[]>([])
   const [commentsLoading, setCommentsLoading] = useState(true)
@@ -69,14 +61,15 @@ export function MomentDetailView({ address, tokenId }: Props) {
     !!creatorAddress &&
     connectedAddress.toLowerCase() === creatorAddress.toLowerCase()
 
-  // Fetch moment detail
+  // Fetch moment detail (skip if pre-populated from server)
   useEffect(() => {
+    if (initialDetail !== undefined) return
     const params = new URLSearchParams({ collectionAddress: address, tokenId, chainId: '8453' })
     fetch(`/api/moment?${params}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setDetail(d))
       .catch(() => {})
-  }, [address, tokenId])
+  }, [address, tokenId, initialDetail])
 
   // Fetch text content for writing moments
   useEffect(() => {
