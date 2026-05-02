@@ -10,6 +10,7 @@ import { isAddress } from 'viem'
 import { ArrowLeft, Copy, Check, ChevronDown, ChevronUp, Star, X } from 'lucide-react'
 import { resolveUri, formatPrice, shortAddress, formatRelativeTime, DEFAULT_COLLECT_COMMENT, type MomentDetail, type MomentComment } from '@/lib/inprocess'
 import { fetchCreatorProfile } from '@/lib/profileCache'
+import { getCachedDetail, setCachedDetail, getCachedComments, setCachedComments } from '@/lib/momentCache'
 import { ERC1155_ABI } from '@/lib/seaport'
 import { ListButton } from './ListButton'
 import { ProfileAvatar } from './ProfileAvatar'
@@ -28,10 +29,16 @@ export function MomentDetailView({ address, tokenId, initialDetail }: Props) {
   const { openConnectModal } = useConnectModal()
   const { isAdmin, featuredKeys, toggleFeatured } = useAdmin()
 
-  const [detail, setDetail] = useState<MomentDetail | null>(initialDetail ?? null)
+  const [detail, setDetail] = useState<MomentDetail | null>(
+    initialDetail ?? getCachedDetail(address, tokenId) ?? null
+  )
   const [textContent, setTextContent] = useState<string | null>(null)
-  const [comments, setComments] = useState<MomentComment[]>([])
-  const [commentsLoading, setCommentsLoading] = useState(true)
+  const [comments, setComments] = useState<MomentComment[]>(
+    () => getCachedComments(address, tokenId) ?? []
+  )
+  const [commentsLoading, setCommentsLoading] = useState(
+    () => getCachedComments(address, tokenId) === undefined
+  )
   const [showAllComments, setShowAllComments] = useState(false)
   const [commentText, setCommentText] = useState('')
   const [collecting, setCollecting] = useState(false)
@@ -64,13 +71,14 @@ export function MomentDetailView({ address, tokenId, initialDetail }: Props) {
     !!creatorAddress &&
     connectedAddress.toLowerCase() === creatorAddress.toLowerCase()
 
-  // Fetch moment detail (skip if pre-populated from server)
+  // Fetch moment detail (skip if pre-populated from server or client cache)
   useEffect(() => {
     if (initialDetail !== undefined) return
+    if (getCachedDetail(address, tokenId)) return
     const params = new URLSearchParams({ collectionAddress: address, tokenId, chainId: '8453' })
     fetch(`/api/moment?${params}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setDetail(d))
+      .then((d) => { if (d) { setCachedDetail(address, tokenId, d); setDetail(d) } })
       .catch(() => {})
   }, [address, tokenId, initialDetail])
 
@@ -94,15 +102,18 @@ export function MomentDetailView({ address, tokenId, initialDetail }: Props) {
     })
   }, [creatorAddress])
 
-  // Fetch comments
+  // Fetch comments — skip if already seeded from shared cache
   const fetchComments = useCallback(async () => {
+    if (getCachedComments(address, tokenId)) return
     setCommentsLoading(true)
     try {
       const params = new URLSearchParams({ collectionAddress: address, tokenId, chainId: '8453' })
       const res = await fetch(`/api/moment/comments?${params}`)
       if (res.ok) {
         const data = await res.json()
-        setComments(data.comments ?? [])
+        const fetched = data.comments ?? []
+        setCachedComments(address, tokenId, fetched)
+        setComments(fetched)
       }
     } catch {
       // comments are non-critical
