@@ -170,13 +170,13 @@ function MomentFeed({
       </div>
 
       {loading && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-px bg-[#2a2a2a]">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {Array.from({ length: 6 }).map((_, i) => (
-            <div key={i} className="bg-[#0d0d0d]">
-              <div className="aspect-square bg-[#161616] animate-pulse" />
+            <div key={i} className="bg-[#161616] border border-[#2a2a2a]">
+              <div className="aspect-square bg-[#1a1a1a] animate-pulse" />
               <div className="p-4 space-y-2">
-                <div className="h-3 bg-[#161616] animate-pulse w-2/3" />
-                <div className="h-3 bg-[#161616] animate-pulse w-1/3" />
+                <div className="h-3 bg-[#1a1a1a] animate-pulse w-2/3" />
+                <div className="h-3 bg-[#1a1a1a] animate-pulse w-1/3" />
               </div>
             </div>
           ))}
@@ -203,11 +203,9 @@ function MomentFeed({
 
       {!loading && moments.length > 0 && (
         <>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-px bg-[#2a2a2a]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {moments.map((moment) => (
-              <div key={`${moment.address}-${moment.token_id}`} className="bg-[#0d0d0d]">
-                <MomentCard moment={moment} />
-              </div>
+              <MomentCard key={`${moment.address}-${moment.token_id}`} moment={moment} />
             ))}
           </div>
 
