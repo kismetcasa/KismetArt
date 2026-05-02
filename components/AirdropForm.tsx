@@ -213,6 +213,10 @@ export function AirdropForm({ moments, loadingMoments }: AirdropFormProps) {
           : 'airdrop'}
       </button>
 
+      <p className="text-[10px] font-mono text-[#444] text-center -mt-2">
+        gifts freshly minted copies to each recipient
+      </p>
+
     </form>
   )
 }

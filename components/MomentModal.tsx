@@ -12,17 +12,13 @@ import {
   type Moment, type MomentDetail, type MomentComment,
 } from '@/lib/inprocess'
 import { fetchCreatorProfile } from '@/lib/profileCache'
+import { getCachedDetail, setCachedDetail, getCachedComments, setCachedComments } from '@/lib/momentCache'
 import { ERC1155_ABI } from '@/lib/seaport'
 import { ListButton } from './ListButton'
 import { ProfileAvatar } from './ProfileAvatar'
 import { useAdmin } from '@/contexts/AdminContext'
 
 const TOP_COMMENTS = 3
-
-// Module-level comments cache — survives modal close/reopen
-type CommentsCacheEntry = { comments: MomentComment[]; ts: number }
-const commentsCache = new Map<string, CommentsCacheEntry>()
-const COMMENTS_CACHE_TTL = 60 * 1000
 
 interface MomentModalProps {
   moment: Moment
@@ -99,6 +95,8 @@ export function MomentModal({
   // Fetch moment detail only when card didn't pass price/supply
   useEffect(() => {
     if (initialPrice !== undefined && initialMaxSupply !== undefined) return
+    const cached = getCachedDetail(moment.address, moment.token_id)
+    if (cached) { setDetail(cached); return }
     const params = new URLSearchParams({
       collectionAddress: moment.address,
       tokenId: moment.token_id,
@@ -106,7 +104,7 @@ export function MomentModal({
     })
     fetch(`/api/moment?${params}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => d && setDetail(d))
+      .then((d) => { if (d) { setCachedDetail(moment.address, moment.token_id, d); setDetail(d) } })
       .catch(() => {})
   }, [moment.address, moment.token_id, initialPrice, initialMaxSupply])
 
@@ -118,15 +116,10 @@ export function MomentModal({
     })
   }, [creatorAddress])
 
-  // Fetch comments with client-side cache to avoid re-fetch on reopen
+  // Fetch comments with shared cache — survives modal close/reopen and seeds detail page
   const fetchComments = useCallback(async () => {
-    const cacheKey = `${moment.address}:${moment.token_id}`
-    const cached = commentsCache.get(cacheKey)
-    if (cached && Date.now() - cached.ts < COMMENTS_CACHE_TTL) {
-      setComments(cached.comments)
-      setCommentsLoading(false)
-      return
-    }
+    const cached = getCachedComments(moment.address, moment.token_id)
+    if (cached) { setComments(cached); setCommentsLoading(false); return }
     setCommentsLoading(true)
     try {
       const params = new URLSearchParams({
@@ -138,7 +131,7 @@ export function MomentModal({
       if (res.ok) {
         const data = await res.json()
         const fetched = data.comments ?? []
-        commentsCache.set(cacheKey, { comments: fetched, ts: Date.now() })
+        setCachedComments(moment.address, moment.token_id, fetched)
         setComments(fetched)
       }
     } catch {
