@@ -193,7 +193,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
         }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error ?? 'Collect failed')
+      if (!res.ok) throw new Error(data.detail ?? data.error ?? data.message ?? 'Collect failed')
       setCollected(true)
       setCommentText('')
       toast.success('Collected!')
