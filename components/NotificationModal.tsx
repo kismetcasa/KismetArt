@@ -36,7 +36,7 @@ export function NotificationModal({ address, onClose }: NotificationModalProps) 
     if (tab !== 'settings') return
     setMutedLoading(true)
     fetch(`/api/notifications/mute?address=${address}`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setMuted(Array.isArray(d.muted) ? d.muted : []))
       .catch(() => setMuted([]))
       .finally(() => setMutedLoading(false))

@@ -65,7 +65,7 @@ function FollowRow({ addr, onClose, onNameLoaded }: { addr: string; onClose: () 
 
   useEffect(() => {
     fetch(`/api/profile/${addr}`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => {
         const n = d.profile?.username || d.profile?.ensName
         if (n) { setName(n); onNameLoaded?.(addr, n) }
@@ -178,14 +178,14 @@ export function ProfileView({ address }: ProfileViewProps) {
   useEffect(() => {
     if (!connectedAddress || isOwner) { setFollowing(false); return }
     fetch(`/api/follow/${address}?follower=${connectedAddress}`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setFollowing(d.following === true))
       .catch(() => {})
   }, [address, connectedAddress, isOwner])
 
   useEffect(() => {
     fetch(`/api/follow/${address}?count=1`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => {
         setFollowingCount(d.followingCount ?? 0)
         setFollowerCount(d.followerCount ?? 0)
@@ -195,7 +195,7 @@ export function ProfileView({ address }: ProfileViewProps) {
 
   useEffect(() => {
     fetch(`/api/profile/${address}`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setProfile(d.profile ?? { address, updatedAt: 0 }))
       .catch(() => setProfile({ address, updatedAt: 0 }))
       .finally(() => setLoadingProfile(false))
@@ -203,7 +203,7 @@ export function ProfileView({ address }: ProfileViewProps) {
 
   useEffect(() => {
     fetch(`/api/timeline?creator=${address}&limit=50`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setMoments(Array.isArray(d.moments) ? d.moments : []))
       .catch(() => setMoments([]))
       .finally(() => setLoadingMoments(false))
@@ -211,7 +211,7 @@ export function ProfileView({ address }: ProfileViewProps) {
 
   useEffect(() => {
     fetch(`/api/timeline?collector=${address}&limit=50`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setCollected(Array.isArray(d.moments) ? d.moments : []))
       .catch(() => setCollected([]))
       .finally(() => setLoadingCollected(false))
@@ -219,7 +219,7 @@ export function ProfileView({ address }: ProfileViewProps) {
 
   useEffect(() => {
     fetch(`/api/listings?seller=${address}&limit=50`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setListings(Array.isArray(d.listings) ? d.listings.filter((l: Listing) => l.status === 'active') : []))
       .catch(() => setListings([]))
       .finally(() => setLoadingListings(false))
@@ -227,7 +227,7 @@ export function ProfileView({ address }: ProfileViewProps) {
 
   useEffect(() => {
     fetch(`/api/payments?artist=${address}`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setPayments(Array.isArray(d.payments) ? d.payments : []))
       .catch(() => setPayments([]))
       .finally(() => setLoadingPayments(false))
@@ -235,7 +235,7 @@ export function ProfileView({ address }: ProfileViewProps) {
 
   useEffect(() => {
     fetch(`/api/collections?artist=${address}`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setArtistCollections(Array.isArray(d.collections) ? d.collections : []))
       .catch(() => setArtistCollections([]))
       .finally(() => setLoadingCollections(false))

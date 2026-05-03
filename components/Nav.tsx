@@ -21,7 +21,7 @@ export function Nav() {
   useEffect(() => {
     if (!address) { setAvatarUrl(undefined); return }
     fetch(`/api/profile/${address}`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setAvatarUrl(d.profile?.avatarUrl))
       .catch(() => {})
   }, [address])

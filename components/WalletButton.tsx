@@ -44,7 +44,7 @@ export function WalletButton() {
     if (!address) { setDisplayName(null); setNameResolved(false); return }
     setNameResolved(false)
     fetch(`/api/profile/${address}`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setDisplayName(d.profile?.username || d.profile?.ensName || null))
       .catch(() => {})
       .finally(() => setNameResolved(true))

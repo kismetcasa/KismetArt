@@ -236,7 +236,7 @@ function MainFeed() {
   useEffect(() => {
     if (!address || !followingOn) { setFollowingAddrs([]); return }
     fetch(`/api/follow/${address}?list=1`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setFollowingAddrs(Array.isArray(d.addresses) ? d.addresses : []))
       .catch(() => setFollowingAddrs([]))
   }, [address, followingOn])

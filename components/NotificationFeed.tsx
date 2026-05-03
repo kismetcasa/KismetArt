@@ -57,7 +57,7 @@ export function NotificationFeed({ address }: NotificationFeedProps) {
     if (typeFilter !== 'all') params.set('type', typeFilter)
 
     fetch(`/api/notifications?${params.toString()}`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((data) => {
         if (cancelled) return
         const newItems: Notification[] = data.notifications ?? []

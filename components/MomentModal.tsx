@@ -8,7 +8,7 @@ import { useAccount, useReadContract } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
 import {
-  resolveUri, formatPrice, shortAddress, formatRelativeTime,
+  resolveUri, formatPrice, shortAddress, formatRelativeTime, DEFAULT_COLLECT_COMMENT,
   type Moment, type MomentDetail, type MomentComment,
 } from '@/lib/inprocess'
 import { fetchCreatorProfile } from '@/lib/profileCache'
@@ -183,11 +183,11 @@ export function MomentModal({
         body: JSON.stringify({
           moment: { collectionAddress: moment.address, tokenId: moment.token_id, chainId: 8453 },
           amount: 1,
-          comment: 'collected via Kismet Art',
+          comment: DEFAULT_COLLECT_COMMENT,
           account: connectedAddress,
         }),
       })
-      const data = await res.json()
+      const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error ?? 'Collect failed')
       setCollected(true)
       toast.success('Collected!')
