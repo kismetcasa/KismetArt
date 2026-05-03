@@ -71,15 +71,42 @@ export function MomentDetailView({ address, tokenId, initialDetail }: Props) {
     !!creatorAddress &&
     connectedAddress.toLowerCase() === creatorAddress.toLowerCase()
 
-  // Fetch moment detail (skip if pre-populated from server or client cache)
+  // Fetch moment detail. We retry on the client when initialDetail is null
+  // (server-side fetch returned no data, e.g. inprocess hasn't indexed a
+  // freshly-minted token yet) — the previous `!== undefined` check skipped
+  // the retry because null !== undefined, leaving the page empty until the
+  // server cache expired. We also poll every 5s for up to 60s after a null
+  // initial so the page populates as soon as the indexer catches up.
   useEffect(() => {
-    if (initialDetail !== undefined) return
+    if (initialDetail) return
     if (getCachedDetail(address, tokenId)) return
-    const params = new URLSearchParams({ collectionAddress: address, tokenId, chainId: '8453' })
-    fetch(`/api/moment?${params}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => { if (d) { setCachedDetail(address, tokenId, d); setDetail(d) } })
-      .catch(() => {})
+
+    let cancelled = false
+    let attempt = 0
+    const MAX_ATTEMPTS = 12 // 12 × 5s = 60s of polling
+
+    const tryFetch = async () => {
+      if (cancelled) return
+      const params = new URLSearchParams({ collectionAddress: address, tokenId, chainId: '8453' })
+      try {
+        const res = await fetch(`/api/moment?${params}`)
+        if (!res.ok) throw new Error('not ok')
+        const d = await res.json()
+        if (d && !cancelled) {
+          setCachedDetail(address, tokenId, d)
+          setDetail(d)
+          return
+        }
+      } catch {
+        // fall through to retry
+      }
+      attempt += 1
+      if (attempt < MAX_ATTEMPTS && !cancelled) {
+        setTimeout(tryFetch, 5000)
+      }
+    }
+    tryFetch()
+    return () => { cancelled = true }
   }, [address, tokenId, initialDetail])
 
   // Fetch text content for writing moments
