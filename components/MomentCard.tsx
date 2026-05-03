@@ -103,7 +103,13 @@ export function MomentCard({ moment, hidePriceSupply }: MomentCardProps) {
         }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.error ?? 'Collect failed')
+      if (!res.ok) {
+        const msg = data.detail ?? data.error ?? data.message ?? 'Collect failed'
+        if (typeof msg === 'string' && /insufficient/i.test(msg)) {
+          throw new Error('Collects are paused — platform balance needs top-up. Try again shortly.')
+        }
+        throw new Error(msg)
+      }
       setCollected(true)
       toast.success('Collected!')
     } catch (err) {

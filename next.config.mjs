@@ -15,6 +15,14 @@ const nextConfig = {
       { protocol: 'https', hostname: '*.ipfs.io' },
       { protocol: 'https', hostname: 'ipfs.decentralized-content.com' },
     ],
+    // Arweave + IPFS are content-addressed (URL contains a hash), so the
+    // bytes at any given URL never change — safe to cache aggressively at
+    // Vercel's edge. 31 days is the max for next/image. After the first
+    // load, subsequent views of any moment image are served from CDN edge
+    // instead of round-tripping back to Arweave.
+    minimumCacheTTL: 60 * 60 * 24 * 31,
+    // AVIF/WebP cut payload by 20-40% on browsers that support them.
+    formats: ['image/avif', 'image/webp'],
   },
 
   // Browser polyfills for @ardrive/turbo-sdk/web in dev (turbopack)
