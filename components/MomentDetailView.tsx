@@ -20,11 +20,15 @@ interface Props {
   address: string
   tokenId: string
   initialDetail?: MomentDetail | null
+  // Optional name/image/description we already have locally (from KV at deploy
+  // time for cover tokens). Renders instantly while inprocess catches up; gets
+  // overwritten as soon as the client poll lands the real MomentDetail.
+  fallbackMeta?: { name?: string; image?: string; description?: string }
 }
 
 const TOP_COMMENTS = 3
 
-export function MomentDetailView({ address, tokenId, initialDetail }: Props) {
+export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta }: Props) {
   const { address: connectedAddress, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { isAdmin, featuredKeys, toggleFeatured } = useAdmin()
@@ -229,7 +233,10 @@ export function MomentDetailView({ address, tokenId, initialDetail }: Props) {
     setTimeout(() => setLinkCopied(false), 1500)
   }
 
-  const meta = detail?.metadata ?? {}
+  // Prefer real inprocess metadata once we have it; fall back to whatever we
+  // wrote locally at deploy time so the image/title/description don't sit
+  // blank for the 5-30s of indexer delay on a fresh mint.
+  const meta = detail?.metadata ?? fallbackMeta ?? {}
   const isTextMoment = meta.content?.mime === 'text/plain'
   const imageUrl = meta.image ? resolveUri(meta.image) : null
   const isVideo =
