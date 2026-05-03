@@ -34,7 +34,7 @@ export function MintTabs({ initialCollection, initialCollectionName }: MintTabsP
     if (!address || loadingMoments || momentsFetched) return
     setLoadingMoments(true)
     fetch(`/api/timeline?creator=${address}&limit=100`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setMoments(Array.isArray(d.moments) ? d.moments : []))
       .catch(() => setMoments([]))
       .finally(() => { setLoadingMoments(false); setMomentsFetched(true) })

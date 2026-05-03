@@ -141,7 +141,7 @@ export function MomentDetailView({ address, tokenId, initialDetail }: Props) {
   useEffect(() => {
     if (!isCreator) return
     fetch(`/api/moment/splits?collectionAddress=${address}&tokenId=${tokenId}`)
-      .then((r) => r.json())
+      .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setHasSplits(d.hasSplits === true))
       .catch(() => {})
   }, [address, tokenId, isCreator])
