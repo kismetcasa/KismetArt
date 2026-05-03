@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { parseEventLogs, isAddress, parseEther } from 'viem'
@@ -18,6 +19,7 @@ interface CreateCollectionFormProps {
 }
 
 export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps = {}) {
+  const router = useRouter()
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { ensureSession } = useUploadSession()
@@ -144,6 +146,12 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receipt, step])
+
+  // Once everything (deploy + optional cover mint) finishes, route to the new collection.
+  useEffect(() => {
+    if (step !== 'done' || !collectionAddress) return
+    router.push(`/collection/${collectionAddress}`)
+  }, [step, collectionAddress, router])
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
