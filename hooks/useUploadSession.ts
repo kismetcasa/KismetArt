@@ -28,7 +28,10 @@ export function useUploadSession() {
     } catch {}
 
     // Create a new session — one wallet signature
-    const { nonce } = await fetch(`/api/profile/${address}/nonce`).then((r) => r.json())
+    const nonceRes = await fetch(`/api/profile/${address}/nonce`)
+    if (!nonceRes.ok) throw new Error('Could not fetch nonce')
+    const { nonce } = (await nonceRes.json().catch(() => ({}))) as { nonce?: string }
+    if (!nonce) throw new Error('Could not fetch nonce')
     const message = `Sign in to Kismet Art\nAddress: ${address.toLowerCase()}\nNonce: ${nonce}`
     const signature = await signMessageAsync({ message })
 
@@ -37,8 +40,9 @@ export function useUploadSession() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ address, signature, nonce }),
     })
-    const data = await res.json() as { sessionToken?: string; error?: string }
+    const data = (await res.json().catch(() => ({}))) as { sessionToken?: string; error?: string }
     if (!res.ok) throw new Error(data.error ?? 'Session creation failed')
+    if (!data.sessionToken) throw new Error('Session created but no token returned')
 
     const stored: StoredSession = {
       token: data.sessionToken!,
