@@ -8,7 +8,7 @@ import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { parseEventLogs, isAddress, parseEther } from 'viem'
 import { toast } from 'sonner'
 import { Upload, X, Plus, Trash2, Check } from 'lucide-react'
-import { FACTORY_ADDRESS, FACTORY_ABI, encodeMinterPermission } from '@/lib/collections'
+import { FACTORY_ADDRESS, FACTORY_ABI, encodeMinterPermission, buildCoverTokenSetupActions } from '@/lib/collections'
 import { CREATE_REFERRAL } from '@/lib/config'
 import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { uploadJson } from '@/lib/arweave/uploadJson'
@@ -36,7 +36,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
   const [mintCover, setMintCover] = useState(false)
   const [coverPrice, setCoverPrice] = useState('0')
   const [coverSupply, setCoverSupply] = useState('')
-  const [step, setStep] = useState<'idle' | 'uploading-image' | 'uploading-metadata' | 'deploying' | 'minting-cover' | 'done'>('idle')
+  const [step, setStep] = useState<'idle' | 'uploading-image' | 'uploading-metadata' | 'deploying' | 'done'>('idle')
   const [uploadProgress, setUploadProgress] = useState(0)
   const [collectionAddress, setCollectionAddress] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined)
@@ -74,91 +74,41 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
       eventName: 'SetupNewContract',
       logs: receipt.logs,
     })
-    // Only trust the parsed factory event. The previous fallback to
-    // receipt.logs[0]?.address could resolve to any unrelated contract that
-    // happened to emit a log (e.g. proxy event on the wrong chain, ABI drift)
-    // — better to surface "Deploy incomplete" than redirect to a wrong address.
+    // Only trust the parsed factory event. Falling back to logs[0]?.address
+    // would resolve to any unrelated contract that happened to emit a log.
     const deployedAddress = (logs[0]?.args?.newContract as string | undefined) ?? null
-    setCollectionAddress(deployedAddress)
 
-    if (deployedAddress) {
-      fetch('/api/collections', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          address: deployedAddress,
-          name: name.trim(),
-          description: description.trim() || undefined,
-          image: deployedImageUri,
-          artist: address,
-        }),
-      }).catch(() => {})
-      onDeployed?.(deployedAddress, name)
-    }
-
-    if (mintCover && deployedAddress && deployedImageUri) {
-      setStep('minting-cover')
-      toast.loading('Minting cover token…', { id: 'create-collection' })
-      ;(async () => {
-        try {
-          const sessionToken = await ensureSession()
-          const tokenMetadataUri = await uploadJson({
-            name: name.trim(),
-            ...(description.trim() ? { description: description.trim() } : {}),
-            image: deployedImageUri,
-          }, sessionToken)
-          const now = Math.floor(Date.now() / 1000)
-          const rawCoverPrice = coverPrice.trim()
-          const normalizedCoverPrice = !rawCoverPrice || rawCoverPrice === '.' ? '0' : rawCoverPrice.startsWith('.') ? `0${rawCoverPrice}` : rawCoverPrice
-          const priceWei = parseEther(normalizedCoverPrice).toString()
-          const maxSupplyVal = coverSupply.trim() ? parseInt(coverSupply, 10) : undefined
-          const res = await fetch('/api/mint', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contract: { address: deployedAddress },
-              token: {
-                tokenMetadataURI: tokenMetadataUri,
-                createReferral: CREATE_REFERRAL,
-                salesConfig: {
-                  type: 'fixedPrice',
-                  pricePerToken: priceWei,
-                  saleStart: String(now),
-                  saleEnd: '18446744073709551615',
-                },
-                mintToCreatorCount: 1,
-                payoutRecipient: address,
-                ...(maxSupplyVal !== undefined ? { maxSupply: maxSupplyVal } : {}),
-              },
-              name: name.trim(),
-              account: address,
-            }),
-          })
-          const data = await res.json().catch(() => ({}))
-          if (!res.ok) throw new Error(data.error ?? 'Mint failed')
-          toast.success('Collection deployed + cover minted!', { id: 'create-collection' })
-        } catch (err) {
-          toast.error('Cover mint failed', {
-            id: 'create-collection',
-            description: err instanceof Error ? err.message : 'Unknown error',
-          })
-        } finally {
-          setStep('done')
-        }
-      })()
-    } else if (deployedAddress) {
-      setStep('done')
-      toast.success('Collection deployed!', { id: 'create-collection' })
-    } else {
-      // Tx confirmed but no SetupNewContract event was emitted —
-      // typically wrong chain or a non-factory address. Don't lie to the user.
+    if (!deployedAddress) {
+      // Tx confirmed but no SetupNewContract event — wrong chain / contract.
       setStep('idle')
       setTxHash(undefined)
       toast.error('Deploy incomplete', {
         id: 'create-collection',
         description: 'Tx confirmed but no collection address was emitted — likely wrong chain or contract.',
       })
+      return
     }
+
+    setCollectionAddress(deployedAddress)
+
+    fetch('/api/collections', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        address: deployedAddress,
+        name: name.trim(),
+        description: description.trim() || undefined,
+        image: deployedImageUri,
+        artist: address,
+      }),
+    }).catch(() => {})
+    onDeployed?.(deployedAddress, name)
+
+    setStep('done')
+    toast.success(
+      mintCover ? 'Collection deployed + cover minted!' : 'Collection deployed!',
+      { id: 'create-collection' },
+    )
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receipt, step])
 
@@ -233,16 +183,52 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
       const contractURI = await uploadJson(metadata, sessionToken)
 
       setStep('deploying')
-      toast.loading('Deploying collection…', { id: 'create-collection' })
+      toast.loading(
+        mintCover ? 'Deploying collection + cover token…' : 'Deploying collection…',
+        { id: 'create-collection' },
+      )
 
       await ensureBase()
 
       const bps = Math.max(0, Math.min(10000, parseInt(royaltyBps, 10) || 0))
       const recipient = (royaltyRecipient.trim() || address) as `0x${string}`
 
-      const setupActions = minters
+      // Collection-wide minter permissions for any addresses the user added.
+      // The factory replays each setupAction on the new collection during deploy.
+      const minterActions = minters
         .filter((m) => isAddress(m))
         .map((m) => encodeMinterPermission(m as `0x${string}`))
+
+      // If cover mint is enabled, append the cover-token setupActions so the
+      // token is created in the same transaction. Mirrors how inprocess.world's
+      // own frontend does it (see lib/protocolSdk/create/token-setup.ts in
+      // their public repo). The factory acts as transient admin to run these.
+      let coverActions: `0x${string}`[] = []
+      if (mintCover) {
+        const rawCoverPrice = coverPrice.trim()
+        const normalizedCoverPrice = !rawCoverPrice || rawCoverPrice === '.'
+          ? '0'
+          : rawCoverPrice.startsWith('.')
+            ? `0${rawCoverPrice}`
+            : rawCoverPrice
+        const priceWei = parseEther(normalizedCoverPrice)
+        const maxSupplyVal = coverSupply.trim() ? BigInt(parseInt(coverSupply, 10)) : undefined
+        const now = BigInt(Math.floor(Date.now() / 1000))
+        const farFuture = 18446744073709551615n // max uint64
+        coverActions = buildCoverTokenSetupActions({
+          tokenURI: contractURI,
+          maxSupply: maxSupplyVal,
+          createReferral: CREATE_REFERRAL as `0x${string}`,
+          pricePerTokenWei: priceWei,
+          saleStart: now,
+          saleEnd: farFuture,
+          fundsRecipient: address,
+          creator: address,
+          mintToCreatorCount: 1,
+        })
+      }
+
+      const setupActions = [...minterActions, ...coverActions]
 
       const hash = await writeContractAsync({
         chainId: base.id,
