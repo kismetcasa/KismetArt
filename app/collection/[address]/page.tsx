@@ -3,6 +3,7 @@ import { isAddress } from 'viem'
 import { notFound } from 'next/navigation'
 import { INPROCESS_API, resolveUri, shortAddress, type Moment, type MomentAdmin } from '@/lib/inprocess'
 import { CollectionView } from '@/components/CollectionView'
+import { getCollectionMeta as getKvCollectionMeta } from '@/lib/kv'
 
 interface Props {
   params: Promise<{ address: string }>
@@ -37,7 +38,7 @@ async function fetchCollectionMeta(
       headers: { Accept: 'application/json' },
       next: { revalidate: 120 },
     })
-    if (!res.ok) return null
+    if (!res.ok) return loadKvFallback(address)
     const data = await res.json()
     const col = Array.isArray(data.collections)
       ? data.collections.find(
@@ -45,10 +46,18 @@ async function fetchCollectionMeta(
             c.contractAddress?.toLowerCase() === address.toLowerCase()
         )
       : null
-    return col?.metadata ?? null
+    return col?.metadata ?? (await loadKvFallback(address))
   } catch {
-    return null
+    return loadKvFallback(address)
   }
+}
+
+async function loadKvFallback(
+  address: string
+): Promise<{ name?: string; image?: string; description?: string } | null> {
+  const kv = await getKvCollectionMeta(address)
+  if (!kv) return null
+  return { name: kv.name, image: kv.image, description: kv.description }
 }
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {

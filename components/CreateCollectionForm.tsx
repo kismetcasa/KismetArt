@@ -140,9 +140,18 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
           setStep('done')
         }
       })()
-    } else {
+    } else if (deployedAddress) {
       setStep('done')
       toast.success('Collection deployed!', { id: 'create-collection' })
+    } else {
+      // Tx confirmed but no SetupNewContract event was emitted —
+      // typically wrong chain or a non-factory address. Don't lie to the user.
+      setStep('idle')
+      setTxHash(undefined)
+      toast.error('Deploy succeeded on-chain but no collection address was emitted', {
+        id: 'create-collection',
+        description: 'The transaction may have hit the wrong contract or chain.',
+      })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receipt, step])

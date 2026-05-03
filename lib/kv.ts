@@ -39,6 +39,23 @@ export async function addTrackedCollection(
   }
 }
 
+// Used by the collection page as a fallback when inprocess hasn't indexed
+// a freshly-deployed collection yet. Returns null if Redis isn't configured
+// or no metadata was stored at deploy time.
+export async function getCollectionMeta(
+  address: string
+): Promise<CollectionMeta | null> {
+  try {
+    const raw = await redis.get<string | CollectionMeta | null>(
+      keyCollectionMeta(address)
+    )
+    if (!raw) return null
+    return typeof raw === 'string' ? JSON.parse(raw) : raw
+  } catch {
+    return null
+  }
+}
+
 export async function searchCollections(query: string): Promise<CollectionMeta[]> {
   const addresses = await getTrackedCollections()
   if (!addresses.length) return []
