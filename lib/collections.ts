@@ -8,7 +8,10 @@ import { encodeFunctionData, type Address } from 'viem'
 export const FACTORY_ADDRESS = '0x777777C338d93e2C7adf08D102d45CA7CC4Ed021' as const
 
 // Minimal ABI fragment for the Zora 1155 collection contract's permission function.
-// tokenId=0 means collection-wide; permissionBits=2 is PERMISSION_BIT_MINTER.
+// tokenId=0 means collection-wide; permissionBits=4 is PERMISSION_BIT_MINTER.
+// Per Zora's PermissionsConstants: ADMIN=2, MINTER=4, SALES=8, METADATA=16,
+// FUNDS_MANAGER=32. Granting MINTER lets the address mint but does NOT let
+// them transfer admin or change the royalty config.
 const COLLECTION_ABI = [
   {
     name: 'addPermission',
@@ -27,7 +30,7 @@ export function encodeMinterPermission(minterAddress: Address): `0x${string}` {
   return encodeFunctionData({
     abi: COLLECTION_ABI,
     functionName: 'addPermission',
-    args: [0n, minterAddress, 2n],
+    args: [0n, minterAddress, 4n],
   })
 }
 
