@@ -188,7 +188,15 @@ export function MomentModal({
         }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.detail ?? data.error ?? data.message ?? 'Collect failed')
+      if (!res.ok) {
+        const msg = data.detail ?? data.error ?? data.message ?? 'Collect failed'
+        if (typeof msg === 'string' && /insufficient/i.test(msg)) {
+          throw new Error(
+            'Your inprocess smart wallet needs ETH on Base — top up at inprocess.world/topup',
+          )
+        }
+        throw new Error(msg)
+      }
       setCollected(true)
       toast.success('Collected!')
     } catch (err) {

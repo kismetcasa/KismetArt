@@ -193,7 +193,18 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
         }),
       })
       const data = await res.json().catch(() => ({}))
-      if (!res.ok) throw new Error(data.detail ?? data.error ?? data.message ?? 'Collect failed')
+      if (!res.ok) {
+        const msg = data.detail ?? data.error ?? data.message ?? 'Collect failed'
+        // inprocess's smart wallet pays for collects on the user's behalf;
+        // surface a helpful pointer when the user's smart wallet is empty
+        // instead of leaving them staring at a one-line "Insufficient balance".
+        if (typeof msg === 'string' && /insufficient/i.test(msg)) {
+          throw new Error(
+            'Your inprocess smart wallet needs ETH on Base — top up at inprocess.world/topup',
+          )
+        }
+        throw new Error(msg)
+      }
       setCollected(true)
       setCommentText('')
       toast.success('Collected!')
