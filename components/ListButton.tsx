@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useAccount, useReadContract, useWriteContract, usePublicClient } from 'wagmi'
+import { base } from 'wagmi/chains'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { useSignTypedData } from 'wagmi'
 import { parseEther } from 'viem'
@@ -96,6 +97,7 @@ export function ListButton({
         setStep('approving')
         toast.loading('Approving Seaport…', { id: 'list' })
         const hash = await writeContractAsync({
+          chainId: base.id,
           address: collectionAddress as Address,
           abi: ERC1155_ABI,
           functionName: 'setApprovalForAll',
