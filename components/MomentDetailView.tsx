@@ -12,6 +12,7 @@ import { resolveUri, formatPrice, shortAddress, formatRelativeTime, inferCollect
 import { fetchCreatorProfile } from '@/lib/profileCache'
 import { getCachedDetail, setCachedDetail, getCachedComments, setCachedComments } from '@/lib/momentCache'
 import { ERC1155_ABI } from '@/lib/seaport'
+import { ZORA_1155_MINT_ABI } from '@/lib/zoraMint'
 import { useDirectCollect } from '@/hooks/useDirectCollect'
 import { ListButton } from './ListButton'
 import { ProfileAvatar } from './ProfileAvatar'
@@ -78,6 +79,17 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     query: { enabled: !!connectedAddress },
   })
   const alreadyOwned = ownedBalance ? Number(ownedBalance) > 0 : false
+
+  // Total mints = collect count for this token. Authoritative count comes
+  // from on-chain totalSupply (Zora 1155 maintains it per token id), which
+  // sidesteps any inprocess indexer lag right after a fresh collect.
+  const { data: totalMinted, refetch: refetchTotalMinted } = useReadContract({
+    address: address as `0x${string}`,
+    abi: ZORA_1155_MINT_ABI,
+    functionName: 'totalSupply',
+    args: [BigInt(tokenId)],
+    query: { refetchInterval: 30_000 },
+  })
 
   const isFeatured = featuredKeys.has(`${address.toLowerCase()}:${tokenId}`)
   const creatorAddress = detail?.momentAdmins[0] ?? ''
@@ -203,6 +215,9 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
       setCollected(true)
       setCommentText('')
       setTimeout(fetchComments, 3000)
+      // Refresh the on-chain count immediately rather than waiting for the
+      // 30s poll — chain state has moved one tick at this point.
+      refetchTotalMinted().catch(() => {})
     }
   }
 
@@ -381,9 +396,12 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                 <p className="text-[10px] font-mono text-[#333] uppercase tracking-wider">comments</p>
                 {visibleComments.map((c, i) => (
                   <div key={i} className="flex gap-2 items-baseline">
-                    <span className="text-[11px] font-mono text-[#555] flex-shrink-0">
+                    <Link
+                      href={`/profile/${c.sender}`}
+                      className="text-[11px] font-mono text-[#555] flex-shrink-0 hover:text-[#888] transition-colors"
+                    >
                       {shortAddress(c.sender)}
-                    </span>
+                    </Link>
                     <span className="text-xs font-mono text-[#888] flex-1 break-words leading-relaxed">
                       {c.comment}
                     </span>
@@ -447,6 +465,15 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                   distributed: {distributeHash.slice(0, 10)}…{distributeHash.slice(-8)}
                 </a>
               )}
+            </div>
+          )}
+
+          {/* Total collected — sits above the action row when we have a count */}
+          {totalMinted !== undefined && (
+            <div className="px-5 -mb-1">
+              <p className="text-[10px] font-mono text-[#555] uppercase tracking-widest">
+                {Number(totalMinted).toLocaleString()} collected
+              </p>
             </div>
           )}
 

@@ -4,6 +4,7 @@ import { redis } from './redis'
 import { trackWallet } from './profile'
 import { checkRateLimit, getClientIp } from './ratelimit'
 import { setMomentMeta, writeNotification } from './notifications'
+import { getFollowers } from './follows'
 
 export async function proxyMintRequest(
   req: NextRequest,
@@ -66,6 +67,8 @@ export async function proxyMintRequest(
 
     if (contractAddress && tokenId && account) {
       void setMomentMeta(contractAddress, tokenId, { creator: account, name: displayName }).catch(() => {})
+      // Self-notification for the creator. No `actor` so NotificationRow
+      // renders "your moment was created".
       void writeNotification({
         type: 'mint',
         recipient: account,
@@ -73,6 +76,31 @@ export async function proxyMintRequest(
         tokenId,
         tokenName: displayName,
       })
+
+      // Fan-out to followers — anyone following the creator gets a "mint"
+      // notification with `actor` set to the creator. NotificationRow keys
+      // off `actor` to render "0xCREATOR minted "name"" for these.
+      void (async () => {
+        try {
+          const followers = await getFollowers(account)
+          await Promise.all(
+            followers
+              .filter((f) => f.toLowerCase() !== account.toLowerCase())
+              .map((follower) =>
+                writeNotification({
+                  type: 'mint',
+                  recipient: follower,
+                  actor: account,
+                  tokenAddress: contractAddress,
+                  tokenId,
+                  tokenName: displayName,
+                }),
+              ),
+          )
+        } catch {
+          // notifications are non-critical
+        }
+      })()
 
       if (Array.isArray(body?.splits) && (body.splits as unknown[]).length >= 2) {
         void redis

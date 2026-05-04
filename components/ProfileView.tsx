@@ -354,7 +354,9 @@ export function ProfileView({ address }: ProfileViewProps) {
       setFollowerCount((c) => c === null ? null : wasFollowing ? c - 1 : c + 1)
       toast.success(wasFollowing ? 'Unfollowed!' : 'Followed!')
     } catch (err) {
-      toast.error(following ? 'Unfollow failed' : 'Follow failed', { description: err instanceof Error ? err.message : 'Unknown error' })
+      const raw = err instanceof Error ? err.message : 'Unknown error'
+      const description = /user rejected|user denied|rejected the request/i.test(raw) ? 'Cancelled' : raw
+      toast.error(following ? 'Unfollow failed' : 'Follow failed', { description })
     } finally {
       setFollowLoading(false)
     }
