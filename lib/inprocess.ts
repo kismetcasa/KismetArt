@@ -101,6 +101,7 @@ export interface MomentDetail {
   owner: string
   maxSupply?: number
   saleConfig: {
+    type?: 'fixedPrice' | 'erc20Mint'
     pricePerToken: string
     saleStart: string
     saleEnd: string
@@ -114,6 +115,24 @@ export interface MomentDetail {
     animation_url?: string
     content?: { mime?: string; uri?: string }
   }
+}
+
+/**
+ * Map an inprocess saleConfig to the currency tag used by the direct-collect
+ * hook. Prefers the explicit `type` field; falls back to comparing `currency`
+ * against the USDC address. Returns 'eth' as a safe default for legacy
+ * responses missing both fields.
+ */
+export function inferCollectCurrency(saleConfig: {
+  type?: string
+  currency?: string
+}): 'eth' | 'usdc' {
+  if (saleConfig.type === 'erc20Mint') return 'usdc'
+  if (saleConfig.type === 'fixedPrice') return 'eth'
+  // Fallback: only USDC is currently supported as an ERC20 currency.
+  const USDC_BASE = '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913'
+  if (saleConfig.currency && saleConfig.currency.toLowerCase() === USDC_BASE) return 'usdc'
+  return 'eth'
 }
 
 /** Format wei price to a human-readable ETH string (BigInt-safe via viem) */
