@@ -1,8 +1,53 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isAddress, verifyMessage } from 'viem'
+import { createPublicClient, http, isAddress, verifyMessage, type Address } from 'viem'
+import { base } from 'viem/chains'
 import { INPROCESS_API } from '@/lib/inprocess'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
 import { consumeNonce } from '@/lib/profile'
+
+const PERMISSION_BIT_ADMIN = 2n
+
+const COLLECTION_PERMISSIONS_ABI = [
+  {
+    name: 'permissions',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'tokenId', type: 'uint256' },
+      { name: 'user', type: 'address' },
+    ],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const
+
+/**
+ * Fallback admin check via on-chain `permissions` read. Inprocess's indexer
+ * runs minutes behind a fresh mint, so a legit creator can transiently fail
+ * the inprocess /moment lookup. The on-chain ADMIN bit is authoritative for
+ * any token Zora minted, regardless of indexer state.
+ */
+async function isOnChainAdmin(collectionAddress: string, tokenId: string, caller: string): Promise<boolean> {
+  try {
+    const client = createPublicClient({ chain: base, transport: http() })
+    const tokenScopedPerms = (await client.readContract({
+      address: collectionAddress as Address,
+      abi: COLLECTION_PERMISSIONS_ABI,
+      functionName: 'permissions',
+      args: [BigInt(tokenId), caller as Address],
+    })) as bigint
+    if ((tokenScopedPerms & PERMISSION_BIT_ADMIN) === PERMISSION_BIT_ADMIN) return true
+    // Collection-wide admin (tokenId 0) also counts — that's where defaultAdmin lives.
+    const collectionWidePerms = (await client.readContract({
+      address: collectionAddress as Address,
+      abi: COLLECTION_PERMISSIONS_ABI,
+      functionName: 'permissions',
+      args: [0n, caller as Address],
+    })) as bigint
+    return (collectionWidePerms & PERMISSION_BIT_ADMIN) === PERMISSION_BIT_ADMIN
+  } catch {
+    return false
+  }
+}
 
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req)
@@ -66,26 +111,31 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid or expired nonce' }, { status: 401 })
   }
 
-  // Confirm callerAddress is the moment creator on InProcess
+  // Confirm caller is creator or admin. Inprocess's indexer is the primary
+  // source (it carries off-chain admin grants), with on-chain ADMIN bit as a
+  // fallback for freshly minted tokens that haven't been indexed yet.
+  const callerLower = body.callerAddress.toLowerCase()
+  let authorized = false
   try {
     const momentUrl = new URL(`${INPROCESS_API}/moment`)
     momentUrl.searchParams.set('collectionAddress', body.collectionAddress)
     momentUrl.searchParams.set('tokenId', tokenId)
     momentUrl.searchParams.set('chainId', '8453')
     const momentRes = await fetch(momentUrl.toString(), { headers: { Accept: 'application/json' } })
-    if (!momentRes.ok) {
-      return NextResponse.json({ error: 'Could not verify moment creator' }, { status: 403 })
-    }
-    const momentData = await momentRes.json() as { creator?: { address?: string }; admins?: { address: string }[] }
-    const creatorAddr = momentData.creator?.address?.toLowerCase()
-    const callerLower = body.callerAddress.toLowerCase()
-    const isCreator = creatorAddr === callerLower
-    const isAdmin = momentData.admins?.some((a) => a.address?.toLowerCase() === callerLower) ?? false
-    if (!isCreator && !isAdmin) {
-      return NextResponse.json({ error: 'Only the moment creator or an admin may airdrop' }, { status: 403 })
+    if (momentRes.ok) {
+      const momentData = await momentRes.json() as { creator?: { address?: string }; admins?: { address: string }[] }
+      const isCreator = momentData.creator?.address?.toLowerCase() === callerLower
+      const isAdmin = momentData.admins?.some((a) => a.address?.toLowerCase() === callerLower) ?? false
+      authorized = isCreator || isAdmin
     }
   } catch {
-    return NextResponse.json({ error: 'Could not verify moment creator' }, { status: 502 })
+    // Fall through to on-chain check.
+  }
+  if (!authorized) {
+    authorized = await isOnChainAdmin(body.collectionAddress, tokenId, body.callerAddress)
+  }
+  if (!authorized) {
+    return NextResponse.json({ error: 'Only the moment creator or an admin may airdrop' }, { status: 403 })
   }
 
   try {

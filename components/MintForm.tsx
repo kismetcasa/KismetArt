@@ -178,8 +178,8 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
         toast.success('Minted!', { id: 'mint', description: `Token #${data.tokenId}` })
 
       } else {
-        // media mode — ensure session once (cached after first use, no re-prompt)
-        const sessionToken = await ensureSession()
+        // media mode — ensure session once (cookie cached, no re-prompt)
+        await ensureSession()
 
         setStep('uploading-media')
         setUploadProgress(0)
@@ -187,7 +187,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
         const mediaUri = await uploadToArweave(file!, (pct) => {
           setUploadProgress(pct)
           toast.loading(`Uploading media… ${pct}%`, { id: 'mint' })
-        }, sessionToken)
+        })
 
         setStep('uploading-metadata')
         setUploadProgress(0)
@@ -198,7 +198,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
           image: mediaUri,
           ...(file!.type.startsWith('video/') ? { animation_url: mediaUri } : {}),
         }
-        const metadataUri = await uploadJson(metadata, sessionToken)
+        const metadataUri = await uploadJson(metadata)
 
         setStep('minting')
         toast.loading('Minting moment…', { id: 'mint' })

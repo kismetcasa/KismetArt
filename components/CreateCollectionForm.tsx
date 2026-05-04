@@ -177,8 +177,13 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
 
     setCollectionAddress(deployedAddress)
 
+    // Cookie auth: the session was already established before the deploy
+    // (ensureSession ran on Arweave upload), so this call rides on the same
+    // session and the server can verify the caller matches `artist` and is
+    // the on-chain admin of `address`.
     fetch('/api/collections', {
       method: 'POST',
+      credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         address: deployedAddress,
@@ -247,8 +252,8 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
     setDeployedImageUri(undefined)
 
     try {
-      // Ensure session once — cached after first use, no re-prompt for 7 days
-      const sessionToken = await ensureSession()
+      // Ensure session once — httpOnly cookie set, no re-prompt for 7 days
+      await ensureSession()
 
       setStep('uploading-image')
       setUploadProgress(0)
@@ -256,7 +261,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
       const imageUri = await uploadToArweave(coverFile, (pct) => {
         setUploadProgress(pct)
         toast.loading(`Uploading image… ${pct}%`, { id: 'create-collection' })
-      }, sessionToken)
+      })
       setDeployedImageUri(imageUri)
 
       setStep('uploading-metadata')
@@ -267,7 +272,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
         image: imageUri,
         createReferral: CREATE_REFERRAL,
       }
-      const contractURI = await uploadJson(metadata, sessionToken)
+      const contractURI = await uploadJson(metadata)
 
       setStep('deploying')
       toast.loading(
@@ -626,7 +631,6 @@ function stepLabel(step: string, progress: number): string {
     case 'uploading-image': return progress > 0 ? `uploading image… ${progress}%` : 'uploading image…'
     case 'uploading-metadata': return 'uploading metadata…'
     case 'deploying': return 'deploying…'
-    case 'minting-cover': return 'minting cover…'
     default: return 'working…'
   }
 }
