@@ -121,6 +121,9 @@ async function handleExpiredListings(listings: Listing[]): Promise<void> {
       tokenName: listing.name,
       tokenImage: listing.image,
       price: listing.price,
+      // Pair the price with its currency so NotificationRow renders USDC
+      // listings correctly (defaults to ETH otherwise).
+      currency: listing.currency,
       listingId: listing.id,
     })
   }))
