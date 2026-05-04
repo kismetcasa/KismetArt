@@ -1,7 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isAddress } from 'viem'
+import { isAddress, verifyTypedData } from 'viem'
 import { createListing, getListings, getListingForToken, getListingsBySeller } from '@/lib/listings'
-import type { SerializedOrderComponents } from '@/lib/seaport'
+import {
+  SEAPORT_DOMAIN,
+  SEAPORT_ORDER_TYPES,
+  deserializeOrder,
+  type SerializedOrderComponents,
+} from '@/lib/seaport'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -83,6 +88,39 @@ export async function POST(req: NextRequest) {
     }
     if (orderComponents.offerer.toLowerCase() !== seller.toLowerCase()) {
       return NextResponse.json({ error: 'Seller must match order offerer' }, { status: 400 })
+    }
+
+    // Verify the EIP-712 signature is from the offerer. Without this anyone
+    // could spam-list tokens they don't own (Seaport reverts at fill time,
+    // but the listing pollutes the marketplace until then).
+    const order = deserializeOrder(orderComponents)
+    let sigValid = false
+    try {
+      sigValid = await verifyTypedData({
+        address: seller as `0x${string}`,
+        domain: SEAPORT_DOMAIN,
+        types: SEAPORT_ORDER_TYPES,
+        primaryType: 'OrderComponents',
+        message: {
+          offerer: order.offerer,
+          zone: order.zone,
+          offer: order.offer,
+          consideration: order.consideration,
+          orderType: order.orderType,
+          startTime: order.startTime,
+          endTime: order.endTime,
+          zoneHash: order.zoneHash,
+          salt: order.salt,
+          conduitKey: order.conduitKey,
+          counter: order.counter,
+        },
+        signature: signature as `0x${string}`,
+      })
+    } catch {
+      return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+    }
+    if (!sigValid) {
+      return NextResponse.json({ error: 'Signature does not match seller' }, { status: 401 })
     }
 
     const listing = await createListing({

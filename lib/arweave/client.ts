@@ -3,8 +3,10 @@ function b64urlToBuffer(b64url: string): Buffer {
 }
 
 // Duck-typed Arweave signer: publicKey + sign() is all the Turbo web SDK needs.
-// The JWK never leaves the server — only the deepHash (48 bytes, SHA-384) is sent to /api/sign.
-export function makeProxySigner(sessionToken: string) {
+// The JWK never leaves the server — only the deepHash (48 bytes, SHA-384) is
+// sent to /api/sign. Auth is the httpOnly session cookie (set by /api/session),
+// which fetch() includes automatically on same-origin requests.
+export function makeProxySigner() {
   const n = process.env.NEXT_PUBLIC_ARWEAVE_N
   if (!n) throw new Error('NEXT_PUBLIC_ARWEAVE_N not configured')
 
@@ -17,8 +19,9 @@ export function makeProxySigner(sessionToken: string) {
     async sign(hash: Uint8Array): Promise<Uint8Array> {
       const res = await fetch('/api/sign', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hash: Buffer.from(hash).toString('base64'), sessionToken }),
+        body: JSON.stringify({ hash: Buffer.from(hash).toString('base64') }),
       })
       const data = (await res.json()) as { signature?: string; error?: string }
       if (!res.ok) throw new Error(data.error ?? 'Signing failed')

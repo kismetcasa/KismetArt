@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { useAccount, useReadContract } from 'wagmi'
+import { useAccount, useReadContract, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
 import { isAddress } from 'viem'
@@ -40,6 +40,7 @@ const TOP_COMMENTS = 3
 export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta }: Props) {
   const { address: connectedAddress, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
+  const { signMessageAsync } = useSignMessage()
   const { isAdmin, featuredKeys, toggleFeatured } = useAdmin()
 
   const [detail, setDetail] = useState<MomentDetail | null>(
@@ -208,12 +209,28 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   async function handleDistribute() {
     const addr = splitAddress.trim()
     if (!addr || !isAddress(addr)) { toast.error('Invalid split address'); return }
+    if (!connectedAddress) { toast.error('Wallet not connected'); return }
     setDistributing(true)
     try {
+      const nonceRes = await fetch(`/api/profile/${connectedAddress}/nonce`)
+      if (!nonceRes.ok) throw new Error('Could not fetch nonce')
+      const { nonce } = (await nonceRes.json().catch(() => ({}))) as { nonce?: string }
+      if (!nonce) throw new Error('Could not fetch nonce')
+      const message = `Distribute Kismet Art split\nCollection: ${address.toLowerCase()}\nToken: ${tokenId}\nSplit: ${addr.toLowerCase()}\nAddress: ${connectedAddress.toLowerCase()}\nNonce: ${nonce}`
+      const signature = await signMessageAsync({ message })
+
       const res = await fetch('/api/distribute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ splitAddress: addr, chainId: 8453 }),
+        body: JSON.stringify({
+          splitAddress: addr,
+          collectionAddress: address,
+          tokenId,
+          chainId: 8453,
+          callerAddress: connectedAddress,
+          signature,
+          nonce,
+        }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) throw new Error(data.error ?? 'Distribution failed')

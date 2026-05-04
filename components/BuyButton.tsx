@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useAccount, useWriteContract, usePublicClient } from 'wagmi'
+import { useAccount, useSignMessage, useWriteContract, usePublicClient } from 'wagmi'
 import { base } from 'wagmi/chains'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
@@ -21,6 +21,7 @@ export function BuyButton({ listing, onBought, className = '' }: BuyButtonProps)
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { writeContractAsync } = useWriteContract()
+  const { signMessageAsync } = useSignMessage()
   const publicClient = usePublicClient()
   const ensureBase = useEnsureBase()
   const [loading, setLoading] = useState(false)
@@ -82,10 +83,19 @@ export function BuyButton({ listing, onBought, className = '' }: BuyButtonProps)
         throw new Error('Transaction reverted on-chain')
       }
 
+      // Mark filled — backend requires a signed message from the buyer so a
+      // third party can't flip arbitrary listings or fake "sale" notifications.
+      const nonceRes = await fetch(`/api/profile/${address}/nonce`)
+      if (!nonceRes.ok) throw new Error('Could not fetch nonce')
+      const { nonce } = (await nonceRes.json().catch(() => ({}))) as { nonce?: string }
+      if (!nonce) throw new Error('Could not fetch nonce')
+      const message = `Mark Kismet Art listing filled\nListing: ${listing.id}\nBuyer: ${address.toLowerCase()}\nNonce: ${nonce}`
+      const signature = await signMessageAsync({ message })
+
       await fetch(`/api/listings/${listing.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: 'filled', buyer: address }),
+        body: JSON.stringify({ status: 'filled', signature, nonce, signer: address }),
       })
 
       setBought(true)

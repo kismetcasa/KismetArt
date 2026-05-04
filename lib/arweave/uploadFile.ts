@@ -6,11 +6,10 @@ import patchFetch from './patchFetch'
 export async function uploadFile(
   file: File,
   onProgress: (pct: number) => void = () => {},
-  sessionToken: string,
 ): Promise<string> {
   const unpatch = patchFetch()
   try {
-    const signer = makeProxySigner(sessionToken)
+    const signer = makeProxySigner()
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const turbo = TurboFactory.authenticated({ signer: signer as any })
 

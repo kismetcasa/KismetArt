@@ -1,8 +1,29 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isAddress } from 'viem'
+import { createPublicClient, http, isAddress, type Address } from 'viem'
+import { base } from 'viem/chains'
 import { INPROCESS_API } from '@/lib/inprocess'
 import { getTrackedCollections, addTrackedCollection, getCollectionsByArtist } from '@/lib/kv'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
+import { getSessionAddress } from '@/lib/session'
+
+// Zora 1155 PERMISSION_BIT_ADMIN = 2 (= 2^1). Anyone with this bit can mutate
+// the contract. We require the caller to have it before letting them register
+// the collection in our tracked list — otherwise anyone could pollute artist
+// pages with arbitrary contract addresses.
+const PERMISSION_BIT_ADMIN = 2n
+
+const COLLECTION_PERMISSIONS_ABI = [
+  {
+    name: 'permissions',
+    type: 'function',
+    stateMutability: 'view',
+    inputs: [
+      { name: 'tokenId', type: 'uint256' },
+      { name: 'user', type: 'address' },
+    ],
+    outputs: [{ name: '', type: 'uint256' }],
+  },
+] as const
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -82,6 +103,12 @@ export async function POST(req: NextRequest) {
   const allowed = await checkRateLimit(`collections:${ip}`, 5, 60)
   if (!allowed) return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
 
+  // Authenticated caller — Kismet Art session cookie required.
+  const sessionAddress = await getSessionAddress(req)
+  if (!sessionAddress) {
+    return NextResponse.json({ error: 'Sign in to continue' }, { status: 401 })
+  }
+
   let body: {
     address: string
     name?: string
@@ -98,11 +125,37 @@ export async function POST(req: NextRequest) {
   if (!body.address || !isAddress(body.address)) {
     return NextResponse.json({ error: 'valid address required' }, { status: 400 })
   }
+  // Caller must claim themselves as the artist — prevents one user from
+  // populating another's profile page.
+  if (!body.artist || body.artist.toLowerCase() !== sessionAddress) {
+    return NextResponse.json({ error: 'artist must match session address' }, { status: 403 })
+  }
+
+  // Caller must have ADMIN bit on the collection on-chain. This is the same
+  // check Zora uses when gating addPermission/setSale; we read it directly
+  // rather than trusting an off-chain claim. tokenId 0 is the collection-wide
+  // permission row.
+  try {
+    const client = createPublicClient({ chain: base, transport: http() })
+    const perms = (await client.readContract({
+      address: body.address as Address,
+      abi: COLLECTION_PERMISSIONS_ABI,
+      functionName: 'permissions',
+      args: [0n, sessionAddress as Address],
+    })) as bigint
+    const isAdmin = (perms & PERMISSION_BIT_ADMIN) === PERMISSION_BIT_ADMIN
+    if (!isAdmin) {
+      return NextResponse.json({ error: 'Caller is not admin of this collection' }, { status: 403 })
+    }
+  } catch {
+    return NextResponse.json({ error: 'Could not verify collection admin on-chain' }, { status: 502 })
+  }
+
   await addTrackedCollection(body.address, {
     name: body.name ?? body.address,
     image: body.image,
     description: body.description,
-    artist: body.artist?.toLowerCase(),
+    artist: sessionAddress,
   })
   return NextResponse.json({ ok: true })
 }

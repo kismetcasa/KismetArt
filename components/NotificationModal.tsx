@@ -2,8 +2,10 @@
 
 import { useEffect, useState } from 'react'
 import { X, Settings, Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { NotificationFeed } from './NotificationFeed'
 import { ProfileAvatar } from './ProfileAvatar'
+import { useUploadSession } from '@/hooks/useUploadSession'
 import { shortAddress } from '@/lib/inprocess'
 
 type ModalTab = 'feed' | 'settings'
@@ -14,6 +16,7 @@ interface NotificationModalProps {
 }
 
 export function NotificationModal({ address, onClose }: NotificationModalProps) {
+  const { ensureSession } = useUploadSession()
   const [tab, setTab] = useState<ModalTab>('feed')
   const [muted, setMuted] = useState<string[] | null>(null)
   const [mutedLoading, setMutedLoading] = useState(false)
@@ -42,13 +45,22 @@ export function NotificationModal({ address, onClose }: NotificationModalProps) 
       .finally(() => setMutedLoading(false))
   }, [tab, address])
 
-  function handleUnmute(actor: string) {
+  async function handleUnmute(actor: string) {
+    const previous = muted
     setMuted((prev) => prev?.filter((a) => a !== actor) ?? null)
-    fetch('/api/notifications/mute', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address, actor, unmute: true }),
-    }).catch(() => {})
+    try {
+      await ensureSession()
+      await fetch('/api/notifications/mute', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor, unmute: true }),
+      })
+    } catch (err) {
+      setMuted(previous)
+      if (err instanceof Error && /reject|denied/i.test(err.message)) return
+      toast.error('Could not unmute', { description: err instanceof Error ? err.message : undefined })
+    }
   }
 
   return (

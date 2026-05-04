@@ -2,7 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
+import { toast } from 'sonner'
 import { NotificationRow } from './NotificationRow'
+import { useUploadSession } from '@/hooks/useUploadSession'
 import type { Notification, NotificationType } from '@/lib/notifications'
 
 interface NotificationFeedProps {
@@ -24,6 +26,7 @@ const TYPE_FILTERS: { value: TypeFilter; label: string }[] = [
 ]
 
 export function NotificationFeed({ address }: NotificationFeedProps) {
+  const { ensureSession } = useUploadSession()
   const [tab, setTab] = useState<Tab>('priority')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [page, setPage] = useState(1)
@@ -88,44 +91,58 @@ export function NotificationFeed({ address }: NotificationFeedProps) {
 
   async function handleMarkAllRead() {
     try {
+      await ensureSession()
       await fetch('/api/notifications/read', {
         method: 'PATCH',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ address, all: true }),
+        body: JSON.stringify({ all: true }),
       })
       setItems((prev) => prev.map((n) => ({ ...n, read: true })))
-      // Signal bell to clear badge immediately
       window.dispatchEvent(new CustomEvent('kismetart:notif-read'))
-    } catch {
-      // Silent
+    } catch (err) {
+      if (err instanceof Error && /reject|denied/i.test(err.message)) return
+      toast.error('Could not mark read', { description: err instanceof Error ? err.message : undefined })
     }
   }
 
-  function handleRowClick(id: string) {
+  async function handleRowClick(id: string) {
     setItems((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)))
-    fetch('/api/notifications/read', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address, id }),
-    })
-      .then(() => window.dispatchEvent(new CustomEvent('kismetart:notif-refetch')))
-      .catch(() => {})
+    try {
+      await ensureSession()
+      await fetch('/api/notifications/read', {
+        method: 'PATCH',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      })
+      window.dispatchEvent(new CustomEvent('kismetart:notif-refetch'))
+    } catch {
+      // Optimistic UI already flipped; tolerate failure quietly so the
+      // navigation onClick doesn't get blocked by a sign-in toast.
+    }
   }
 
-  function handleMute(actor: string) {
+  async function handleMute(actor: string) {
     const lower = actor.toLowerCase()
     setItems((prev) => {
       const removed = prev.filter((n) => n.actor?.toLowerCase() === lower).length
       if (removed > 0) setTotal((t) => Math.max(0, t - removed))
       return prev.filter((n) => n.actor?.toLowerCase() !== lower)
     })
-    fetch('/api/notifications/mute', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ address, actor }),
-    })
-      .then(() => window.dispatchEvent(new CustomEvent('kismetart:notif-refetch')))
-      .catch(() => {})
+    try {
+      await ensureSession()
+      await fetch('/api/notifications/mute', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ actor }),
+      })
+      window.dispatchEvent(new CustomEvent('kismetart:notif-refetch'))
+    } catch (err) {
+      if (err instanceof Error && /reject|denied/i.test(err.message)) return
+      toast.error('Could not mute', { description: err instanceof Error ? err.message : undefined })
+    }
   }
 
   return (

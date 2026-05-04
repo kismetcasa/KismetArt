@@ -1,8 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { isAddress } from 'viem'
+import { isAddress, verifyMessage } from 'viem'
 import { INPROCESS_API } from '@/lib/inprocess'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
+import { consumeNonce } from '@/lib/profile'
+import { redis } from '@/lib/redis'
 
+/**
+ * Triggers the inprocess split distribution for a token's accumulated proceeds.
+ * Inprocess submits the on-chain tx and pays gas via the platform smart wallet
+ * tied to our INPROCESS_API_KEY — meaning a leaked endpoint costs us, not the
+ * caller. Three gates:
+ *   1. Signed message tying caller to the specific (collection, tokenId, split)
+ *   2. Caller is creator OR admin of that moment (verified via inprocess)
+ *   3. Token has a registered split flag (kismetart:splits:<addr>:<id>) — only
+ *      tokens minted through our /api/mint route with multiple splits qualify
+ */
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req)
   const allowed = await checkRateLimit(`distribute:${ip}`, 5, 60)
@@ -13,19 +25,99 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'INPROCESS_API_KEY not configured' }, { status: 500 })
   }
 
-  const body = await req.json()
-  const { splitAddress } = body as { splitAddress?: string }
+  let body: {
+    splitAddress?: string
+    collectionAddress?: string
+    tokenId?: string
+    chainId?: number
+    callerAddress?: string
+    signature?: string
+    nonce?: string
+  }
+  try {
+    body = await req.json()
+  } catch {
+    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  }
+
+  const { splitAddress, collectionAddress, tokenId, callerAddress, signature, nonce } = body
+
   if (!splitAddress || !isAddress(splitAddress)) {
     return NextResponse.json({ error: 'valid splitAddress required' }, { status: 400 })
   }
+  if (!collectionAddress || !isAddress(collectionAddress)) {
+    return NextResponse.json({ error: 'valid collectionAddress required' }, { status: 400 })
+  }
+  if (!tokenId || !/^\d+$/.test(tokenId)) {
+    return NextResponse.json({ error: 'valid tokenId required' }, { status: 400 })
+  }
+  if (!callerAddress || !isAddress(callerAddress)) {
+    return NextResponse.json({ error: 'callerAddress required' }, { status: 401 })
+  }
+  if (!signature || !nonce) {
+    return NextResponse.json({ error: 'signature and nonce required' }, { status: 401 })
+  }
 
+  const message = `Distribute Kismet Art split\nCollection: ${collectionAddress.toLowerCase()}\nToken: ${tokenId}\nSplit: ${splitAddress.toLowerCase()}\nAddress: ${callerAddress.toLowerCase()}\nNonce: ${nonce}`
+  let sigValid = false
+  try {
+    sigValid = await verifyMessage({
+      address: callerAddress as `0x${string}`,
+      message,
+      signature: signature as `0x${string}`,
+    })
+  } catch {
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+  }
+  if (!sigValid) return NextResponse.json({ error: 'Signature verification failed' }, { status: 401 })
+
+  // Verify-then-consume: failed sigs leave the nonce reusable.
+  const nonceValid = await consumeNonce(callerAddress, nonce)
+  if (!nonceValid) {
+    return NextResponse.json({ error: 'Invalid or expired nonce' }, { status: 401 })
+  }
+
+  // Token must have splits registered via our mint flow. Without this anyone
+  // could trigger distribute on arbitrary contract addresses.
+  const splitsKey = `kismetart:splits:${collectionAddress.toLowerCase()}:${tokenId}`
+  const hasSplits = await redis.get(splitsKey)
+  if (!hasSplits) {
+    return NextResponse.json({ error: 'No splits registered for this token' }, { status: 403 })
+  }
+
+  // Caller must be creator or admin of the moment per inprocess.
+  try {
+    const momentUrl = new URL(`${INPROCESS_API}/moment`)
+    momentUrl.searchParams.set('collectionAddress', collectionAddress)
+    momentUrl.searchParams.set('tokenId', tokenId)
+    momentUrl.searchParams.set('chainId', '8453')
+    const momentRes = await fetch(momentUrl.toString(), { headers: { Accept: 'application/json' } })
+    if (!momentRes.ok) {
+      return NextResponse.json({ error: 'Could not verify moment creator' }, { status: 403 })
+    }
+    const momentData = await momentRes.json() as {
+      creator?: { address?: string }
+      admins?: { address: string }[]
+    }
+    const callerLower = callerAddress.toLowerCase()
+    const isCreator = momentData.creator?.address?.toLowerCase() === callerLower
+    const isAdmin = momentData.admins?.some((a) => a.address?.toLowerCase() === callerLower) ?? false
+    if (!isCreator && !isAdmin) {
+      return NextResponse.json({ error: 'Only the moment creator or an admin may distribute' }, { status: 403 })
+    }
+  } catch {
+    return NextResponse.json({ error: 'Could not verify moment creator' }, { status: 502 })
+  }
+
+  // Forward only the specific fields inprocess expects — never relay arbitrary
+  // body keys, which could ride along to undocumented upstream parameters.
   const res = await fetch(`${INPROCESS_API}/distribute`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'x-api-key': apiKey,
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify({ splitAddress, chainId: body.chainId ?? 8453 }),
   })
 
   const text = await res.text()
