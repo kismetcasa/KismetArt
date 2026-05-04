@@ -18,10 +18,12 @@ export const KISMET_REFERRAL: Address = '0x6A0bA3707dF9D13A4445cD7E04274B2725930
 
 // Zora 1155 mint() (post-v2.0.0 contracts). All inprocess and Kismet deploys
 // from the last ~year are new-style; legacy mintWithRewards() is intentionally
-// not supported here.
+// not supported here. totalSupply tracks how many of a given token id have
+// been minted (sum of all editions), used to display "X collected" in UIs.
 export const ZORA_1155_MINT_ABI = parseAbi([
   'function mint(address minter, uint256 tokenId, uint256 quantity, address[] rewardsRecipients, bytes minterArguments) payable',
   'function mintFee() view returns (uint256)',
+  'function totalSupply(uint256 id) view returns (uint256)',
 ])
 
 // ERC20Minter — note that mint() lives on the strategy itself, NOT on the 1155

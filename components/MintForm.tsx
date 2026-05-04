@@ -5,12 +5,15 @@ import { useAccount } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
 import { Upload, X, Plus, Trash2 } from 'lucide-react'
-import { parseEther, isAddress } from 'viem'
+import { parseEther, parseUnits, isAddress } from 'viem'
 import type { CreateMomentPayload, Split } from '@/lib/inprocess'
 import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { uploadJson } from '@/lib/arweave/uploadJson'
 import { useUploadSession } from '@/hooks/useUploadSession'
 import { PLATFORM_COLLECTION, CREATE_REFERRAL, RESIDENCIES_ADDRESS } from '@/lib/config'
+import { USDC_BASE } from '@/lib/zoraMint'
+
+type PriceCurrency = 'eth' | 'usdc'
 
 type MintMode = 'media' | 'text'
 
@@ -31,6 +34,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
   const [name, setName] = useState('')
   const [description, setDescription] = useState('')
   const [price, setPrice] = useState('0')
+  const [priceCurrency, setPriceCurrency] = useState<PriceCurrency>('eth')
   const [maxSupply, setMaxSupply] = useState('')
   const [splits, setSplits] = useState<Split[]>([])
   const [splitInput, setSplitInput] = useState({ address: '', pct: '' })
@@ -121,14 +125,28 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
 
     const rawPrice = price.trim()
     const normalizedPrice = !rawPrice || rawPrice === '.' ? '0' : rawPrice.startsWith('.') ? `0${rawPrice}` : rawPrice
-    const priceInWei = parseEther(normalizedPrice).toString()
+    // ETH: 18 decimals (parseEther). USDC: 6 decimals (parseUnits with 6).
+    // erc20Mint type also requires the currency address per inprocess docs
+    // (moment/create/salesConfig.mdx). Native ETH uses fixedPrice with no
+    // currency field.
+    const priceInBaseUnits = priceCurrency === 'usdc'
+      ? parseUnits(normalizedPrice, 6).toString()
+      : parseEther(normalizedPrice).toString()
     const now = Math.floor(Date.now() / 1000)
-    const salesConfig = {
-      type: 'fixedPrice' as const,
-      pricePerToken: priceInWei,
-      saleStart: String(now),
-      saleEnd: '18446744073709551615',
-    }
+    const salesConfig = priceCurrency === 'usdc'
+      ? {
+          type: 'erc20Mint' as const,
+          pricePerToken: priceInBaseUnits,
+          saleStart: String(now),
+          saleEnd: '18446744073709551615',
+          currency: USDC_BASE,
+        }
+      : {
+          type: 'fixedPrice' as const,
+          pricePerToken: priceInBaseUnits,
+          saleStart: String(now),
+          saleEnd: '18446744073709551615',
+        }
     const supplyTrimmed = maxSupply.trim()
     if (supplyTrimmed) {
       const supplyNum = parseInt(supplyTrimmed, 10)
@@ -406,7 +424,7 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
       <div className="flex gap-3">
         <div className="flex-1">
           <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
-            Price (ETH)
+            Price
           </label>
           <div className="relative">
             <input
@@ -414,9 +432,16 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
               inputMode="decimal"
               value={price}
               onChange={(e) => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setPrice(v) }}
-              className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] pr-12"
+              className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] pr-14"
             />
-            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-mono text-[#555]">ETH</span>
+            <button
+              type="button"
+              onClick={() => setPriceCurrency((c) => c === 'eth' ? 'usdc' : 'eth')}
+              title="toggle currency"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-mono text-[#888] hover:text-[#efefef] transition-colors px-1.5 py-0.5 rounded"
+            >
+              {priceCurrency === 'eth' ? 'ETH' : 'USDC'}
+            </button>
           </div>
           {price === '0' && (
             <p className="text-xs text-[#555] font-mono mt-1">free mint</p>

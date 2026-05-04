@@ -64,6 +64,19 @@ function NotificationContent({ n }: { n: Notification }) {
         </>
       )
     case 'mint':
+      // Self-notification (no actor) = "your moment was created" — confirms
+      // the user's own create action. Follower-fanout (actor set) = "@addr
+      // minted X" — surfaces creates by people you follow.
+      if (n.actor) {
+        return (
+          <>
+            <p className="text-xs font-mono text-[#efefef] truncate">
+              {shortAddress(n.actor)} minted {n.tokenName ? `"${n.tokenName}"` : 'a moment'}
+            </p>
+            <p className="text-[10px] font-mono text-[#555] mt-0.5 truncate">{time}</p>
+          </>
+        )
+      }
       return (
         <>
           <p className="text-xs font-mono text-[#efefef] truncate">your moment was created</p>

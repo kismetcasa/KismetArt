@@ -308,9 +308,13 @@ export function MomentModal({
                 <p className="text-[10px] font-mono text-[#333] uppercase tracking-wider">comments</p>
                 {visibleComments.map((c, i) => (
                   <div key={i} className="flex gap-2 items-baseline">
-                    <span className="text-[11px] font-mono text-[#555] flex-shrink-0">
+                    <Link
+                      href={`/profile/${c.sender}`}
+                      onClick={onClose}
+                      className="text-[11px] font-mono text-[#555] flex-shrink-0 hover:text-[#888] transition-colors"
+                    >
                       {shortAddress(c.sender)}
-                    </span>
+                    </Link>
                     <span className="text-xs font-mono text-[#888] flex-1 break-words leading-relaxed">
                       {c.comment}
                     </span>
