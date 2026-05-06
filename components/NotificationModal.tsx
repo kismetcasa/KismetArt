@@ -12,11 +12,10 @@ import { shortAddress } from '@/lib/inprocess'
 type ModalTab = 'feed' | 'settings'
 
 interface NotificationModalProps {
-  address: string
   onClose: () => void
 }
 
-export function NotificationModal({ address, onClose }: NotificationModalProps) {
+export function NotificationModal({ onClose }: NotificationModalProps) {
   const { ensureSession } = useUploadSession()
   const [tab, setTab] = useState<ModalTab>('feed')
   const [muted, setMuted] = useState<string[] | null>(null)
@@ -104,7 +103,7 @@ export function NotificationModal({ address, onClose }: NotificationModalProps) 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto">
           {tab === 'feed' ? (
-            <NotificationFeed address={address} />
+            <NotificationFeed />
           ) : (
             <div className="p-4 flex flex-col gap-4">
               <div>

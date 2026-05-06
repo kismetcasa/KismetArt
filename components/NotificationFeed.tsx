@@ -9,10 +9,6 @@ import { fetchCreatorProfile } from '@/lib/profileCache'
 import { humanError } from '@/lib/toast'
 import type { Notification, NotificationType } from '@/lib/notifications'
 
-interface NotificationFeedProps {
-  address: string
-}
-
 type Tab = 'priority' | 'all'
 type TypeFilter = 'all' | NotificationType
 
@@ -30,7 +26,7 @@ const TYPE_FILTERS: { value: TypeFilter; label: string }[] = [
 
 const POLL_INTERVAL_MS = 30_000
 
-export function NotificationFeed({ address }: NotificationFeedProps) {
+export function NotificationFeed() {
   const { ensureSession } = useUploadSession()
   const [tab, setTab] = useState<Tab>('priority')
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
