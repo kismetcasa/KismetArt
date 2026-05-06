@@ -86,12 +86,7 @@ export function NotificationBell({ address }: NotificationBellProps) {
         )}
       </button>
 
-      {modalOpen && (
-        <NotificationModal
-          address={address}
-          onClose={() => setModalOpen(false)}
-        />
-      )}
+      {modalOpen && <NotificationModal onClose={() => setModalOpen(false)} />}
     </div>
   )
 }
