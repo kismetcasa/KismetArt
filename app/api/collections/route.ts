@@ -68,9 +68,21 @@ export async function GET(req: NextRequest) {
           if (res.ok) {
             const text = await res.text()
             if (text) {
-              const data = JSON.parse(text) as Record<string, unknown>
-              if (data && Object.keys(data).length > 0) {
-                return { contractAddress: address, ...data }
+              const data: unknown = JSON.parse(text)
+              // Trust only plain objects with at least one field — inprocess
+              // returns null when a collection isn't indexed yet, and we
+              // want to fall through to the KV fallback in that case.
+              if (
+                data &&
+                typeof data === 'object' &&
+                !Array.isArray(data) &&
+                Object.keys(data).length > 0
+              ) {
+                // Override `contractAddress` with the address from our
+                // tracked set so the card's link uses the same casing the
+                // rest of the app stores (and so we never accidentally
+                // route on a missing/typo'd field).
+                return { ...(data as Record<string, unknown>), contractAddress: address }
               }
             }
           }
