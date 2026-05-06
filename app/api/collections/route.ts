@@ -28,6 +28,31 @@ const COLLECTION_PERMISSIONS_ABI = [
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const artist = searchParams.get('artist')
+  const feed = searchParams.get('feed')
+
+  // Discovery feed: proxy inprocess `/api/collections` with no artist
+  // filter (= the in•process collective) and return rich rows for the
+  // CollectionCard component. Paginated to match how the timeline feed
+  // works on the same Discover page.
+  if (feed) {
+    const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10) || 1)
+    const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') ?? '18', 10) || 18))
+    const url = new URL(`${INPROCESS_API}/collections`)
+    url.searchParams.set('limit', String(limit))
+    url.searchParams.set('page', String(page))
+    try {
+      const res = await fetch(url.toString(), {
+        headers: { Accept: 'application/json' },
+        next: { revalidate: 60 },
+      })
+      const text = await res.text()
+      let data: unknown
+      try { data = JSON.parse(text) } catch { return NextResponse.json({ collections: [], pagination: { page, limit, total: 0, total_pages: 1 } }) }
+      return NextResponse.json(data, { status: res.status })
+    } catch {
+      return NextResponse.json({ collections: [], pagination: { page, limit, total: 0, total_pages: 1 } })
+    }
+  }
 
   if (artist) {
     if (!isAddress(artist)) {
