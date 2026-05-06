@@ -170,6 +170,12 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
       toast.error(`Split allocations must sum to 100% (currently ${splitsTotal}%)`)
       return
     }
+    // Defense in depth: catches any state drift where residencies got into
+    // custom splits while the toggle is also on (e.g. via stale tab state).
+    if (residenciesEnabled && splits.some((s) => s.address.toLowerCase() === RESIDENCIES_ADDRESS.toLowerCase())) {
+      toast.error('Residencies is in your custom splits — remove it or disable the toggle')
+      return
+    }
 
     const rawPrice = price.trim()
     const normalizedPrice = !rawPrice || rawPrice === '.' ? '0' : rawPrice.startsWith('.') ? `0${rawPrice}` : rawPrice
@@ -594,7 +600,21 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
       <div className="flex items-center gap-2.5 w-fit mx-auto -mt-2">
         <button
           type="button"
-          onClick={() => setResidenciesEnabled((v) => !v)}
+          onClick={() => {
+            setResidenciesEnabled((v) => {
+              if (v) return false
+              // Turning ON — block if residencies is already in custom splits
+              // (would otherwise duplicate when buildFinalSplits auto-appends).
+              const dup = splits.some(
+                (s) => s.address.toLowerCase() === RESIDENCIES_ADDRESS.toLowerCase(),
+              )
+              if (dup) {
+                toast.error('Remove residencies from your custom splits before enabling the toggle')
+                return false
+              }
+              return true
+            })
+          }}
           aria-pressed={residenciesEnabled}
           className="flex-shrink-0"
         >
