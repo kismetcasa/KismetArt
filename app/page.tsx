@@ -446,7 +446,10 @@ export default function DiscoverPage() {
               </div>
             )}
             <FeaturedFeed
-              key={`featured-${featuredKeys.size}-${featuredCollectionAddrs.size}`}
+              // Content-derived key so swapping a feature (un-feature A,
+              // feature B in the same session) still triggers a re-fetch.
+              // `.size` alone wouldn't change in that case.
+              key={`featured-${[...featuredCollectionAddrs].join(',')}-${[...featuredKeys].join(',')}`}
               emptyMessage={isAdmin ? 'no featured mints or collections yet — click ★ on any mint or collection to feature it' : 'no featured mints or collections yet'}
             />
           </>

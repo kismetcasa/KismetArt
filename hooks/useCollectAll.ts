@@ -91,7 +91,7 @@ export function useCollectAll(): UseCollectAllReturn {
         if (eligible.length === 0) {
           setStatus('idle')
           toast.error(
-            'Nothing to collect — all tokens already owned or sale ended',
+            'Nothing to collect right now — sales may have ended, sold out, or you already own them',
             { id: TOAST_ID },
           )
           return null
