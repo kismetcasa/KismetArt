@@ -5,6 +5,7 @@ import { useAccount } from 'wagmi'
 import { RefreshCw } from 'lucide-react'
 import { MomentCard } from '@/components/MomentCard'
 import { CollectionCard, type CollectionDisplay } from '@/components/CollectionCard'
+import { FeaturedFeed } from '@/components/FeaturedFeed'
 import { MarketView } from '@/components/MarketView'
 import type { Moment } from '@/lib/inprocess'
 import { useAdmin } from '@/contexts/AdminContext'
@@ -408,7 +409,7 @@ function MainFeed() {
 // ─── discover page ────────────────────────────────────────────────────────────
 
 export default function DiscoverPage() {
-  const { isAdmin, session, startSession, featuredKeys } = useAdmin()
+  const { isAdmin, session, startSession, featuredKeys, featuredCollectionAddrs } = useAdmin()
   const [order, setOrder] = useState<TabId[]>(DRAGGABLE)
   const [active, setActive] = useState<TabId>(DRAGGABLE[0])
 
@@ -444,10 +445,9 @@ export default function DiscoverPage() {
                 </button>
               </div>
             )}
-            <MomentFeed
-              feedKey={`featured-${featuredKeys.size}`}
-              apiUrl="/api/timeline?featured=1"
-              emptyMessage={isAdmin ? 'no featured mints yet — click ★ on any mint to feature it' : 'no featured mints yet'}
+            <FeaturedFeed
+              key={`featured-${featuredKeys.size}-${featuredCollectionAddrs.size}`}
+              emptyMessage={isAdmin ? 'no featured mints or collections yet — click ★ on any mint or collection to feature it' : 'no featured mints or collections yet'}
             />
           </>
         )}
