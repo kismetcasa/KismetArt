@@ -150,14 +150,14 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
     }
   }, [address])
 
-  // Picker options: platform first, then user's deployed collections (deduped
-  // against the platform address in case the user happens to be its admin).
-  const collectionOptions: CollectionOption[] = [
-    PLATFORM_OPTION,
-    ...userCollections.filter(
-      (c) => c.address.toLowerCase() !== PLATFORM_COLLECTION.toLowerCase(),
-    ),
-  ]
+  // Picker dropdown lists the user's deployed collections only — the
+  // platform is the implicit default when nothing's selected, so it doesn't
+  // need a row in the dropdown.
+  const collectionOptions: CollectionOption[] = userCollections.filter(
+    (c) => c.address.toLowerCase() !== PLATFORM_COLLECTION.toLowerCase(),
+  )
+  const isPlatformDefault =
+    selectedCollection.address.toLowerCase() === PLATFORM_COLLECTION.toLowerCase()
 
   const [mintMode, setMintMode] = useState<MintMode>('media')
   const [file, setFile] = useState<File | null>(null)
@@ -494,91 +494,6 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
 
   return (
     <form onSubmit={handleMint} className="flex flex-col gap-6">
-      {/* Collection picker — modeled on AirdropForm's moment picker. Trigger
-          chip shows the current selection (cover + name); click to expand a
-          grid of platform + user-deployed collections. */}
-      <div>
-        <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
-          Collection <span className="text-[#efefef]">*</span>
-        </label>
-        <button
-          type="button"
-          onClick={() => setPickerOpen((v) => !v)}
-          className="w-full flex items-center gap-3 bg-[#111] border border-[#2a2a2a] px-3 py-2.5 hover:border-[#555] transition-colors text-left"
-        >
-          {selectedCollection.image ? (
-            <div className="w-8 h-8 relative flex-shrink-0 bg-[#1a1a1a] overflow-hidden">
-              <Image
-                src={resolveUri(selectedCollection.image)}
-                alt=""
-                fill
-                className="object-cover"
-                sizes="32px"
-              />
-            </div>
-          ) : (
-            <div className="w-8 h-8 bg-[#1a1a1a] flex-shrink-0" />
-          )}
-          <span className="text-sm text-[#efefef] font-mono truncate flex-1">
-            {selectedCollection.name}
-          </span>
-          <span className="text-[#555] text-xs font-mono flex-shrink-0">
-            {pickerOpen ? '▲' : '▼'}
-          </span>
-        </button>
-
-        {pickerOpen && (
-          <div className="border border-t-0 border-[#2a2a2a] bg-[#0d0d0d] max-h-64 overflow-y-auto">
-            {collectionOptions.length === 0 ? (
-              <p className="text-xs font-mono text-[#555] px-3 py-4">
-                {loadingCollections ? 'loading…' : 'no collections found'}
-              </p>
-            ) : (
-              <div className="grid grid-cols-3 gap-px bg-[#2a2a2a]">
-                {collectionOptions.map((c, idx) => {
-                  const img = c.image ? resolveUri(c.image) : null
-                  const isSelected =
-                    c.address.toLowerCase() === selectedCollection.address.toLowerCase()
-                  return (
-                    <button
-                      key={c.address}
-                      type="button"
-                      onClick={() => {
-                        setSelectedCollection(c)
-                        setPickerOpen(false)
-                      }}
-                      className={`relative aspect-square bg-[#111] overflow-hidden group ${
-                        isSelected ? 'ring-2 ring-inset ring-[#8B5CF6]' : ''
-                      }`}
-                    >
-                      {img ? (
-                        <Image
-                          src={img}
-                          alt={c.name}
-                          fill
-                          className="object-cover"
-                          sizes="120px"
-                          priority={idx < 6}
-                        />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center">
-                          <span className="text-[#333] font-mono text-[10px]">
-                            {shortAddress(c.address)}
-                          </span>
-                        </div>
-                      )}
-                      <div className="absolute inset-x-0 bottom-0 bg-black/70 px-1.5 py-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                        <p className="text-[9px] font-mono text-[#efefef] truncate">{c.name}</p>
-                      </div>
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
       {/* Media / Text toggle */}
       <div>
         <div className="flex items-center justify-between mb-2">
@@ -653,6 +568,111 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
               {textContent.length.toLocaleString()} / {TEXT_MAX.toLocaleString()}
             </div>
           </>
+        )}
+      </div>
+
+      {/* Collections picker — sits below the media/text upload so the visual
+          hierarchy puts content first, container second. Optional; if the user
+          doesn't pick one, the platform default is used implicitly. */}
+      <div>
+        <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
+          Collections
+        </label>
+        <div className="flex items-stretch gap-1.5">
+          <button
+            type="button"
+            onClick={() => setPickerOpen((v) => !v)}
+            className="flex-1 min-w-0 flex items-center gap-3 bg-[#111] border border-[#2a2a2a] px-3 py-2.5 hover:border-[#555] transition-colors text-left"
+          >
+            {!isPlatformDefault && selectedCollection.image ? (
+              <div className="w-8 h-8 relative flex-shrink-0 bg-[#1a1a1a] overflow-hidden">
+                <Image
+                  src={resolveUri(selectedCollection.image)}
+                  alt=""
+                  fill
+                  className="object-cover"
+                  sizes="32px"
+                />
+              </div>
+            ) : !isPlatformDefault ? (
+              <div className="w-8 h-8 bg-[#1a1a1a] flex-shrink-0" />
+            ) : null}
+            <span className={`text-sm font-mono truncate flex-1 ${isPlatformDefault ? 'text-[#555]' : 'text-[#efefef]'}`}>
+              {isPlatformDefault
+                ? loadingCollections
+                  ? 'loading collections…'
+                  : 'mint into a collection (optional)'
+                : selectedCollection.name}
+            </span>
+            <span className="text-[#555] text-xs font-mono flex-shrink-0">
+              {pickerOpen ? '▲' : '▼'}
+            </span>
+          </button>
+          {!isPlatformDefault && (
+            <button
+              type="button"
+              onClick={() => setSelectedCollection(PLATFORM_OPTION)}
+              className="px-3 border border-[#2a2a2a] text-[#555] hover:border-[#555] hover:text-[#888] transition-colors"
+              title="Clear selection"
+            >
+              <X size={12} />
+            </button>
+          )}
+        </div>
+
+        {pickerOpen && (
+          <div className="border border-t-0 border-[#2a2a2a] bg-[#0d0d0d] max-h-64 overflow-y-auto">
+            {collectionOptions.length === 0 ? (
+              <p className="text-xs font-mono text-[#555] px-3 py-4">
+                {loadingCollections
+                  ? 'loading…'
+                  : isConnected
+                    ? 'no collections deployed yet — your moment will mint to the platform feed'
+                    : 'connect a wallet to see your collections'}
+              </p>
+            ) : (
+              <div className="grid grid-cols-3 gap-px bg-[#2a2a2a]">
+                {collectionOptions.map((c, idx) => {
+                  const img = c.image ? resolveUri(c.image) : null
+                  const isSelected =
+                    c.address.toLowerCase() === selectedCollection.address.toLowerCase()
+                  return (
+                    <button
+                      key={c.address}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCollection(c)
+                        setPickerOpen(false)
+                      }}
+                      className={`relative aspect-square bg-[#111] overflow-hidden group ${
+                        isSelected ? 'ring-2 ring-inset ring-[#8B5CF6]' : ''
+                      }`}
+                    >
+                      {img ? (
+                        <Image
+                          src={img}
+                          alt={c.name}
+                          fill
+                          className="object-cover"
+                          sizes="120px"
+                          priority={idx < 6}
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center">
+                          <span className="text-[#333] font-mono text-[10px]">
+                            {shortAddress(c.address)}
+                          </span>
+                        </div>
+                      )}
+                      <div className="absolute inset-x-0 bottom-0 bg-black/70 px-1.5 py-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
+                        <p className="text-[9px] font-mono text-[#efefef] truncate">{c.name}</p>
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
