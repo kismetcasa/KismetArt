@@ -13,6 +13,7 @@ import { MarketCard } from './MarketCard'
 import type { Listing } from '@/lib/listings'
 import type { Moment } from '@/lib/inprocess'
 import { shortAddress, formatPrice, resolveUri } from '@/lib/inprocess'
+import { humanError } from '@/lib/toast'
 
 interface Payment {
   id: string
@@ -332,9 +333,9 @@ export function ProfileView({ address }: ProfileViewProps) {
       const { profile: updated } = await res.json()
       setProfile(updated)
       setEditing(false)
-      toast.success('Profile updated!')
+      toast.success('Profile updated!', { id: 'profile' })
     } catch (err) {
-      toast.error('Update failed', { description: err instanceof Error ? err.message : 'Unknown error' })
+      toast.error('Update failed', { id: 'profile', description: humanError(err) })
     } finally {
       setSaving(false)
     }
@@ -358,11 +359,9 @@ export function ProfileView({ address }: ProfileViewProps) {
       const wasFollowing = following
       setFollowing(!wasFollowing)
       setFollowerCount((c) => c === null ? null : wasFollowing ? c - 1 : c + 1)
-      toast.success(wasFollowing ? 'Unfollowed!' : 'Followed!')
+      toast.success(wasFollowing ? 'Unfollowed!' : 'Followed!', { id: 'follow' })
     } catch (err) {
-      const raw = err instanceof Error ? err.message : 'Unknown error'
-      const description = /user rejected|user denied|rejected the request/i.test(raw) ? 'Cancelled' : raw
-      toast.error(following ? 'Unfollow failed' : 'Follow failed', { description })
+      toast.error(following ? 'Unfollow failed' : 'Follow failed', { id: 'follow', description: humanError(err) })
     } finally {
       setFollowLoading(false)
     }

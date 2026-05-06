@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { NotificationRow } from './NotificationRow'
 import { useUploadSession } from '@/hooks/useUploadSession'
+import { humanError } from '@/lib/toast'
 import type { Notification, NotificationType } from '@/lib/notifications'
 
 interface NotificationFeedProps {
@@ -101,8 +102,9 @@ export function NotificationFeed({ address }: NotificationFeedProps) {
       setItems((prev) => prev.map((n) => ({ ...n, read: true })))
       window.dispatchEvent(new CustomEvent('kismetart:notif-read'))
     } catch (err) {
-      if (err instanceof Error && /reject|denied/i.test(err.message)) return
-      toast.error('Could not mark read', { description: err instanceof Error ? err.message : undefined })
+      const description = humanError(err)
+      if (description === 'Cancelled') return
+      toast.error('Mark-read failed', { description })
     }
   }
 
@@ -140,8 +142,9 @@ export function NotificationFeed({ address }: NotificationFeedProps) {
       })
       window.dispatchEvent(new CustomEvent('kismetart:notif-refetch'))
     } catch (err) {
-      if (err instanceof Error && /reject|denied/i.test(err.message)) return
-      toast.error('Could not mute', { description: err instanceof Error ? err.message : undefined })
+      const description = humanError(err)
+      if (description === 'Cancelled') return
+      toast.error('Mute failed', { description })
     }
   }
 

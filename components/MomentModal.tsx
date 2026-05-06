@@ -20,6 +20,7 @@ import { useDirectCollect, type CollectCurrency } from '@/hooks/useDirectCollect
 import { ListButton } from './ListButton'
 import { ProfileAvatar } from './ProfileAvatar'
 import { useAdmin } from '@/contexts/AdminContext'
+import { humanError } from '@/lib/toast'
 
 const TOP_COMMENTS = 3
 
@@ -185,11 +186,9 @@ export function MomentModal({
       if (!res.ok) throw new Error(data.error ?? 'Distribution failed')
       if (!data.hash) throw new Error('Distribute submitted but no tx hash returned')
       setDistributeHash(data.hash)
-      toast.success('Distributed!')
+      toast.success('Distributed!', { id: 'distribute' })
     } catch (err) {
-      const raw = err instanceof Error ? err.message : 'Unknown error'
-      const description = /user rejected|user denied|rejected the request/i.test(raw) ? 'Cancelled' : raw
-      toast.error('Distribution failed', { description })
+      toast.error('Distribution failed', { id: 'distribute', description: humanError(err) })
     } finally {
       setDistributing(false)
     }

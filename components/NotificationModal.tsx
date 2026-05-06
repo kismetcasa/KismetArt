@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { NotificationFeed } from './NotificationFeed'
 import { ProfileAvatar } from './ProfileAvatar'
 import { useUploadSession } from '@/hooks/useUploadSession'
+import { humanError } from '@/lib/toast'
 import { shortAddress } from '@/lib/inprocess'
 
 type ModalTab = 'feed' | 'settings'
@@ -58,8 +59,9 @@ export function NotificationModal({ address, onClose }: NotificationModalProps) 
       })
     } catch (err) {
       setMuted(previous)
-      if (err instanceof Error && /reject|denied/i.test(err.message)) return
-      toast.error('Could not unmute', { description: err instanceof Error ? err.message : undefined })
+      const description = humanError(err)
+      if (description === 'Cancelled') return
+      toast.error('Unmute failed', { description })
     }
   }
 
