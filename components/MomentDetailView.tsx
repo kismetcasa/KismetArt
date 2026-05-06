@@ -288,8 +288,14 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     const next = !isHidden
     setHidePending(true)
     try {
+      // /api/moment/hide reads the Kismet session cookie. Wallet-connect
+      // alone doesn't create one — ensureSession prompts a one-time
+      // signature when the cookie is missing, matching the edit-metadata
+      // flow on this same page.
+      await ensureSession()
       const res = await fetch('/api/moment/hide', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ collectionAddress: address, tokenId, hidden: next }),
       })

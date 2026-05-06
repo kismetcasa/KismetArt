@@ -11,6 +11,7 @@ import { resolveUri, shortAddress, type Moment, type MomentAdmin } from '@/lib/i
 import { fetchCreatorProfile } from '@/lib/profileCache'
 import { toastError } from '@/lib/toast'
 import { useAdmin } from '@/contexts/AdminContext'
+import { useUploadSession } from '@/hooks/useUploadSession'
 import { MomentCard } from './MomentCard'
 import { ProfileAvatar } from './ProfileAvatar'
 
@@ -91,6 +92,7 @@ export function CollectionView({
   const [profiles, setProfiles] = useState<Record<string, AvatarProfile>>({})
   const [hidden, setHidden] = useState(initialHidden)
   const [hidePending, setHidePending] = useState(false)
+  const { ensureSession } = useUploadSession()
 
   const isFeatured = featuredCollectionAddrs.has(address.toLowerCase())
   const isCreator =
@@ -103,8 +105,13 @@ export function CollectionView({
     const next = !hidden
     setHidePending(true)
     try {
+      // /api/collection/hide reads the Kismet session cookie. Wallet-connect
+      // alone doesn't create one — ensureSession prompts a one-time
+      // signature when the cookie is missing.
+      await ensureSession()
       const res = await fetch('/api/collection/hide', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ address, hidden: next }),
       })
