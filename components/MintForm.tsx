@@ -29,6 +29,36 @@ function sortSplits(s: Split[]): Split[] {
   })
 }
 
+// Inprocess docs (moment/create/splits): every example uses integer
+// `percentAllocation` and "must sum to exactly 100%" — no decimal tolerance.
+// Decimal values (like the 47.5 we used to emit when scaling 50/50 to make
+// room for residencies) get mis-parsed downstream and revert the on-chain
+// splits-contract setup.
+//
+// Round each value to the nearest integer (≥1 floor so we never silently
+// drop a recipient), then absorb rounding drift round-robin until the sum
+// matches `target` exactly.
+function roundToIntegerAllocations(values: number[], target: number): number[] {
+  const rounded = values.map((v) => Math.max(1, Math.round(v)))
+  let sum = rounded.reduce((a, b) => a + b, 0)
+  let drift = target - sum
+  let idx = 0
+  // Bound the loop generously; drift is bounded by recipient count in practice.
+  const max = rounded.length * 4 + 8
+  while (drift !== 0 && idx < max) {
+    const i = idx % rounded.length
+    if (drift > 0) {
+      rounded[i] += 1
+      drift -= 1
+    } else if (drift < 0 && rounded[i] > 1) {
+      rounded[i] -= 1
+      drift += 1
+    }
+    idx += 1
+  }
+  return rounded
+}
+
 interface MintFormProps {
   collectionAddress?: string
 }
@@ -117,18 +147,29 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  // Builds the final splits array to send to the API.
-  // When residencies is off: pass creator splits as-is (or undefined for payoutRecipient).
-  // When residencies is on + no custom splits: [creator 95%, residencies 5%].
-  // When residencies is on + custom splits: scale each split by ×0.95, append residencies at 5%.
+  // Builds the final splits array to send to the API. Inprocess docs require
+  // integer `percentAllocation` summing to exactly 100% — every code path
+  // here emits integers via roundToIntegerAllocations + appends residencies
+  // (5%) when the toggle is on.
   //
-  // 0xSplits' SplitMain.createSplit requires `accounts` to be sorted ascending
-  // by address — sort defensively so it works even if inprocess forwards our
-  // array as-is. Tight 4-decimal rounding + drift correction keeps the sum
-  // exactly 100.0000 across cumulative IEEE-754 ε.
+  //   residencies OFF + 0/1 splits  → undefined (caller uses payoutRecipient)
+  //   residencies OFF + 2+ splits   → sorted user splits (rounded to integers)
+  //   residencies ON  + 0/1 splits  → [creator 95, residencies 5] (sorted)
+  //   residencies ON  + 2+ splits   → user splits scaled ×0.95 to integers
+  //                                   summing to 95, plus residencies 5
+  //
+  // 0xSplits' SplitMain requires `accounts` sorted ascending — sort
+  // defensively in case inprocess forwards our array as-is.
   function buildFinalSplits(): Split[] | undefined {
     if (!residenciesEnabled) {
-      return splits.length >= 2 ? sortSplits(splits) : undefined
+      if (splits.length < 2) return undefined
+      const rounded = roundToIntegerAllocations(
+        splits.map((s) => s.percentAllocation),
+        100,
+      )
+      return sortSplits(
+        splits.map((s, i) => ({ address: s.address, percentAllocation: rounded[i] })),
+      )
     }
     if (splits.length < 2) {
       return sortSplits([
@@ -136,20 +177,12 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
         { address: RESIDENCIES_ADDRESS, percentAllocation: 5 },
       ])
     }
-    const scaled = splits.map((s) =>
-      Math.round(s.percentAllocation * 0.95 * 10000) / 10000,
+    const rounded = roundToIntegerAllocations(
+      splits.map((s) => s.percentAllocation * 0.95),
+      95,
     )
-    const sumScaled = scaled.reduce((a, b) => a + b, 0)
-    const drift = 95 - sumScaled
-    if (Math.abs(drift) > 0.00001 && scaled.length > 0) {
-      scaled[0] = Math.round((scaled[0] + drift) * 10000) / 10000
-    }
-    const finalSplits = splits.map((s, i) => ({
-      address: s.address,
-      percentAllocation: scaled[i],
-    }))
     return sortSplits([
-      ...finalSplits,
+      ...splits.map((s, i) => ({ address: s.address, percentAllocation: rounded[i] })),
       { address: RESIDENCIES_ADDRESS, percentAllocation: 5 },
     ])
   }

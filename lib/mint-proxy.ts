@@ -49,13 +49,16 @@ function validateSplits(raw: unknown): SplitsValidation {
     if (typeof e.address !== 'string' || !isAddress(e.address)) {
       return { kind: 'error', message: 'invalid splits address' }
     }
+    // Inprocess docs require integer percentAllocation values summing to
+    // exactly 100%. Rejecting decimals here pre-empts the on-chain
+    // mis-parse that surfaced as a generic "execution reverted" upstream.
     if (
       typeof e.percentAllocation !== 'number' ||
-      !Number.isFinite(e.percentAllocation) ||
-      e.percentAllocation <= 0 ||
+      !Number.isInteger(e.percentAllocation) ||
+      e.percentAllocation < 1 ||
       e.percentAllocation > 100
     ) {
-      return { kind: 'error', message: 'splits allocation must be 0–100' }
+      return { kind: 'error', message: 'splits allocation must be a whole number 1–100' }
     }
     const lower = e.address.toLowerCase()
     if (seen.has(lower)) {
@@ -66,11 +69,12 @@ function validateSplits(raw: unknown): SplitsValidation {
     normalized.push({ address: e.address, percentAllocation: e.percentAllocation })
   }
 
-  // 0.001% tolerance — accommodates 4-decimal-place client-side rounding.
-  if (Math.abs(sum - 100) > 0.001) {
+  // Strict 100 since allocations are now required to be integers — no
+  // floating-point tolerance needed.
+  if (sum !== 100) {
     return {
       kind: 'error',
-      message: `splits must sum to 100% (got ${sum.toFixed(4)}%)`,
+      message: `splits must sum to exactly 100% (got ${sum}%)`,
     }
   }
 
