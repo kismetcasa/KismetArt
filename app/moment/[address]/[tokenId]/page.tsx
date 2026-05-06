@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { INPROCESS_API, resolveUri, type MomentDetail } from '@/lib/inprocess'
 import { getCollectionMeta as getKvCollectionMeta } from '@/lib/kv'
+import { isMomentHidden } from '@/lib/hiddenMoments'
 import { MomentDetailView } from '@/components/MomentDetailView'
 
 interface Props {
@@ -15,9 +16,17 @@ async function fetchDetail(address: string, tokenId: string): Promise<MomentDeta
     url.searchParams.set('chainId', '8453')
     // 60s cache so a freshly-minted token isn't stuck rendering null for an
     // hour while inprocess catches up. Same window used by the collection
-    // page's moments fetch.
-    const res = await fetch(url.toString(), { next: { revalidate: 60 } })
-    return res.ok ? await res.json() : null
+    // page's moments fetch. Hidden state is read uncached from KV alongside
+    // and injected into the returned shape — the /api/moment proxy does the
+    // same thing so the client cache and the server-rendered initialDetail
+    // stay consistent on first paint and on refresh.
+    const [res, hidden] = await Promise.all([
+      fetch(url.toString(), { next: { revalidate: 60 } }),
+      isMomentHidden(address, tokenId),
+    ])
+    if (!res.ok) return null
+    const data = (await res.json()) as MomentDetail
+    return { ...data, hidden }
   } catch {
     return null
   }
