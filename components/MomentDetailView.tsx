@@ -240,13 +240,19 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     const addr = splitAddress.trim()
     if (!addr || !isAddress(addr)) { toast.error('Invalid split address'); return }
     if (!connectedAddress) { toast.error('Wallet not connected'); return }
+    if (!detail) { toast.error('Moment details still loading'); return }
+    // Route the distribute call to the right token type per the moment's
+    // sale config — USDC moments need tokenAddress=USDC_BASE on the
+    // inprocess side, otherwise the call defaults to ETH and distributes
+    // nothing from a USDC splits contract.
+    const currency = inferCollectCurrency(detail.saleConfig)
     setDistributing(true)
     try {
       const nonceRes = await fetch(`/api/profile/${connectedAddress}/nonce`)
       if (!nonceRes.ok) throw new Error('Could not fetch nonce')
       const { nonce } = (await nonceRes.json().catch(() => ({}))) as { nonce?: string }
       if (!nonce) throw new Error('Could not fetch nonce')
-      const message = `Distribute Kismet Art split\nCollection: ${address.toLowerCase()}\nToken: ${tokenId}\nSplit: ${addr.toLowerCase()}\nAddress: ${connectedAddress.toLowerCase()}\nNonce: ${nonce}`
+      const message = `Distribute Kismet Art split\nCollection: ${address.toLowerCase()}\nToken: ${tokenId}\nSplit: ${addr.toLowerCase()}\nCurrency: ${currency}\nAddress: ${connectedAddress.toLowerCase()}\nNonce: ${nonce}`
       const signature = await signMessageAsync({ message })
 
       const res = await fetch('/api/distribute', {
@@ -257,6 +263,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
           collectionAddress: address,
           tokenId,
           chainId: 8453,
+          currency,
           callerAddress: connectedAddress,
           signature,
           nonce,
