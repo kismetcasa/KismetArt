@@ -161,10 +161,22 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Only the moment creator or an admin may airdrop' }, { status: 403 })
   }
 
+  // Inprocess expects the same `moment: { collectionAddress, tokenId,
+  // chainId }` envelope used by /moment/update-uri (their Zod validator
+  // returns "Invalid input: moment Invalid input: expected object, received
+  // undefined" when omitted). Recipients ride alongside as a flat array of
+  // { recipientAddress, tokenId } so per-recipient tokenIds are still
+  // permitted by the upstream schema.
+  const upstreamPayload = {
+    moment: {
+      collectionAddress: body.collectionAddress,
+      tokenId,
+      chainId: 8453,
+    },
+    recipients: body.recipients,
+  }
+
   try {
-    // Inprocess infers the chain from the collection contract — request body
-    // shape is { recipients, collectionAddress } per their docs; chainId comes
-    // back in the response, not sent in.
     const res = await fetch(`${INPROCESS_API}/moment/airdrop`, {
       method: 'POST',
       headers: {
@@ -172,10 +184,7 @@ export async function POST(req: NextRequest) {
         'x-api-key': apiKey,
         Accept: 'application/json',
       },
-      body: JSON.stringify({
-        recipients: body.recipients,
-        collectionAddress: body.collectionAddress,
-      }),
+      body: JSON.stringify(upstreamPayload),
     })
     const text = await res.text()
     let parsed: unknown
@@ -191,8 +200,39 @@ export async function POST(req: NextRequest) {
       console.warn('[airdrop] inprocess rejected', {
         status: res.status,
         body: parsed,
-        sent: { recipients: body.recipients, collectionAddress: body.collectionAddress },
+        sent: upstreamPayload,
       })
+    }
+
+    // The artist's inprocess smart wallet must hold ADMIN on the target
+    // collection for the upstream adminMint to land — same constraint
+    // /api/mint has. When inprocess says so verbatim ("The account does
+    // not have admin permission for this collection"), surface a
+    // structured 403 the client can detect and route the artist to the
+    // Authorize banner on /collection/{address} (a one-click on-chain
+    // grant from their own wallet, since they're defaultAdmin).
+    if (
+      !res.ok &&
+      parsed &&
+      typeof parsed === 'object' &&
+      /admin permission/i.test(
+        String(
+          (parsed as Record<string, unknown>).error ??
+            (parsed as Record<string, unknown>).message ??
+            (parsed as Record<string, unknown>).detail ??
+            '',
+        ),
+      )
+    ) {
+      return NextResponse.json(
+        {
+          code: 'AUTHORIZE_REQUIRED',
+          error:
+            "This collection hasn't authorized Kismet for minting. One-time onchain grant from your wallet.",
+          collectionAddress: body.collectionAddress,
+        },
+        { status: 403 },
+      )
     }
 
     // Fan-out: notify each airdrop recipient that they received a token from
