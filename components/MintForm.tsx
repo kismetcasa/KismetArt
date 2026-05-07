@@ -3,17 +3,19 @@
 import { useState, useRef, useEffect } from 'react'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { useAccount } from 'wagmi'
+import { useAccount, useReadContract } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
-import { Upload, X, Plus, Trash2 } from 'lucide-react'
+import { Upload, X, Plus, Trash2, ShieldCheck } from 'lucide-react'
 import { parseEther, parseUnits, isAddress } from 'viem'
 import { resolveUri, shortAddress, type CreateMomentPayload, type Split } from '@/lib/inprocess'
 import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { uploadJson } from '@/lib/arweave/uploadJson'
 import { verifyArweaveAvailable } from '@/lib/arweave/verifyAvailable'
 import { useUploadSession } from '@/hooks/useUploadSession'
+import { useInprocessSmartWallet } from '@/hooks/useInprocessSmartWallet'
 import { PLATFORM_COLLECTION, CREATE_REFERRAL, RESIDENCIES_ADDRESS } from '@/lib/config'
+import { COLLECTION_ABI, PERMISSION_BIT_ADMIN } from '@/lib/collections'
 import { USDC_BASE } from '@/lib/zoraMint'
 import { toastError } from '@/lib/toast'
 
@@ -162,6 +164,44 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
   )
   const isPlatformDefault =
     selectedCollection.address.toLowerCase() === PLATFORM_COLLECTION.toLowerCase()
+
+  // Phase 1 client-side preflight. Reads `permissions(0, smartWallet)` on
+  // the SELECTED collection (not the platform default — see rationale at
+  // maybeHandleAuthError) and surfaces an inline Authorize banner BEFORE
+  // the user fills the form, instead of catching the same error post-
+  // upload via maybeHandleAuthError. Saves an Arweave round-trip on
+  // every mint into a collection where the smart wallet isn't yet ADMIN.
+  //
+  // The smart wallet is per-EOA on inprocess; resolved via the
+  // useInprocessSmartWallet hook (cached, deduped by EOA). We compare
+  // ONLY against ADMIN bit since that's what /api/moment/create's
+  // upstream userOp needs — MINTER alone won't work for setupNewToken
+  // through the inprocess relay (lib/collections.ts:30).
+  const { address: smartWalletForCaller } = useInprocessSmartWallet(address)
+  const { data: smartWalletPerms } = useReadContract({
+    address: targetCollection as `0x${string}`,
+    abi: COLLECTION_ABI,
+    functionName: 'permissions',
+    args:
+      smartWalletForCaller && isAddress(smartWalletForCaller)
+        ? [0n, smartWalletForCaller as `0x${string}`]
+        : undefined,
+    query: {
+      enabled:
+        !!smartWalletForCaller &&
+        !!targetCollection &&
+        isAddress(targetCollection) &&
+        !isPlatformDefault,
+    },
+  })
+  // True only when the read has resolved AND it shows missing ADMIN.
+  // Distinguishing from "still loading" matters: we don't want the banner
+  // flickering in for a frame between mount and the first read.
+  const preflightUnauthorized =
+    !isPlatformDefault &&
+    !!smartWalletForCaller &&
+    smartWalletPerms !== undefined &&
+    ((smartWalletPerms as bigint) & PERMISSION_BIT_ADMIN) !== PERMISSION_BIT_ADMIN
 
   const [mintMode, setMintMode] = useState<MintMode>('media')
   const [file, setFile] = useState<File | null>(null)
@@ -318,6 +358,18 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
     e.preventDefault()
 
     if (!isConnected || !address) { openConnectModal?.(); return }
+    // Phase 1 client preflight — bail before Arweave upload if we already
+    // know the smart wallet doesn't hold ADMIN. Banner above the form
+    // still renders the actionable Authorize CTA; this just prevents an
+    // unauthorized click from kicking off the (expensive) media upload.
+    if (preflightUnauthorized) {
+      toast.error('Authorization required', {
+        id: 'mint',
+        description:
+          "This collection hasn't authorized Kismet for minting. Tap Authorize on the banner above to grant ADMIN.",
+      })
+      return
+    }
     if (!name.trim()) { toast.error('Please enter a title'); return }
     if (mintMode === 'media' && !file) { toast.error('Please select a file to mint'); return }
     if (mintMode === 'text' && !textContent.trim()) { toast.error('Please enter text content'); return }
@@ -558,6 +610,37 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
 
   return (
     <form onSubmit={handleMint} className="flex flex-col gap-6">
+      {/* Phase 1 inline preflight banner. Surfaces BEFORE the user fills
+          the form when their inprocess smart wallet doesn't hold ADMIN
+          on the selected collection — same on-chain check the server's
+          mint-proxy preflight runs, just earlier in the lifecycle so
+          we don't burn an Arweave upload + Turbo settlement wait
+          before discovering the deploy isn't authorized. Mirrors the
+          Authorize banner pattern in CollectionView so users see a
+          consistent CTA when permissions are missing. */}
+      {preflightUnauthorized && (
+        <div className="p-3 sm:p-4 border border-[#8B5CF6]/40 bg-[#8B5CF6]/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <div className="flex items-start gap-2.5">
+            <ShieldCheck size={16} className="text-[#8B5CF6] flex-shrink-0 mt-0.5" />
+            <div className="min-w-0">
+              <p className="text-xs font-mono text-[#efefef]">
+                Authorize Kismet to mint into {selectedCollection.name}
+              </p>
+              <p className="text-[11px] font-mono text-[#888] mt-0.5">
+                One-time onchain grant from the collection&apos;s admin. Required before this collection can mint moments via Kismet.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => router.push(`/collection/${targetCollection}`)}
+            className="flex-shrink-0 text-xs font-mono tracking-wider uppercase px-4 py-2 btn-accent"
+          >
+            authorize
+          </button>
+        </div>
+      )}
+
       {/* Media / Text toggle */}
       <div>
         <div className="flex items-center justify-between mb-2">

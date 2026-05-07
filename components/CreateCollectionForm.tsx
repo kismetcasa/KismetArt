@@ -2,10 +2,10 @@
 
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { useAccount, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useAccount, usePublicClient, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
 import { base } from 'wagmi/chains'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { parseEventLogs, isAddress, parseEther } from 'viem'
+import { parseEventLogs, isAddress, parseEther, type Address } from 'viem'
 import { toast } from 'sonner'
 import { Upload, X, Plus, Trash2, Check } from 'lucide-react'
 import { FACTORY_ADDRESS, FACTORY_ABI, encodeMinterPermission, encodeAdminPermission, buildCoverTokenSetupActions } from '@/lib/collections'
@@ -15,6 +15,7 @@ import { uploadJson } from '@/lib/arweave/uploadJson'
 import { verifyArweaveAvailable } from '@/lib/arweave/verifyAvailable'
 import { useUploadSession } from '@/hooks/useUploadSession'
 import { fetchInprocessSmartWallet } from '@/hooks/useInprocessSmartWallet'
+import { verifyDeployPermissions } from '@/lib/permissions'
 import { toastError } from '@/lib/toast'
 import { useEnsureBase } from '@/lib/useEnsureBase'
 
@@ -92,6 +93,17 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
 
   const { writeContractAsync } = useWriteContract()
   const ensureBase = useEnsureBase()
+  // Public client for the post-deploy permission verification (Phase 1).
+  // Same chain as the deploy itself — verify reads happen on Base mainnet.
+  const publicClient = usePublicClient({ chainId: base.id })
+
+  // Resolved inprocess smart wallet for the connected EOA. Set in
+  // handleCreate so the receipt-watcher useEffect can read it back when
+  // verifyDeployPermissions runs after the tx confirms. Persisted in
+  // localStorage alongside the pending-deploy entry so a refresh/resume
+  // doesn't lose it (otherwise we'd re-resolve, which is also fine but
+  // adds an extra inprocess round-trip).
+  const [resolvedSmartWallet, setResolvedSmartWallet] = useState<string | null>(null)
 
   // Recovery + timeout for in-flight deploys (industry-standard pattern).
   // Persisted to localStorage so a refresh, tab close, or wallet disconnect
@@ -128,6 +140,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
         deployedImageUri: string
         mintCover: boolean
         startedAt: number
+        resolvedSmartWallet?: string
       }
       if (Date.now() - pending.startedAt > PENDING_MAX_AGE_MS) {
         localStorage.removeItem(PENDING_KEY)
@@ -138,6 +151,10 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
       setDeployedImageUri(pending.deployedImageUri || undefined)
       setMintCover(pending.mintCover)
       setTxHash(pending.txHash)
+      // Restore the resolved smart wallet when present. Older entries
+      // (deployed before Phase 1) won't have it; the receipt handler
+      // re-resolves in that case.
+      if (pending.resolvedSmartWallet) setResolvedSmartWallet(pending.resolvedSmartWallet)
       setStep('deploying')
       toast.loading('Resuming deploy…', { id: 'create-collection' })
     } catch {}
@@ -159,6 +176,10 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
           deployedImageUri: deployedImageUri ?? '',
           mintCover,
           startedAt: Date.now(),
+          // Persist so the receipt handler can verify on resume without
+          // a re-fetch round-trip (and so the verification still runs
+          // even when /smartwallet is briefly unreachable).
+          resolvedSmartWallet: resolvedSmartWallet ?? undefined,
         }),
       )
     } catch {}
@@ -221,30 +242,118 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
       return
     }
 
-    setCollectionAddress(deployedAddress)
+    // Phase 1 fail-closed gate. The factory's setupActions include
+    // encodeAdminPermission(inprocessSmartWallet) — but if that call
+    // silently no-ops (factory bug, contract upgrade, signature drift,
+    // wrong factory bytecode, etc.) the collection deploys with NO
+    // smart-wallet ADMIN and every subsequent /api/moment/create
+    // reverts at gas estimation with "useroperation reverted: execution
+    // reverted". The user sees "deployed!" then can't mint, with no
+    // recoverable path (their banner only shows for collections they
+    // admin AND the smart wallet has no admin to grant from itself).
+    //
+    // Verifying both perm rows on-chain before we mark step='done'
+    // turns this from "silent regression" into "user sees a clear
+    // error toast and we know within seconds that the deploy didn't
+    // fully take". Wrapped in async IIFE so the surrounding useEffect
+    // signature stays sync — wagmi's receipt only fires once per tx
+    // so re-entry isn't a real concern.
+    void (async () => {
+      // Re-resolve smart wallet on resume if state was empty (e.g. a
+      // pre-Phase-1 localStorage entry). Skipping verification on
+      // resume would defeat the purpose of fail-closed.
+      let smartWallet = resolvedSmartWallet
+      if (!smartWallet && address) {
+        try {
+          smartWallet = await fetchInprocessSmartWallet(address)
+        } catch {
+          smartWallet = null
+        }
+      }
 
-    // Cookie auth: the session was already established before the deploy
-    // (ensureSession ran on Arweave upload), so this call rides on the same
-    // session and the server can verify the caller matches `artist` and is
-    // the on-chain admin of `address`. Fire-and-forget but with logging +
-    // retry — silently swallowing this means the collection never lands in
-    // KV and the user sees a misleading "deployed!" while the collection
-    // never appears in feeds.
-    void registerCollectionWithBackoff({
-      address: deployedAddress,
-      name: name.trim(),
-      description: description.trim() || undefined,
-      image: deployedImageUri,
-      artist: address,
-    })
-    onDeployed?.(deployedAddress, name)
+      if (!smartWallet || !isAddress(smartWallet) || !publicClient || !address) {
+        // Including !address here defends against the user disconnecting
+        // their wallet between tx submission and receipt. Without it
+        // we'd cast `undefined as Address` to verifyDeployPermissions.
+        clearPending()
+        setStep('idle')
+        setTxHash(undefined)
+        toast.error('Deploy verification skipped', {
+          id: 'create-collection',
+          description:
+            'Could not resolve your smart wallet or RPC client. Collection deployed but its permissions are unverified — re-deploy or grant ADMIN manually before minting.',
+        })
+        return
+      }
 
-    clearPending()
-    setStep('done')
-    toast.success(
-      mintCover ? 'Collection deployed + cover minted!' : 'Collection deployed!',
-      { id: 'create-collection' },
-    )
+      try {
+        const verify = await verifyDeployPermissions(
+          publicClient,
+          deployedAddress as Address,
+          address as Address,
+          smartWallet as Address,
+        )
+        if (!verify.ok) {
+          clearPending()
+          setStep('idle')
+          setTxHash(undefined)
+          console.error('[CreateCollectionForm] post-deploy verify failed', {
+            collection: deployedAddress,
+            deployer: address,
+            smartWallet,
+            detail: verify.detail,
+            deployerPerms: verify.deployerPerms.toString(),
+            smartWalletPerms: verify.smartWalletPerms.toString(),
+          })
+          toast.error('Deploy verification failed', {
+            id: 'create-collection',
+            description: verify.detail,
+          })
+          return
+        }
+      } catch (err) {
+        // Read failed across all retries — distinct from "we read and
+        // saw missing bits". Don't proceed silently; the deploy may
+        // be fine but we can't prove it.
+        clearPending()
+        setStep('idle')
+        setTxHash(undefined)
+        console.error('[CreateCollectionForm] post-deploy verify threw', err)
+        toast.error('Deploy verification failed', {
+          id: 'create-collection',
+          description:
+            err instanceof Error
+              ? `On-chain read failed: ${err.message}`
+              : 'On-chain read failed',
+        })
+        return
+      }
+
+      setCollectionAddress(deployedAddress)
+
+      // Cookie auth: the session was already established before the deploy
+      // (ensureSession ran on Arweave upload), so this call rides on the same
+      // session and the server can verify the caller matches `artist` and is
+      // the on-chain admin of `address`. Fire-and-forget but with logging +
+      // retry — silently swallowing this means the collection never lands in
+      // KV and the user sees a misleading "deployed!" while the collection
+      // never appears in feeds.
+      void registerCollectionWithBackoff({
+        address: deployedAddress,
+        name: name.trim(),
+        description: description.trim() || undefined,
+        image: deployedImageUri,
+        artist: address,
+      })
+      onDeployed?.(deployedAddress, name)
+
+      clearPending()
+      setStep('done')
+      toast.success(
+        mintCover ? 'Collection deployed + cover minted!' : 'Collection deployed!',
+        { id: 'create-collection' },
+      )
+    })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [receipt, step])
 
@@ -377,6 +486,13 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
           'Could not resolve your inprocess smart wallet — try again in a moment',
         )
       }
+      // Lift the resolved address into state so the receipt-watcher
+      // useEffect can call verifyDeployPermissions against it once the
+      // factory tx confirms. Without this, the verify step would have
+      // to re-fetch from /smartwallet — extra round-trip, and worse,
+      // would silently skip verification if /smartwallet is briefly
+      // unreachable.
+      setResolvedSmartWallet(inprocessSmartWallet)
       const inprocessAdminAction = [
         encodeAdminPermission(inprocessSmartWallet as `0x${string}`),
       ]
