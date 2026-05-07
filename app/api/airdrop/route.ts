@@ -6,6 +6,7 @@ import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
 import { consumeNonce } from '@/lib/profile'
 import { getMomentMeta, writeNotification } from '@/lib/notifications'
 import { serverBaseClient } from '@/lib/rpc'
+import { checkSmartWalletAdmin } from '@/lib/smartWalletPreflight'
 
 const PERMISSION_BIT_ADMIN = 2n
 
@@ -162,47 +163,12 @@ export async function POST(req: NextRequest) {
   // indexer lag). On RPC or smart-wallet-lookup failure, fall through
   // and let inprocess be the source of truth: a flaky read shouldn't
   // block a user whose state on chain is actually fine.
-  let smartWalletAuthorized: boolean | null = null
-  try {
-    const smartWalletUrl = new URL(`${INPROCESS_API}/smartwallet`)
-    smartWalletUrl.searchParams.set('artist_wallet', body.callerAddress)
-    const swRes = await fetch(smartWalletUrl.toString(), {
-      headers: { Accept: 'application/json' },
-      next: { revalidate: 3600 },
-    })
-    if (swRes.ok) {
-      const swData = (await swRes.json()) as { address?: string }
-      const smartWallet = swData.address
-      if (smartWallet && isAddress(smartWallet)) {
-        const client = serverBaseClient()
-        const safeRead = async (tid: bigint): Promise<bigint | null> => {
-          try {
-            return (await client.readContract({
-              address: body.collectionAddress as Address,
-              abi: COLLECTION_PERMISSIONS_ABI,
-              functionName: 'permissions',
-              args: [tid, smartWallet as Address],
-            })) as bigint
-          } catch {
-            return null
-          }
-        }
-        const [tokenPerms, collectionPerms] = await Promise.all([
-          safeRead(BigInt(tokenId)),
-          safeRead(0n),
-        ])
-        // Both reads must succeed before we deny — a single RPC error
-        // shouldn't cause a false negative.
-        if (tokenPerms !== null && collectionPerms !== null) {
-          const effective = tokenPerms | collectionPerms
-          smartWalletAuthorized = (effective & PERMISSION_BIT_ADMIN) === PERMISSION_BIT_ADMIN
-        }
-      }
-    }
-  } catch {
-    // Pre-flight unavailable; let inprocess be the source of truth.
-  }
-  if (smartWalletAuthorized === false) {
+  const preflight = await checkSmartWalletAdmin(
+    body.callerAddress,
+    body.collectionAddress,
+    [BigInt(tokenId), 0n],
+  )
+  if (preflight === 'unauthorized') {
     return NextResponse.json(
       {
         code: 'AUTHORIZE_REQUIRED',
