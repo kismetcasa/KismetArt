@@ -5,7 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useAccount } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
-import { ShieldCheck, ShieldAlert, ShieldQuestion } from 'lucide-react'
+import { ArrowLeft, ShieldCheck, ShieldAlert, ShieldQuestion } from 'lucide-react'
 import { resolveUri, shortAddress } from '@/lib/inprocess'
 import { useCollectionsPermissions } from '@/hooks/useCollectionsPermissions'
 import { useInprocessSmartWallet } from '@/hooks/useInprocessSmartWallet'
@@ -100,6 +100,20 @@ export function PermissionsDashboard() {
   const { byAddress: perms, missingCount, loading: permsLoading, refetch: refetchPerms } =
     useCollectionsPermissions(collections.map((c) => c.address))
 
+  // Recheck cooldown — wagmi's isLoading flag covers in-flight reads,
+  // but it doesn't flip to true synchronously on click; rapid burst
+  // taps within the same tick can still fire multiple multicalls
+  // before isLoading reflects the first one. A 1.5s local cooldown
+  // catches that window. The button is disabled when EITHER
+  // permsLoading (genuine in-flight) OR cooldown (just-clicked).
+  const [recheckCooldown, setRecheckCooldown] = useState(false)
+  function handleRecheck() {
+    if (recheckCooldown || permsLoading) return
+    setRecheckCooldown(true)
+    refetchPerms()
+    setTimeout(() => setRecheckCooldown(false), 1500)
+  }
+
   if (!isConnected) {
     return (
       <div className="text-center flex flex-col gap-4 items-center py-16">
@@ -121,6 +135,23 @@ export function PermissionsDashboard() {
 
   return (
     <div className="flex flex-col gap-6">
+      {/* Back-to-profile link. The dashboard's main entry point is the
+          conditional banner on /profile/<own>, so users land here from
+          there. Without an explicit nav, the only way back is the
+          browser back button — works but feels orphaned. The link
+          targets the connected user's own profile (the only profile
+          where the banner could have surfaced). Hidden when the user
+          isn't connected since there's no profile to link to. */}
+      {address && (
+        <Link
+          href={`/profile/${address}`}
+          className="text-[10px] font-mono text-[#555] hover:text-[#888] transition-colors flex items-center gap-1.5 w-fit uppercase tracking-wider"
+        >
+          <ArrowLeft size={11} />
+          back to profile
+        </Link>
+      )}
+
       <div>
         <h1 className="text-[#efefef] font-mono text-lg mb-2">Permissions</h1>
         <p className="text-[#888] font-mono text-xs leading-relaxed">
@@ -158,8 +189,8 @@ export function PermissionsDashboard() {
           {collections.length > 0 && (
             <button
               type="button"
-              onClick={() => refetchPerms()}
-              disabled={permsLoading}
+              onClick={handleRecheck}
+              disabled={permsLoading || recheckCooldown}
               className="flex-shrink-0 px-2 py-1 border border-[#2a2a2a] text-[#888] hover:border-[#555] hover:text-[#efefef] disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider"
               title="Re-read permissions on chain"
             >

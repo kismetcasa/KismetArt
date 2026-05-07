@@ -576,7 +576,8 @@ export function ProfileView({ address }: ProfileViewProps) {
       {isOwner && ownCollectionsMissingAdmin > 0 && (
         <Link
           href="/permissions"
-          className="-mb-6 border border-amber-700/50 bg-amber-950/30 hover:bg-amber-950/40 p-3 sm:p-4 flex items-center gap-3 transition-colors"
+          role="alert"
+          className="border border-amber-700/50 bg-amber-950/30 hover:bg-amber-950/40 p-3 sm:p-4 flex items-center gap-3 transition-colors"
         >
           <ShieldAlert size={14} className="text-amber-400 flex-shrink-0" />
           <div className="flex-1 min-w-0">
