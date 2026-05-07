@@ -9,10 +9,11 @@ import { parseEventLogs, isAddress, parseEther } from 'viem'
 import { toast } from 'sonner'
 import { Upload, X, Plus, Trash2, Check } from 'lucide-react'
 import { FACTORY_ADDRESS, FACTORY_ABI, encodeMinterPermission, encodeAdminPermission, buildCoverTokenSetupActions } from '@/lib/collections'
-import { CREATE_REFERRAL, INPROCESS_SMART_WALLET } from '@/lib/config'
+import { CREATE_REFERRAL } from '@/lib/config'
 import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { uploadJson } from '@/lib/arweave/uploadJson'
 import { useUploadSession } from '@/hooks/useUploadSession'
+import { fetchInprocessSmartWallet } from '@/hooks/useInprocessSmartWallet'
 import { toastError } from '@/lib/toast'
 import { useEnsureBase } from '@/lib/useEnsureBase'
 
@@ -298,12 +299,15 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
       // ("useroperation reverted: execution reverted") because Zora 1155's
       // setupNewToken is gated on the ADMIN bit. ADMIN — not MINTER —
       // because setupNewToken specifically requires admin per Zora's
-      // PermissionsConstants. We skip this when the env var isn't
-      // configured so dev deploys don't fail; production deployments
-      // should always set NEXT_PUBLIC_INPROCESS_SMART_WALLET.
+      // PermissionsConstants. The smart wallet address is resolved
+      // dynamically from inprocess (cached for the tab); if the lookup
+      // fails — e.g. the API key isn't configured — we skip the grant
+      // and let the deploy proceed, since dev environments without an
+      // inprocess key still need a working deploy path.
+      const inprocessSmartWallet = await fetchInprocessSmartWallet()
       const inprocessAdminAction =
-        INPROCESS_SMART_WALLET && isAddress(INPROCESS_SMART_WALLET)
-          ? [encodeAdminPermission(INPROCESS_SMART_WALLET as `0x${string}`)]
+        inprocessSmartWallet && isAddress(inprocessSmartWallet)
+          ? [encodeAdminPermission(inprocessSmartWallet as `0x${string}`)]
           : []
 
       // If cover mint is enabled, append the cover-token setupActions so the

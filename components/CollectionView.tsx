@@ -14,12 +14,12 @@ import { fetchCreatorProfile } from '@/lib/profileCache'
 import { toastError } from '@/lib/toast'
 import { useAdmin } from '@/contexts/AdminContext'
 import { useUploadSession } from '@/hooks/useUploadSession'
+import { useInprocessSmartWallet } from '@/hooks/useInprocessSmartWallet'
 import { useEnsureBase } from '@/lib/useEnsureBase'
 import {
   COLLECTION_ABI,
   PERMISSION_BIT_ADMIN,
 } from '@/lib/collections'
-import { INPROCESS_SMART_WALLET } from '@/lib/config'
 import { MomentCard } from './MomentCard'
 import { ProfileAvatar } from './ProfileAvatar'
 
@@ -113,15 +113,17 @@ export function CollectionView({
   // Without that grant, every /api/mint into the collection reverts at
   // gas estimation. The creator can grant it after the fact with a
   // single addPermission call from their own wallet (they hold ADMIN
-  // already as defaultAdmin).
+  // already as defaultAdmin). The smart wallet address comes from the
+  // inprocess /api/smartwallet endpoint (proxied + cached client-side).
+  const { address: inprocessSmartWallet } = useInprocessSmartWallet()
   const inprocessConfigured =
-    !!INPROCESS_SMART_WALLET && isAddress(INPROCESS_SMART_WALLET)
+    !!inprocessSmartWallet && isAddress(inprocessSmartWallet)
   const { data: inprocessPerms, refetch: refetchInprocessPerms } = useReadContract({
     address: address as `0x${string}`,
     abi: COLLECTION_ABI,
     functionName: 'permissions',
     args: inprocessConfigured
-      ? [0n, INPROCESS_SMART_WALLET as `0x${string}`]
+      ? [0n, inprocessSmartWallet as `0x${string}`]
       : undefined,
     query: { enabled: inprocessConfigured && isCreator },
   })
@@ -153,7 +155,7 @@ export function CollectionView({
   }, [authorizeReceipt, refetchInprocessPerms])
 
   async function handleAuthorize() {
-    if (!connectedAddress || !inprocessConfigured) return
+    if (!connectedAddress || !inprocessConfigured || !inprocessSmartWallet) return
     setAuthorizing(true)
     try {
       await ensureBase()
@@ -166,7 +168,7 @@ export function CollectionView({
         // tokenId 0 is the collection-wide permission row; granting ADMIN
         // there gives inprocess admin over every token in the collection,
         // present and future.
-        args: [0n, INPROCESS_SMART_WALLET as `0x${string}`, PERMISSION_BIT_ADMIN],
+        args: [0n, inprocessSmartWallet as `0x${string}`, PERMISSION_BIT_ADMIN],
       })
       setAuthorizeHash(hash)
       toast.loading('Authorizing…', { id: 'authorize' })
