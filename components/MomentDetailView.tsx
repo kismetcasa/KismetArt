@@ -75,6 +75,8 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   const [showFullDesc, setShowFullDesc] = useState(false)
   const [descOverflows, setDescOverflows] = useState(false)
   const descRef = useRef<HTMLParagraphElement>(null)
+  const [collectionName, setCollectionName] = useState<string | null>(null)
+  const [collectionImage, setCollectionImage] = useState<string | null>(null)
   const [hasSplits, setHasSplits] = useState(false)
   const [splitAddress, setSplitAddress] = useState('')
   const [distributing, setDistributing] = useState(false)
@@ -188,6 +190,20 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   }, [address, tokenId])
 
   useEffect(() => { fetchComments() }, [fetchComments])
+
+  useEffect(() => {
+    if (!address) return
+    fetch(`/api/collections?address=${address}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return
+        const name: string | undefined = d.metadata?.name ?? d.name
+        const image: string | undefined = d.metadata?.image
+        if (name) setCollectionName(name)
+        if (image) setCollectionImage(resolveUri(image))
+      })
+      .catch(() => {})
+  }, [address])
 
   useEffect(() => {
     const el = descRef.current
@@ -700,6 +716,27 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                 {creatorName || shortAddress(creatorAddress)}
               </span>
             </Link>
+            {collectionName && (
+              <Link
+                href={`/collection/${address}`}
+                className="flex items-center gap-2 group w-fit"
+              >
+                {collectionImage && (
+                  <div className="w-[22px] h-[22px] relative flex-shrink-0 bg-[#1a1a1a] overflow-hidden">
+                    <Image
+                      src={collectionImage}
+                      alt=""
+                      fill
+                      className="object-cover"
+                      sizes="22px"
+                    />
+                  </div>
+                )}
+                <span className="text-xs font-mono text-[#555] group-hover:text-[#888] transition-colors">
+                  {collectionName}
+                </span>
+              </Link>
+            )}
             {meta.description && (
               <div className="flex flex-col gap-1.5">
                 <p className="text-[10px] font-mono text-[#333] uppercase tracking-wider">description</p>
