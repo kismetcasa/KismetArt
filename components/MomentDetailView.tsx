@@ -585,8 +585,8 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   return (
     <div className="max-w-6xl mx-auto pb-16">
 
-      {/* Back nav */}
-      <div className="px-4 py-3 border-b border-[#2a2a2a]">
+      {/* Back nav with owned-count callout on the right */}
+      <div className="px-4 py-3 border-b border-[#2a2a2a] flex items-center justify-between gap-3">
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 text-xs font-mono text-[#555] hover:text-[#888] transition-colors"
@@ -594,6 +594,11 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
           <ArrowLeft size={12} />
           back
         </Link>
+        {ownedCount > 0 && (
+          <p className="text-[10px] font-mono text-[#555] uppercase tracking-widest">
+            ×{ownedCount} owned
+          </p>
+        )}
       </div>
 
       {/* Creator-only banner so the creator knows their moment is hidden */}
@@ -957,19 +962,13 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
             </div>
           )}
 
-          {/* Total mints + owned count — subtle, above action row */}
-          {(totalMinted !== undefined || ownedCount > 0) && (
+          {/* Total mints — subtle, above action row.
+              "×N owned" lives next to the back link at the top now. */}
+          {totalMinted !== undefined && (
             <div className="px-5 pb-1 flex items-center gap-3">
-              {totalMinted !== undefined && (
-                <p className="text-[10px] font-mono text-[#444] uppercase tracking-widest">
-                  {Number(totalMinted).toLocaleString()} collected
-                </p>
-              )}
-              {ownedCount > 0 && (
-                <p className="text-[10px] font-mono text-[#555] uppercase tracking-widest">
-                  ×{ownedCount} owned
-                </p>
-              )}
+              <p className="text-[10px] font-mono text-[#444] uppercase tracking-widest">
+                {Number(totalMinted).toLocaleString()} collected
+              </p>
             </div>
           )}
 
