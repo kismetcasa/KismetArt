@@ -25,9 +25,13 @@ export async function register() {
     const { assertPlatformCollectionAuthorized } = await import('@/lib/healthcheck')
     await assertPlatformCollectionAuthorized()
   } catch (err) {
+    // Log the full stack so source-mapped frames show up in Vercel
+    // function logs. `err.message` alone strips the call site, which
+    // makes a real misconfig (vs e.g. an import failure inside the
+    // healthcheck module) much harder to triage at 3am.
     console.error(
       '[instrumentation] platform-collection healthcheck failed — site will continue serving but Kismet Casa mints into PLATFORM_COLLECTION may revert. Check logs and grant ADMIN on chain or update OPERATOR_SMART_WALLET / NEXT_PUBLIC_PLATFORM_COLLECTION env.',
-      err instanceof Error ? err.message : String(err),
+      err instanceof Error ? (err.stack ?? err.message) : String(err),
     )
   }
 }

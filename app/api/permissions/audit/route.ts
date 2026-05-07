@@ -153,10 +153,50 @@ async function auditOne(
 }
 
 /**
+ * Public-facing audit row shape. Strips the `error` string field
+ * present on the internal cache entry — those messages can include
+ * raw RPC error text, upstream service health hints, or other
+ * infra-internal information that's better not leaked through an
+ * unauthenticated endpoint. Replaced with a coarse `errored: boolean`
+ * so consumers can render a "checking failed" badge without seeing
+ * which exact service flaked.
+ */
+interface PublicAuditResult {
+  collection: string
+  artist: string | null
+  smartWallet: string | null
+  perms: string
+  hasAdmin: boolean
+  checkedAt: number
+  errored: boolean
+}
+
+function toPublicResult(entry: CollectionPermsCacheEntry): PublicAuditResult {
+  return {
+    collection: entry.collection,
+    artist: entry.artist,
+    smartWallet: entry.smartWallet,
+    perms: entry.perms,
+    hasAdmin: entry.hasAdmin,
+    checkedAt: entry.checkedAt,
+    errored: !!entry.error,
+  }
+}
+
+/**
  * GET /api/permissions/audit — public, returns last-known cached results
  * for every tracked collection. Useful for an admin dashboard / status
  * page without forcing a fresh on-chain read every visit. Returns an
  * empty array for collections that have never been audited.
+ *
+ * Endpoint is intentionally unauthenticated — the data (smart wallet ↔
+ * artist EOA pairs, ADMIN status) is derivable from on-chain events
+ * already, so direct disclosure isn't a leak. The previous version
+ * also surfaced the cache's raw `error` string (RPC errors, internal
+ * status messages); those are now redacted to a boolean `errored`
+ * field so a public scrape can't pivot internal-infra signals out of
+ * the response. Detailed errors stay in the cache for the admin-gated
+ * POST handler's response.
  */
 export async function GET() {
   const tracked = await getTrackedCollections()
@@ -172,7 +212,7 @@ export async function GET() {
   } catch {
     return NextResponse.json({ results: [] })
   }
-  const results: CollectionPermsCacheEntry[] = []
+  const results: PublicAuditResult[] = []
   for (let i = 0; i < addresses.length; i++) {
     const raw = raws[i]
     if (!raw) continue
@@ -183,7 +223,7 @@ export async function GET() {
     try {
       const entry =
         typeof raw === 'string' ? (JSON.parse(raw) as CollectionPermsCacheEntry) : raw
-      results.push(entry)
+      results.push(toPublicResult(entry))
     } catch (err) {
       console.error('[permissions/audit GET] could not parse cache entry', {
         address: addresses[i],

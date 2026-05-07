@@ -271,6 +271,14 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
   // miss it after the transient toast disappears) and clears on
   // "mint another" / form reset.
   const [autoDeployNeedsAuth, setAutoDeployNeedsAuth] = useState<string | null>(null)
+  // Race guard for trackAndVerifyAutoDeploy. The verify is fired via
+  // `void` after setStep('done'), so the user can click "Mint another"
+  // (which clears autoDeployNeedsAuth + resets the form) BEFORE the
+  // post-mint perms read settles. Without this ref, a stale verify
+  // would write back to setAutoDeployNeedsAuth and re-surface the
+  // warning panel against a freshly-reset form. Setting the ref to
+  // null in "Mint another" signals any in-flight verify to bail.
+  const verifyTargetRef = useRef<string | null>(null)
 
   const fileInputRef = useRef<HTMLInputElement>(null)
   const splitsTotal = splits.reduce((s, r) => s + r.percentAllocation, 0)
@@ -502,6 +510,12 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
       contractAddress: string,
       imageUri: string | undefined,
     ): Promise<void> {
+      // Mark this contract as the verify-in-flight target. If the user
+      // hits "Mint another" before we settle, that handler clears the
+      // ref to null and the post-read state writes below short-circuit
+      // — no stale warning panel re-appears against a reset form.
+      verifyTargetRef.current = contractAddress
+
       // Phase 2 originally inlined a single-shot fetch here. The auto-
       // deploy path is MORE susceptible to RPC propagation lag than
       // CreateCollectionForm's explicit deploy (the contract was just
@@ -533,6 +547,11 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
                 perms: perms.toString(),
               },
             )
+            // Race guard: only persist the warning if this verify
+            // result still applies to the current success card. If
+            // the user already clicked "Mint another" (which clears
+            // verifyTargetRef.current to null), bail without writing.
+            if (verifyTargetRef.current !== contractAddress) return
             // Phase 3: persist the warning into success-card state so
             // the user has a stable surface to act on (the toast below
             // disappears in a few seconds; the success card stays
@@ -836,6 +855,10 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
             // form state — staying on it across "Mint another" would
             // confuse the next mint into a different (or new) collection.
             setAutoDeployNeedsAuth(null)
+            // Race guard: signal any in-flight trackAndVerifyAutoDeploy
+            // to bail before writing setAutoDeployNeedsAuth (which would
+            // re-surface the warning panel against this freshly-reset form).
+            verifyTargetRef.current = null
             clearFile()
             setTextContent('')
             setName('')
