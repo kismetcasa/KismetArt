@@ -20,6 +20,15 @@ interface CollectionDetail {
   default_admin?: { address: string; username?: string }
   payout_recipient?: string
   created_at?: string
+  // The same call also returns the parsed contract metadata. We thread
+  // these through to displayMeta below as a third fallback after KV and
+  // the plural-endpoint fetch — the singular endpoint is the one we know
+  // empirically returns image + description for newly indexed collections.
+  metadata?: {
+    name?: string
+    image?: string
+    description?: string
+  }
 }
 
 async function fetchCollectionDetail(address: string): Promise<CollectionDetail | null> {
@@ -147,17 +156,20 @@ export default async function CollectionPage({ params }: Props) {
     )
   }
 
-  // Per-field merge: KV wins for fields it has (fast, deploy-time written),
-  // inprocess fills in any gaps. We used to be all-or-nothing — `kvMeta ? {…}
-  // : meta` — which meant a partial KV row (e.g. a backfill that only set
-  // `name`) would mask the image + description that inprocess actually had,
-  // making collections look stripped-down when both data sources were
-  // populated. Per-field fallback means the cheaper source still wins
-  // when present without sacrificing data we already have elsewhere.
+  // Per-field merge across three sources, in priority order:
+  //   1. KV (fast, written at deploy time — wins when present)
+  //   2. Plural-endpoint meta (legacy fetchCollectionMeta path)
+  //   3. Singular-endpoint metadata (the one we know empirically carries
+  //      image + description for currently-indexed collections)
+  // Used to be all-or-nothing on KV, which meant a partial KV row could
+  // shadow inprocess data we already had — and we weren't even reading
+  // the singular endpoint's metadata, so image + description were lost
+  // for collections where the plural-endpoint fetch didn't return a hit.
   const displayMeta = {
-    name: kvMeta?.name ?? meta?.name,
-    image: kvMeta?.image ?? meta?.image,
-    description: kvMeta?.description ?? meta?.description,
+    name: kvMeta?.name ?? meta?.name ?? detail?.metadata?.name,
+    image: kvMeta?.image ?? meta?.image ?? detail?.metadata?.image,
+    description:
+      kvMeta?.description ?? meta?.description ?? detail?.metadata?.description,
   }
 
   const showPayout =
