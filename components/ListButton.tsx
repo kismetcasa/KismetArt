@@ -36,6 +36,9 @@ interface ListButtonProps {
   onListed?: () => void
   buttonClassName?: string
   narrowInput?: boolean
+  // When true, locks currency to ETH and hides the toggle. Use on cards/modals
+  // where the input space is limited; the full toggle is available on the detail page.
+  ethOnly?: boolean
 }
 
 export function ListButton({
@@ -49,6 +52,7 @@ export function ListButton({
   onListed,
   buttonClassName,
   narrowInput,
+  ethOnly,
 }: ListButtonProps) {
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
@@ -245,8 +249,10 @@ export function ListButton({
     )
   }
 
+  const showToggle = !ethOnly && priceInput === ''
+
   return (
-    <div className="flex gap-1.5 items-center w-full">
+    <div className="flex gap-2 items-center w-full">
       <div className={`relative ${narrowInput ? 'w-[40%] flex-none' : 'flex-1'} min-w-0`}>
         <input
           type="text"
@@ -255,17 +261,19 @@ export function ListButton({
           onChange={(e) => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setPriceInput(v) }}
           placeholder={currency === 'usdc' ? '$' : 'ETH'}
           disabled={isBusy}
-          className="w-full bg-[#111] border border-[#2a2a2a] pl-2 pr-12 py-2.5 text-xs text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] disabled:opacity-50"
+          className={`w-full bg-[#111] border border-[#2a2a2a] pl-2 py-2.5 text-xs text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] disabled:opacity-50 ${showToggle ? 'pr-12' : 'pr-2'}`}
         />
-        <button
-          type="button"
-          onClick={() => setCurrency((c) => c === 'eth' ? 'usdc' : 'eth')}
-          disabled={isBusy}
-          title="toggle currency"
-          className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] font-mono text-[#888] hover:text-[#efefef] transition-colors px-1 py-0.5 disabled:opacity-40"
-        >
-          {currency === 'eth' ? 'ETH' : 'USDC'}
-        </button>
+        {showToggle && (
+          <button
+            type="button"
+            onClick={() => setCurrency((c) => c === 'eth' ? 'usdc' : 'eth')}
+            disabled={isBusy}
+            title="toggle currency"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-[10px] font-mono text-[#888] hover:text-[#efefef] transition-colors px-1 py-0.5 disabled:opacity-40"
+          >
+            {currency === 'eth' ? 'ETH' : 'USDC'}
+          </button>
+        )}
       </div>
       <button
         onClick={handleList}
@@ -281,7 +289,7 @@ export function ListButton({
         type="button"
         onClick={() => { setShowForm(false); setPriceInput('') }}
         disabled={isBusy}
-        className="flex-shrink-0 text-xs font-mono text-[#555] hover:text-[#888] disabled:opacity-40"
+        className="flex-shrink-0 px-2 text-xs font-mono text-[#555] hover:text-[#888] disabled:opacity-40"
       >
         ✕
       </button>

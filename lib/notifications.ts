@@ -54,6 +54,7 @@ async function isPriority(
   if (type === 'mint') return true
   if (type === 'listing_expired') return true
   if (type === 'airdrop') return true
+  if (type === 'follow') return true
   if (type === 'collect' && price && price !== '0') return true
   if (!actor) return false
 

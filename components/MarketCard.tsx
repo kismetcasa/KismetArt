@@ -6,9 +6,11 @@ import { base } from 'wagmi/chains'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
 import { formatPrice, shortAddress } from '@/lib/inprocess'
+import { fetchCreatorProfile } from '@/lib/profileCache'
 import { useTextContent } from '@/lib/textCache'
 import { SEAPORT_ADDRESS, SEAPORT_ABI, deserializeOrder } from '@/lib/seaport'
 import { BuyButton } from './BuyButton'
+import Link from 'next/link'
 import type { Listing } from '@/lib/listings'
 import { useEnsureBase } from '@/lib/useEnsureBase'
 import { toastError } from '@/lib/toast'
@@ -25,6 +27,8 @@ export function MarketCard({ listing, onRemove }: MarketCardProps) {
   const { signMessageAsync } = useSignMessage()
   const publicClient = usePublicClient()
   const ensureBase = useEnsureBase()
+  const [creatorName, setCreatorName] = useState(() => shortAddress(listing.creatorAddress ?? ''))
+  const [sellerName, setSellerName] = useState(() => shortAddress(listing.seller))
   const [cancelling, setCancelling] = useState(false)
   // Inline two-tap confirmation guards against accidental cancels — the first
   // tap arms the button (label flips, 3s timeout to disarm), the second tap
@@ -36,6 +40,16 @@ export function MarketCard({ listing, onRemove }: MarketCardProps) {
   useEffect(() => () => {
     if (armTimeoutRef.current) clearTimeout(armTimeoutRef.current)
   }, [])
+
+  useEffect(() => {
+    if (listing.creatorAddress) {
+      fetchCreatorProfile(listing.creatorAddress).then(({ name }) => setCreatorName(name))
+    }
+  }, [listing.creatorAddress])
+
+  useEffect(() => {
+    fetchCreatorProfile(listing.seller).then(({ name }) => setSellerName(name))
+  }, [listing.seller])
 
   const isTextListing = listing.contentMime === 'text/plain'
   const textSnippet = useTextContent(isTextListing ? listing.contentUri : undefined)
@@ -111,7 +125,7 @@ export function MarketCard({ listing, onRemove }: MarketCardProps) {
   }
 
   return (
-    <div className="bg-[#0d0d0d] flex flex-col">
+    <div className="bg-[#161616] border border-[#2a2a2a] flex flex-col">
       {/* Thumbnail */}
       <div className="aspect-square bg-[#111] overflow-hidden">
         {listing.image ? (
@@ -122,7 +136,7 @@ export function MarketCard({ listing, onRemove }: MarketCardProps) {
             className="w-full h-full object-contain"
           />
         ) : isTextListing ? (
-          <div className="w-full h-full flex flex-col justify-center p-5 bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a]">
+          <div className="w-full h-full flex flex-col p-5 bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a]">
             <span className="text-[10px] font-mono text-[#555] uppercase tracking-widest mb-2">writing</span>
             <p className="text-xs sm:text-sm font-mono text-[#bbb] line-clamp-7 leading-relaxed whitespace-pre-wrap">
               {textSnippet ?? listing.name ?? 'untitled'}
@@ -142,12 +156,20 @@ export function MarketCard({ listing, onRemove }: MarketCardProps) {
             <p className="text-sm font-mono text-[#efefef] truncate">
               {listing.name ?? 'untitled'}
             </p>
-            <p className="text-xs font-mono text-[#555] mt-0.5">
-              creator {shortAddress(listing.creatorAddress ?? '')}
-            </p>
-            <p className="text-xs font-mono text-[#333] mt-0.5">
-              seller {shortAddress(listing.seller)}
-            </p>
+            {listing.creatorAddress && (
+              <Link
+                href={`/profile/${listing.creatorAddress}`}
+                className="text-xs font-mono text-[#555] mt-0.5 hover:text-[#888] transition-colors w-fit block"
+              >
+                creator {creatorName}
+              </Link>
+            )}
+            <Link
+              href={`/profile/${listing.seller}`}
+              className="text-xs font-mono text-[#333] mt-0.5 hover:text-[#555] transition-colors w-fit block"
+            >
+              seller {sellerName}
+            </Link>
           </div>
           <div className="text-right shrink-0">
             <p className="text-xs font-mono accent-grad">{priceLabel}</p>

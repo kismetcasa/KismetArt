@@ -3,6 +3,7 @@ import { createPublicClient, http, type Address } from 'viem'
 import { isAddress } from '@/lib/address'
 import { base } from 'viem/chains'
 import { INPROCESS_API } from '@/lib/inprocess'
+import { PLATFORM_COLLECTION } from '@/lib/config'
 import {
   getTrackedCollections,
   addTrackedCollection,
@@ -36,6 +37,41 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const artist = searchParams.get('artist')
   const feed = searchParams.get('feed')
+  const singleAddress = searchParams.get('address')
+
+  // Single-collection metadata lookup used by MomentDetailView to show the
+  // collection name + cover image in the moment detail panel.
+  if (singleAddress) {
+    if (!isAddress(singleAddress)) {
+      return NextResponse.json({ error: 'Invalid address' }, { status: 400 })
+    }
+    try {
+      const url = new URL(`${INPROCESS_API}/collection`)
+      url.searchParams.set('collectionAddress', singleAddress)
+      url.searchParams.set('chainId', '8453')
+      const res = await fetch(url.toString(), {
+        headers: { Accept: 'application/json' },
+        next: { revalidate: 120 },
+      })
+      if (res.ok) {
+        const text = await res.text()
+        if (text) {
+          const data = JSON.parse(text) as Record<string, unknown>
+          if (data && typeof data === 'object' && Object.keys(data).length > 0) {
+            return NextResponse.json({ contractAddress: singleAddress, ...data })
+          }
+        }
+      }
+    } catch {
+      // fall through to KV
+    }
+    const kv = await getCollectionMeta(singleAddress)
+    return NextResponse.json({
+      contractAddress: singleAddress,
+      name: kv?.name,
+      metadata: kv ? { name: kv.name, image: kv.image } : undefined,
+    })
+  }
 
   // Discovery feed: enumerate the collections tracked in our KV (deployed
   // through this client + the platform collection). Hydrate each with the
@@ -51,7 +87,10 @@ export async function GET(req: NextRequest) {
       getTrackedCollections(),
       getHiddenCollectionsSet(),
     ])
-    const visible = tracked.filter((addr) => !hiddenSet.has(addr.toLowerCase()))
+    const platformLower = PLATFORM_COLLECTION.toLowerCase()
+    const visible = tracked.filter(
+      (addr) => !hiddenSet.has(addr.toLowerCase()) && addr.toLowerCase() !== platformLower,
+    )
     const total = visible.length
     const total_pages = Math.max(1, Math.ceil(total / limit))
     const start = (page - 1) * limit
