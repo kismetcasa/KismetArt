@@ -363,7 +363,7 @@ function MainFeed() {
         <button
           key={id}
           onClick={() => setSubTab(id)}
-          className={`text-xs font-mono tracking-wider uppercase px-2.5 py-1 border transition-colors ${
+          className={`text-xs font-mono tracking-wider px-2.5 py-1 border transition-colors ${
             subTab === id
               ? 'border-[#555] text-[#efefef]'
               : 'border-[#2a2a2a] text-[#444] hover:text-[#888] hover:border-[#444]'

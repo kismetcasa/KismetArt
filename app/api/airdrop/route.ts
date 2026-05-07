@@ -89,6 +89,18 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  // The signed message authorizes airdropping exactly ONE tokenId; if a
+  // tampered client mixes tokenIds in the recipients array, only the first
+  // is actually verified by the signature. Enforce uniformity here so a
+  // single signature cannot fan out to airdrop different tokens.
+  const tokenId = body.recipients[0].tokenId
+  if (body.recipients.some((r) => r.tokenId !== tokenId)) {
+    return NextResponse.json(
+      { error: 'all recipients must share the same tokenId' },
+      { status: 400 },
+    )
+  }
+
   // Verify the caller is the moment creator via wallet signature
   if (!body.callerAddress || !isAddress(body.callerAddress)) {
     return NextResponse.json({ error: 'callerAddress required' }, { status: 401 })
@@ -97,7 +109,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'signature and nonce required' }, { status: 401 })
   }
 
-  const tokenId = body.recipients[0].tokenId
   const message = `Airdrop moment on Kismet Art\nCollection: ${body.collectionAddress.toLowerCase()}\nToken: ${tokenId}\nAddress: ${body.callerAddress.toLowerCase()}\nNonce: ${body.nonce}`
 
   let sigValid = false
@@ -151,6 +162,9 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    // Inprocess infers the chain from the collection contract — request body
+    // shape is { recipients, collectionAddress } per their docs; chainId comes
+    // back in the response, not sent in.
     const res = await fetch(`${INPROCESS_API}/moment/airdrop`, {
       method: 'POST',
       headers: {
@@ -158,19 +172,9 @@ export async function POST(req: NextRequest) {
         'x-api-key': apiKey,
         Accept: 'application/json',
       },
-      // Inprocess expects the same `moment: { collectionAddress, tokenId,
-      // chainId }` envelope used by /moment/update-uri (their Zod validator
-      // returns "moment: expected object, received undefined" when omitted).
-      // Recipients ride alongside as a flat array of { recipientAddress,
-      // tokenId } so per-recipient tokenIds are still permitted by the
-      // upstream schema.
       body: JSON.stringify({
-        moment: {
-          collectionAddress: body.collectionAddress,
-          tokenId,
-          chainId: 8453,
-        },
         recipients: body.recipients,
+        collectionAddress: body.collectionAddress,
       }),
     })
     const text = await res.text()
