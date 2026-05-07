@@ -3,11 +3,13 @@
 import { useEffect, useState } from 'react'
 import { X, Settings, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { NotificationFeed } from './NotificationFeed'
+import { useAccount } from 'wagmi'
+import { NotificationFeed, type FeedTab } from './NotificationFeed'
 import { ProfileAvatar } from './ProfileAvatar'
 import { useUploadSession } from '@/hooks/useUploadSession'
 import { humanError } from '@/lib/toast'
 import { shortAddress } from '@/lib/inprocess'
+import { CopyAddress } from './CopyAddress'
 
 type ModalTab = 'feed' | 'settings'
 
@@ -17,9 +19,20 @@ interface NotificationModalProps {
 
 export function NotificationModal({ onClose }: NotificationModalProps) {
   const { ensureSession } = useUploadSession()
+  const { address } = useAccount()
   const [tab, setTab] = useState<ModalTab>('feed')
+  const [feedTab, setFeedTab] = useState<FeedTab>('all')
+  const [followingAddrs, setFollowingAddrs] = useState<string[]>([])
   const [muted, setMuted] = useState<string[] | null>(null)
   const [mutedLoading, setMutedLoading] = useState(false)
+
+  useEffect(() => {
+    if (feedTab !== 'following' || !address) { setFollowingAddrs([]); return }
+    fetch(`/api/follow/${address}?list=1`)
+      .then((r) => r.ok ? r.json() : Promise.reject())
+      .then((d) => setFollowingAddrs(Array.isArray(d.addresses) ? d.addresses : []))
+      .catch(() => setFollowingAddrs([]))
+  }, [feedTab, address])
 
   // Lock body scroll while open
   useEffect(() => {
@@ -77,9 +90,25 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
 
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a2a2a] flex-shrink-0">
-          <p className="text-[10px] font-mono uppercase tracking-widest text-[#888]">
-            {tab === 'settings' ? 'notification settings' : 'notifications'}
-          </p>
+          {tab === 'settings' ? (
+            <p className="text-[10px] font-mono uppercase tracking-widest text-[#888]">
+              notification settings
+            </p>
+          ) : (
+            <div className="flex items-center gap-4">
+              {(['notifications', 'all', 'following'] as FeedTab[]).map((t) => (
+                <button
+                  key={t}
+                  onClick={() => setFeedTab(t)}
+                  className={`text-[10px] font-mono uppercase tracking-widest transition-colors ${
+                    feedTab === t ? 'text-[#efefef]' : 'text-[#555] hover:text-[#888]'
+                  }`}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="flex items-center gap-0.5">
             <button
               onClick={() => setTab((t) => t === 'settings' ? 'feed' : 'settings')}
@@ -103,7 +132,7 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto">
           {tab === 'feed' ? (
-            <NotificationFeed />
+            <NotificationFeed feedTab={feedTab} followingAddrs={followingAddrs} />
           ) : (
             <div className="p-4 flex flex-col gap-4">
               <div>
@@ -128,6 +157,7 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
                           <span className="text-xs font-mono text-[#888]">
                             {shortAddress(actor)}
                           </span>
+                          <CopyAddress address={actor} size={11} />
                         </div>
                         <button
                           onClick={() => handleUnmute(actor)}

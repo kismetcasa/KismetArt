@@ -363,29 +363,33 @@ function MainFeed() {
 
   const feedKey = `main-${followingOn ? 'following' : 'all'}-${followingAddrs.join(',')}`
 
-  // Sub-pills row: mints / collections + independent following toggle.
+  // Sub-tab row: mints / collections · following (no borders, text-only)
   const subTabBar = (
     <div className="flex items-center gap-3">
-      {(['mints', 'collections'] as MainSubTab[]).map((id) => (
+      <div className="flex items-center gap-1.5">
         <button
-          key={id}
-          onClick={() => setSubTab(id)}
-          className={`text-[10px] font-mono tracking-wider px-2 py-0.5 border transition-colors ${
-            subTab === id
-              ? 'border-[#555] text-[#efefef]'
-              : 'border-[#2a2a2a] text-[#444] hover:text-[#888] hover:border-[#444]'
+          onClick={() => setSubTab('mints')}
+          className={`text-[10px] font-mono tracking-wider transition-colors ${
+            subTab === 'mints' ? 'text-[#efefef]' : 'text-[#444] hover:text-[#888]'
           }`}
         >
-          {id}
+          mints
         </button>
-      ))}
+        <span className="text-[10px] font-mono text-[#2a2a2a] select-none">/</span>
+        <button
+          onClick={() => setSubTab('collections')}
+          className={`text-[10px] font-mono tracking-wider transition-colors ${
+            subTab === 'collections' ? 'text-[#efefef]' : 'text-[#444] hover:text-[#888]'
+          }`}
+        >
+          collections
+        </button>
+      </div>
       {address && (
         <button
           onClick={() => setFollowingOn((v) => !v)}
-          className={`text-[10px] font-mono tracking-wider px-2 py-0.5 border transition-colors ${
-            followingOn
-              ? 'border-[#555] text-[#efefef]'
-              : 'border-[#2a2a2a] text-[#444] hover:text-[#888] hover:border-[#444]'
+          className={`text-[10px] font-mono tracking-wider transition-colors ${
+            followingOn ? 'text-[#efefef]' : 'text-[#444] hover:text-[#888]'
           }`}
         >
           following

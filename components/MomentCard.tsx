@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Star, Copy, Check, ExternalLink } from 'lucide-react'
+import { Star, Copy, Check, ExternalLink, EyeOff } from 'lucide-react'
 import { useAccount, useReadContract } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import {
@@ -17,7 +17,7 @@ import {
   type MomentDetail,
 } from '@/lib/inprocess'
 import { fetchCreatorProfile } from '@/lib/profileCache'
-import { useTextContent } from '@/lib/textCache'
+import { useTextContent, fetchTextContent } from '@/lib/textCache'
 import { getCachedComments, setCachedComments } from '@/lib/momentCache'
 import { useAdmin } from '@/contexts/AdminContext'
 import { ERC1155_ABI } from '@/lib/seaport'
@@ -100,6 +100,11 @@ export function MomentCard({ moment, hidePriceSupply, directLink }: MomentCardPr
       .catch(() => {})
   }
 
+  function prefetchTextContent() {
+    const uri = meta.content?.uri
+    if (isTextMoment && uri) fetchTextContent(uri).catch(() => {})
+  }
+
   function handleCopyLink() {
     navigator.clipboard.writeText(`${window.location.origin}/moment/${moment.address}/${moment.token_id}`).catch(() => {})
     setLinkCopied(true)
@@ -141,7 +146,7 @@ export function MomentCard({ moment, hidePriceSupply, directLink }: MomentCardPr
               setModalOpen(true)
             }
           }}
-          onMouseEnter={prefetchComments}
+          onMouseEnter={() => { prefetchComments(); prefetchTextContent() }}
           className="cursor-pointer relative aspect-square bg-[#111] overflow-hidden"
         >
           {isAdmin && (
@@ -158,11 +163,15 @@ export function MomentCard({ moment, hidePriceSupply, directLink }: MomentCardPr
               <Star size={16} fill={isFeatured ? 'currentColor' : 'none'} strokeWidth={1.5} />
             </button>
           )}
-          {owned > 0 && maxSupply !== null && (
+          {moment.hidden ? (
+            <span className="absolute top-2 right-2 z-10 p-1 bg-[#0d0d0d]/80 border border-[#2a2a2a]">
+              <EyeOff size={10} className="text-[#555]" />
+            </span>
+          ) : (owned > 0 && maxSupply !== null) ? (
             <span className="absolute top-2 right-2 z-10 px-1.5 py-0.5 bg-[#0d0d0d]/80 border border-[#2a2a2a] text-[#efefef] font-mono text-[10px] leading-tight">
               ×{owned}
             </span>
-          )}
+          ) : null}
           {isVideo && mediaUrl ? (
             <video
               src={mediaUrl}
@@ -212,14 +221,16 @@ export function MomentCard({ moment, hidePriceSupply, directLink }: MomentCardPr
                   ? <Check size={11} className="text-[#6ee7b7]" />
                   : <Copy size={11} />}
               </button>
-              <Link
-                href={`/moment/${moment.address}/${moment.token_id}`}
-                title="view page"
-                className="text-[#444] hover:text-[#888] transition-colors"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <ExternalLink size={11} />
-              </Link>
+              {!directLink && (
+                <Link
+                  href={`/moment/${moment.address}/${moment.token_id}`}
+                  title="view page"
+                  className="text-[#444] hover:text-[#888] transition-colors"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ExternalLink size={11} />
+                </Link>
+              )}
             </div>
           </div>
           <Link
@@ -240,11 +251,11 @@ export function MomentCard({ moment, hidePriceSupply, directLink }: MomentCardPr
               <div className="px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
                 <span className="text-[11px] font-mono accent-grad">{price ?? '…'}</span>
               </div>
-              <div className="border-l border-[#2a2a2a] px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
-                <span className="text-[11px] font-mono text-[#444]">
-                  {maxSupply === undefined ? '…' : (maxSupply === null || maxSupply === 0 ? 'open' : maxSupply.toLocaleString())}
-                </span>
-              </div>
+              {maxSupply !== null && maxSupply !== undefined && maxSupply > 0 && (
+                <div className="border-l border-[#2a2a2a] px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
+                  <span className="text-[11px] font-mono text-[#444]">{maxSupply.toLocaleString()}</span>
+                </div>
+              )}
             </div>
           )}
           {owned > 0 && (

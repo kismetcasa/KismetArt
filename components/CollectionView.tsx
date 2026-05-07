@@ -88,6 +88,13 @@ export function CollectionView({
   const { isAdmin, featuredCollectionAddrs, toggleFeaturedCollection } = useAdmin()
   const [profiles, setProfiles] = useState<Record<string, AvatarProfile>>({})
   const [hidden, setHidden] = useState(initialHidden)
+  const [resolvedAdminName, setResolvedAdminName] = useState<string | null>(
+    defaultAdminUsername
+      ? `@${defaultAdminUsername}`
+      : defaultAdminAddress
+        ? null  // resolve via profile cache below
+        : null
+  )
   // Moments fetched client-side so the header renders immediately from server
   // data, and hidden-moment filtering is applied via the session-aware
   // /api/timeline route (creator sees their own hidden moments; others don't).
@@ -285,6 +292,17 @@ export function CollectionView({
     return () => { cancelled = true }
   }, [address])
 
+  // Resolve the collection creator's display name from our platform profile
+  // cache. Inprocess only returns a username when one is set in their system;
+  // our Redis cache may have a name the user registered with us.
+  useEffect(() => {
+    if (!defaultAdminAddress || defaultAdminUsername) return
+    fetchCreatorProfile(defaultAdminAddress).then(({ name }) => {
+      const isUsername = name && name !== shortAddress(defaultAdminAddress)
+      setResolvedAdminName(isUsername ? `@${name}` : name || shortAddress(defaultAdminAddress))
+    })
+  }, [defaultAdminAddress, defaultAdminUsername])
+
   const loadedMoments = moments ?? []
   const displayName = collectionName || shortAddress(address)
   const firstMoment = loadedMoments[0]
@@ -357,7 +375,7 @@ export function CollectionView({
               href={`/profile/${defaultAdminAddress}`}
               className="text-[10px] font-mono text-[#444] hover:text-[#888] transition-colors w-fit"
             >
-              {defaultAdminUsername ? `@${defaultAdminUsername}` : shortAddress(defaultAdminAddress)}
+              {resolvedAdminName ?? shortAddress(defaultAdminAddress)}
             </Link>
           ) : (
             <p className="text-[10px] font-mono text-[#444]">{shortAddress(address)}</p>

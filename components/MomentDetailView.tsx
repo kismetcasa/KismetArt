@@ -13,7 +13,7 @@ import { fetchCreatorProfile } from '@/lib/profileCache'
 import { useTextContent } from '@/lib/textCache'
 import { getCachedDetail, setCachedDetail, getCachedComments, setCachedComments } from '@/lib/momentCache'
 import { ERC1155_ABI } from '@/lib/seaport'
-import { ZORA_1155_MINT_ABI } from '@/lib/zoraMint'
+import { ZORA_1155_MINT_ABI, ZORA_CREATOR_REWARD_RECIPIENT_ABI } from '@/lib/zoraMint'
 import { useDirectCollect } from '@/hooks/useDirectCollect'
 import { useUploadSession } from '@/hooks/useUploadSession'
 import { useGrantPermission } from '@/hooks/useGrantPermission'
@@ -21,6 +21,7 @@ import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { uploadJson } from '@/lib/arweave/uploadJson'
 import { ListButton } from './ListButton'
 import { ProfileAvatar } from './ProfileAvatar'
+import { CopyAddress } from './CopyAddress'
 import { useAdmin } from '@/contexts/AdminContext'
 import { toastError } from '@/lib/toast'
 
@@ -40,11 +41,14 @@ interface Props {
     animation_url?: string
     content?: { mime?: string; uri?: string }
   }
+  // Server-prefetched body for text moments — warms the module-level cache
+  // so the writing panel renders on first paint without a client fetch.
+  initialTextContent?: string
 }
 
 const TOP_COMMENTS = 3
 
-export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta }: Props) {
+export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta, initialTextContent }: Props) {
   const { address: connectedAddress, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { signMessageAsync } = useSignMessage()
@@ -57,13 +61,14 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     detail?.metadata?.content?.mime === 'text/plain'
       ? detail.metadata.content.uri
       : undefined
-  const textContent = useTextContent(textContentUri)
+  const textContent = useTextContent(textContentUri, initialTextContent)
   const [comments, setComments] = useState<MomentComment[]>(
     () => getCachedComments(address, tokenId) ?? []
   )
   const [commentsLoading, setCommentsLoading] = useState(
     () => getCachedComments(address, tokenId) === undefined
   )
+  const [commentSenderNames, setCommentSenderNames] = useState<Record<string, string>>({})
   const [showAllComments, setShowAllComments] = useState(false)
   const [commentText, setCommentText] = useState('')
   const [collected, setCollected] = useState(false)
@@ -79,7 +84,6 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   const [collectionName, setCollectionName] = useState<string | null>(null)
   const [collectionImage, setCollectionImage] = useState<string | null>(null)
   const [hasSplits, setHasSplits] = useState(false)
-  const [splitAddress, setSplitAddress] = useState('')
   const [distributing, setDistributing] = useState(false)
   const [distributeHash, setDistributeHash] = useState<string | null>(null)
   // Per-token ADMIN delegation: lets the creator grant another wallet
@@ -156,7 +160,8 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     args: connectedAddress ? [connectedAddress, BigInt(tokenId)] : undefined,
     query: { enabled: !!connectedAddress },
   })
-  const alreadyOwned = ownedBalance ? Number(ownedBalance) > 0 : false
+  const ownedCount = ownedBalance ? Number(ownedBalance) : 0
+  const alreadyOwned = ownedCount > 0
 
   // Total mints = collect count for this token. Authoritative count comes
   // from on-chain totalSupply (Zora 1155 maintains it per token id), which
@@ -177,6 +182,14 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     !!connectedAddress &&
     !!creatorAddress &&
     connectedAddress.toLowerCase() === creatorAddress.toLowerCase()
+
+  const { data: splitAddress } = useReadContract({
+    address: address as `0x${string}`,
+    abi: ZORA_CREATOR_REWARD_RECIPIENT_ABI,
+    functionName: 'getCreatorRewardRecipient',
+    args: [BigInt(tokenId)],
+    query: { enabled: isCreator && hasSplits },
+  })
 
   // Fetch moment detail. We retry on the client when initialDetail is null
   // (server-side fetch returned no data, e.g. inprocess hasn't indexed a
@@ -247,6 +260,22 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
 
   useEffect(() => { fetchComments() }, [fetchComments])
 
+  // Batch-resolve comment sender display names via shared profile cache
+  useEffect(() => {
+    if (comments.length === 0) return
+    let cancelled = false
+    const senders = Array.from(new Set(comments.map((c) => c.sender.toLowerCase())))
+    Promise.all(senders.map((a) => fetchCreatorProfile(a))).then((profiles) => {
+      if (cancelled) return
+      setCommentSenderNames((prev) => {
+        const next = { ...prev }
+        for (let i = 0; i < senders.length; i++) next[senders[i]] = profiles[i].name
+        return next
+      })
+    })
+    return () => { cancelled = true }
+  }, [comments])
+
   useEffect(() => {
     if (!address) return
     fetch(`/api/collections?address=${address}`)
@@ -305,10 +334,10 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   }
 
   async function handleDistribute() {
-    const addr = splitAddress.trim()
-    if (!addr || !isAddress(addr)) { toast.error('Invalid split address'); return }
+    if (!splitAddress) { toast.error('Split address not found'); return }
     if (!connectedAddress) { toast.error('Wallet not connected'); return }
     if (!detail) { toast.error('Moment details still loading'); return }
+    const addr = splitAddress
     // Route the distribute call to the right token type per the moment's
     // sale config — USDC moments need tokenAddress=USDC_BASE on the
     // inprocess side, otherwise the call defaults to ETH and distributes
@@ -546,7 +575,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     <div className="max-w-6xl mx-auto pb-16">
 
       {/* Back nav */}
-      <div className="px-4 py-3 border-b border-[#2a2a2a] flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-[#2a2a2a]">
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 text-xs font-mono text-[#555] hover:text-[#888] transition-colors"
@@ -554,11 +583,6 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
           <ArrowLeft size={12} />
           back
         </Link>
-        {totalMinted !== undefined && (
-          <p className="text-[10px] font-mono text-[#555] uppercase tracking-widest">
-            total collected: {Number(totalMinted).toLocaleString()}
-          </p>
-        )}
       </div>
 
       {/* Creator-only banner so the creator knows their moment is hidden */}
@@ -585,7 +609,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
             </div>
           ) : (
             <div
-              className={`relative aspect-[4/5] bg-[#111] ${(imageUrl || (isVideo && mediaUrl)) ? 'cursor-zoom-in' : ''}`}
+              className={`relative aspect-square bg-[#111] ${(imageUrl || (isVideo && mediaUrl)) ? 'cursor-zoom-in' : ''}`}
               onClick={() => { if (imageUrl || (isVideo && mediaUrl)) setLightboxOpen(true) }}
             >
               {isVideo && mediaUrl ? (
@@ -767,17 +791,20 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                 </div>
               </div>
             )}
-            <Link
-              href={creatorAddress ? `/profile/${creatorAddress}` : '#'}
-              className="flex items-center gap-2 group w-fit"
-            >
-              {creatorAddress && (
-                <ProfileAvatar address={creatorAddress} avatarUrl={creatorAvatar} size={22} />
-              )}
-              <span className="text-xs font-mono text-[#555] group-hover:text-[#888] transition-colors">
-                {creatorName || shortAddress(creatorAddress)}
-              </span>
-            </Link>
+            <div className="flex items-center gap-1.5">
+              <Link
+                href={creatorAddress ? `/profile/${creatorAddress}` : '#'}
+                className="flex items-center gap-2 group"
+              >
+                {creatorAddress && (
+                  <ProfileAvatar address={creatorAddress} avatarUrl={creatorAvatar} size={22} />
+                )}
+                <span className="text-xs font-mono text-[#555] group-hover:text-[#888] transition-colors">
+                  {creatorName || shortAddress(creatorAddress)}
+                </span>
+              </Link>
+              {creatorAddress && <CopyAddress address={creatorAddress} size={11} />}
+            </div>
             {collectionName && (
               <Link
                 href={`/collection/${address}`}
@@ -827,7 +854,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                       href={`/profile/${c.sender}`}
                       className="text-[11px] font-mono text-[#555] flex-shrink-0 hover:text-[#888] transition-colors"
                     >
-                      {shortAddress(c.sender)}
+                      {commentSenderNames[c.sender.toLowerCase()] ?? shortAddress(c.sender)}
                     </Link>
                     <span className="text-xs font-mono text-[#888] flex-1 break-words leading-relaxed">
                       {c.comment}
@@ -866,22 +893,13 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
           {isCreator && hasSplits && (
             <div className="px-5 pb-4 flex flex-col gap-2">
               <p className="text-[10px] font-mono text-[#333] uppercase tracking-wider">distribute earnings</p>
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  value={splitAddress}
-                  onChange={(e) => setSplitAddress(e.target.value)}
-                  placeholder="0x… split address"
-                  className="flex-1 bg-[#111] border border-[#2a2a2a] px-3 py-2 text-xs text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
-                />
-                <button
-                  onClick={handleDistribute}
-                  disabled={distributing || !splitAddress.trim()}
-                  className="text-xs font-mono px-3 py-2 border border-[#2a2a2a] text-[#555] hover:border-[#555] hover:text-[#efefef] transition-colors disabled:opacity-40"
-                >
-                  {distributing ? '…' : '→'}
-                </button>
-              </div>
+              <button
+                onClick={handleDistribute}
+                disabled={distributing || !splitAddress}
+                className="text-xs font-mono px-3 py-2 border border-[#2a2a2a] text-[#555] hover:border-[#555] hover:text-[#efefef] transition-colors disabled:opacity-40"
+              >
+                {distributing ? 'distributing…' : splitAddress ? 'distribute' : 'loading…'}
+              </button>
               {distributeHash && (
                 <a
                   href={`https://basescan.org/tx/${distributeHash}`}
@@ -925,6 +943,22 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                   {delegating ? '…' : '→'}
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Total mints + owned count — subtle, above action row */}
+          {(totalMinted !== undefined || ownedCount > 0) && (
+            <div className="px-5 pb-1 flex items-center gap-3">
+              {totalMinted !== undefined && (
+                <p className="text-[10px] font-mono text-[#444] uppercase tracking-widest">
+                  {Number(totalMinted).toLocaleString()} collected
+                </p>
+              )}
+              {ownedCount > 0 && (
+                <p className="text-[10px] font-mono text-[#555] uppercase tracking-widest">
+                  ×{ownedCount} owned
+                </p>
+              )}
             </div>
           )}
 
