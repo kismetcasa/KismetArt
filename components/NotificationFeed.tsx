@@ -50,13 +50,15 @@ export function NotificationFeed({ feedTab, followingAddrs }: NotificationFeedPr
 
   const hasMore = items.length < total
 
-  // Reset list when feed tab or type filter changes
+  // Reset + re-fetch only when the API-level tab or type filter changes.
+  // Switching between 'all' and 'following' (both use apiTab='all') does NOT
+  // clear items — the following filter is applied client-side to existing data.
   useEffect(() => {
     setPage(1)
     setItems([])
     setTotal(0)
     setAuthRequired(false)
-  }, [feedTab, typeFilter])
+  }, [apiTab, typeFilter])
 
   const fetchPage = useCallback(async (targetPage: number, signal?: AbortSignal): Promise<void> => {
     if (targetPage === 1) setLoading(true)
