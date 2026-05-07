@@ -614,6 +614,12 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
           setUploadProgress(pct)
           toast.loading(`Uploading media… ${pct}%`, { id: 'mint' })
         })
+        // Start propagation polling the moment each upload returns, so
+        // it runs in parallel with subsequent uploads instead of
+        // staircasing after them. By the time we block below, media
+        // has had the metadata- (and collection-metadata-) upload
+        // duration as free propagation buffer.
+        const mediaVerify = verifyArweaveAvailable(mediaUri)
 
         setStep('uploading-metadata')
         setUploadProgress(0)
@@ -625,11 +631,13 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
           ...(file!.type.startsWith('video/') ? { animation_url: mediaUri } : {}),
         }
         const metadataUri = await uploadJson(metadata)
+        const metadataVerify = verifyArweaveAvailable(metadataUri)
 
         // For auto-deploy, the moment's media doubles as the new
         // collection's cover image. Saves the user a second upload and
         // gives the collection card a non-blank thumbnail immediately.
         let collectionUri: string | null = null
+        let collectionVerify: Promise<boolean> = Promise.resolve(true)
         if (isAutoDeploy) {
           toast.loading('Uploading collection metadata…', { id: 'mint' })
           const collectionMetadata = {
@@ -639,21 +647,22 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
             createReferral: CREATE_REFERRAL,
           }
           collectionUri = await uploadJson(collectionMetadata)
+          collectionVerify = verifyArweaveAvailable(collectionUri)
         }
 
-        // HEAD-poll all URIs (media, moment metadata, and collection
-        // metadata when auto-deploying) before kicking off the on-chain
+        // Block on all three settling before kicking off the on-chain
         // mint. Turbo confirms ingestion before the gateway has
         // propagated, so jumping straight to /api/mint can produce a
         // moment whose metadata fetches 404 at indexing time. 45s
-        // budget covers the typical propagation window; on timeout we
-        // surface a retry message rather than commit a broken moment.
+        // budget per URI covers the typical propagation window; on
+        // timeout we surface a retry message rather than commit a
+        // broken moment.
         setStep('verifying-upload')
         toast.loading('Verifying Arweave propagation…', { id: 'mint' })
         const [mediaOk, metadataOk, collectionOk] = await Promise.all([
-          verifyArweaveAvailable(mediaUri),
-          verifyArweaveAvailable(metadataUri),
-          collectionUri ? verifyArweaveAvailable(collectionUri) : Promise.resolve(true),
+          mediaVerify,
+          metadataVerify,
+          collectionVerify,
         ])
         if (!mediaOk || !metadataOk || !collectionOk) {
           const failed: string[] = []
