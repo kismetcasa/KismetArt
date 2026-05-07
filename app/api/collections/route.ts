@@ -40,10 +40,24 @@ export async function GET(req: NextRequest) {
   const singleAddress = searchParams.get('address')
 
   // Single-collection metadata lookup used by MomentDetailView to show the
-  // collection name + cover image in the moment detail panel.
+  // collection name + cover image in the moment detail panel. Only returns
+  // data for user-created platform collections (tracked in KV, not the
+  // platform default) so standalone moments don't show a collection header.
   if (singleAddress) {
     if (!isAddress(singleAddress)) {
       return NextResponse.json({ error: 'Invalid address' }, { status: 400 })
+    }
+    const lowerAddr = singleAddress.toLowerCase()
+    const platformLower = PLATFORM_COLLECTION.toLowerCase()
+    if (lowerAddr === platformLower) {
+      return NextResponse.json({ contractAddress: singleAddress })
+    }
+    const [tracked, hiddenSet] = await Promise.all([
+      getTrackedCollections(),
+      getHiddenCollectionsSet(),
+    ])
+    if (!tracked.some((a) => a.toLowerCase() === lowerAddr) || hiddenSet.has(lowerAddr)) {
+      return NextResponse.json({ contractAddress: singleAddress })
     }
     try {
       const url = new URL(`${INPROCESS_API}/collection`)
