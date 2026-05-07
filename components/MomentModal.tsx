@@ -55,13 +55,6 @@ export function MomentModal({
   const { signMessageAsync } = useSignMessage()
   const [hasSplits, setHasSplits] = useState(false)
   const [distributing, setDistributing] = useState(false)
-  const { data: splitAddress } = useReadContract({
-    address: moment.address as `0x${string}`,
-    abi: ZORA_CREATOR_REWARD_RECIPIENT_ABI,
-    functionName: 'getCreatorRewardRecipient',
-    args: [BigInt(moment.token_id)],
-    query: { enabled: isCreator && hasSplits },
-  })
   const [distributeHash, setDistributeHash] = useState<string | null>(null)
   const [creatorName, setCreatorName] = useState(
     () => initialCreatorName ?? shortAddress(moment.creator.address),
@@ -125,6 +118,14 @@ export function MomentModal({
   const isCreator =
     !!connectedAddress &&
     connectedAddress.toLowerCase() === creatorAddress.toLowerCase()
+
+  const { data: splitAddress } = useReadContract({
+    address: moment.address as `0x${string}`,
+    abi: ZORA_CREATOR_REWARD_RECIPIENT_ABI,
+    functionName: 'getCreatorRewardRecipient',
+    args: [BigInt(moment.token_id)],
+    query: { enabled: isCreator && hasSplits },
+  })
 
   // Derived price and supply — prefer passed-in values, fall back to fetched detail
   const pricePerToken = initialPricePerToken ?? (detail ? BigInt(detail.saleConfig.pricePerToken) : null)

@@ -83,13 +83,6 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   const [collectionImage, setCollectionImage] = useState<string | null>(null)
   const [hasSplits, setHasSplits] = useState(false)
   const [distributing, setDistributing] = useState(false)
-  const { data: splitAddress } = useReadContract({
-    address: address as `0x${string}`,
-    abi: ZORA_CREATOR_REWARD_RECIPIENT_ABI,
-    functionName: 'getCreatorRewardRecipient',
-    args: [BigInt(tokenId)],
-    query: { enabled: isCreator && hasSplits },
-  })
   const [distributeHash, setDistributeHash] = useState<string | null>(null)
   // Edit-metadata flow: visible only to moment admins. Pre-populated from
   // the loaded MomentDetail so they can fix typos / replace the image
@@ -132,6 +125,14 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     !!connectedAddress &&
     !!creatorAddress &&
     connectedAddress.toLowerCase() === creatorAddress.toLowerCase()
+
+  const { data: splitAddress } = useReadContract({
+    address: address as `0x${string}`,
+    abi: ZORA_CREATOR_REWARD_RECIPIENT_ABI,
+    functionName: 'getCreatorRewardRecipient',
+    args: [BigInt(tokenId)],
+    query: { enabled: isCreator && hasSplits },
+  })
 
   // Fetch moment detail. We retry on the client when initialDetail is null
   // (server-side fetch returned no data, e.g. inprocess hasn't indexed a
