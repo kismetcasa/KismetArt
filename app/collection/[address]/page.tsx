@@ -13,9 +13,19 @@ interface Props {
 }
 
 interface CollectionDetail {
+  // inprocess GET /api/collection actually returns `creator`, not
+  // `default_admin`. Older code assumed `default_admin` and silently
+  // resolved to undefined, so the Authorize banner never rendered for
+  // any collection — the `isCreator` check always failed. Accept both
+  // shapes so we tolerate either response variant.
+  creator?: { address: string; username?: string }
   default_admin?: { address: string; username?: string }
   payout_recipient?: string
   created_at?: string
+}
+
+function getDefaultAdmin(detail: CollectionDetail | null | undefined) {
+  return detail?.creator ?? detail?.default_admin
 }
 
 async function fetchCollectionDetail(address: string): Promise<CollectionDetail | null> {
@@ -113,7 +123,8 @@ export default async function CollectionPage({ params }: Props) {
     isCollectionHidden(address),
   ])
 
-  const defaultAdminAddress = detail?.default_admin?.address?.toLowerCase()
+  const admin = getDefaultAdmin(detail)
+  const defaultAdminAddress = admin?.address?.toLowerCase()
   const viewerLower = viewer?.toLowerCase() ?? null
   const isCreator =
     !!viewerLower &&
@@ -141,8 +152,8 @@ export default async function CollectionPage({ params }: Props) {
 
   const showPayout =
     !!detail?.payout_recipient &&
-    !!detail?.default_admin?.address &&
-    detail.payout_recipient.toLowerCase() !== detail.default_admin.address.toLowerCase()
+    !!admin?.address &&
+    detail.payout_recipient.toLowerCase() !== admin.address.toLowerCase()
 
   return (
     <CollectionView
@@ -151,8 +162,8 @@ export default async function CollectionPage({ params }: Props) {
       collectionImage={displayMeta?.image}
       collectionDescription={displayMeta?.description}
       isTracked={!!kvMeta}
-      defaultAdminUsername={detail?.default_admin?.username}
-      defaultAdminAddress={detail?.default_admin?.address}
+      defaultAdminUsername={admin?.username}
+      defaultAdminAddress={admin?.address}
       payoutRecipient={showPayout ? detail!.payout_recipient! : undefined}
       createdAt={detail?.created_at}
       initialHidden={hidden}
