@@ -39,11 +39,14 @@ interface Props {
     animation_url?: string
     content?: { mime?: string; uri?: string }
   }
+  // Server-prefetched body for text moments — warms the module-level cache
+  // so the writing panel renders on first paint without a client fetch.
+  initialTextContent?: string
 }
 
 const TOP_COMMENTS = 3
 
-export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta }: Props) {
+export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta, initialTextContent }: Props) {
   const { address: connectedAddress, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { signMessageAsync } = useSignMessage()
@@ -56,7 +59,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     detail?.metadata?.content?.mime === 'text/plain'
       ? detail.metadata.content.uri
       : undefined
-  const textContent = useTextContent(textContentUri)
+  const textContent = useTextContent(textContentUri, initialTextContent)
   const [comments, setComments] = useState<MomentComment[]>(
     () => getCachedComments(address, tokenId) ?? []
   )
@@ -101,7 +104,8 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     args: connectedAddress ? [connectedAddress, BigInt(tokenId)] : undefined,
     query: { enabled: !!connectedAddress },
   })
-  const alreadyOwned = ownedBalance ? Number(ownedBalance) > 0 : false
+  const ownedCount = ownedBalance ? Number(ownedBalance) : 0
+  const alreadyOwned = ownedCount > 0
 
   // Total mints = collect count for this token. Authoritative count comes
   // from on-chain totalSupply (Zora 1155 maintains it per token id), which
@@ -507,7 +511,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     <div className="max-w-6xl mx-auto pb-16">
 
       {/* Back nav */}
-      <div className="px-4 py-3 border-b border-[#2a2a2a] flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-[#2a2a2a]">
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 text-xs font-mono text-[#555] hover:text-[#888] transition-colors"
@@ -515,11 +519,6 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
           <ArrowLeft size={12} />
           back
         </Link>
-        {totalMinted !== undefined && (
-          <p className="text-[10px] font-mono text-[#555] uppercase tracking-widest">
-            total collected: {Number(totalMinted).toLocaleString()}
-          </p>
-        )}
       </div>
 
       {/* Creator-only banner so the creator knows their moment is hidden */}
@@ -852,6 +851,22 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                 >
                   distributed: {distributeHash.slice(0, 10)}…{distributeHash.slice(-8)}
                 </a>
+              )}
+            </div>
+          )}
+
+          {/* Total mints + owned count — subtle, above action row */}
+          {(totalMinted !== undefined || ownedCount > 0) && (
+            <div className="px-5 pb-1 flex items-center gap-3">
+              {totalMinted !== undefined && (
+                <p className="text-[10px] font-mono text-[#444] uppercase tracking-widest">
+                  {Number(totalMinted).toLocaleString()} collected
+                </p>
+              )}
+              {ownedCount > 0 && (
+                <p className="text-[10px] font-mono text-[#555] uppercase tracking-widest">
+                  ×{ownedCount} owned
+                </p>
               )}
             </div>
           )}

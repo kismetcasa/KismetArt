@@ -93,14 +93,14 @@ export function CollectionCard({ collection, primaryAction }: CollectionCardProp
       <div className="px-4 pb-4 flex gap-1.5 mt-auto">
         <Link
           href={`/collection/${c.contractAddress}`}
-          className="flex-1 py-1.5 text-center text-xs font-mono border border-[#2a2a2a] text-[#888] hover:border-[#555] hover:text-[#efefef] transition-colors"
+          className="flex-1 py-2 text-center text-xs font-mono tracking-wider uppercase border border-[#2a2a2a] text-[#555] hover:border-[#555] hover:text-[#efefef] transition-colors"
         >
-          open
+          view collection
         </Link>
         {primaryAction ?? (
           <Link
             href={`/mint?collection=${c.contractAddress}&name=${encodeURIComponent(collectionName)}`}
-            className="flex-1 py-1.5 text-center text-xs font-mono border border-[#8B5CF6]/40 text-[#8B5CF6] hover:border-[#8B5CF6] hover:bg-[#8B5CF6]/10 transition-colors"
+            className="flex-1 py-2 text-center text-xs font-mono tracking-wider uppercase border border-[#2a2a2a] text-[#555] hover:bg-gradient-to-r hover:from-[#8B5CF6] hover:to-[#C084FC] hover:text-white hover:border-[#8B5CF6] transition-all"
           >
             collect all
           </Link>

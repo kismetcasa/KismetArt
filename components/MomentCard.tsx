@@ -17,7 +17,7 @@ import {
   type MomentDetail,
 } from '@/lib/inprocess'
 import { fetchCreatorProfile } from '@/lib/profileCache'
-import { useTextContent } from '@/lib/textCache'
+import { useTextContent, fetchTextContent } from '@/lib/textCache'
 import { getCachedComments, setCachedComments } from '@/lib/momentCache'
 import { useAdmin } from '@/contexts/AdminContext'
 import { ERC1155_ABI } from '@/lib/seaport'
@@ -100,6 +100,11 @@ export function MomentCard({ moment, hidePriceSupply, directLink }: MomentCardPr
       .catch(() => {})
   }
 
+  function prefetchTextContent() {
+    const uri = meta.content?.uri
+    if (isTextMoment && uri) fetchTextContent(uri).catch(() => {})
+  }
+
   function handleCopyLink() {
     navigator.clipboard.writeText(`${window.location.origin}/moment/${moment.address}/${moment.token_id}`).catch(() => {})
     setLinkCopied(true)
@@ -141,7 +146,7 @@ export function MomentCard({ moment, hidePriceSupply, directLink }: MomentCardPr
               setModalOpen(true)
             }
           }}
-          onMouseEnter={prefetchComments}
+          onMouseEnter={() => { prefetchComments(); prefetchTextContent() }}
           className="cursor-pointer relative aspect-square bg-[#111] overflow-hidden"
         >
           {isAdmin && (
@@ -216,14 +221,16 @@ export function MomentCard({ moment, hidePriceSupply, directLink }: MomentCardPr
                   ? <Check size={11} className="text-[#6ee7b7]" />
                   : <Copy size={11} />}
               </button>
-              <Link
-                href={`/moment/${moment.address}/${moment.token_id}`}
-                title="view page"
-                className="text-[#444] hover:text-[#888] transition-colors"
-                onClick={(e) => e.stopPropagation()}
-              >
-                <ExternalLink size={11} />
-              </Link>
+              {!directLink && (
+                <Link
+                  href={`/moment/${moment.address}/${moment.token_id}`}
+                  title="view page"
+                  className="text-[#444] hover:text-[#888] transition-colors"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <ExternalLink size={11} />
+                </Link>
+              )}
             </div>
           </div>
           <Link
