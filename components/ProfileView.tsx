@@ -570,20 +570,20 @@ export function ProfileView({ address }: ProfileViewProps) {
         <Link
           href="/permissions"
           role="alert"
-          className="border border-amber-700/50 bg-amber-950/30 hover:bg-amber-950/40 p-3 sm:p-4 flex items-center gap-3 transition-colors"
+          className="border border-[#8B5CF6]/40 bg-[#8B5CF6]/5 hover:bg-[#8B5CF6]/10 p-3 sm:p-4 flex items-center gap-3 transition-colors"
         >
-          <ShieldAlert size={14} className="text-amber-400 flex-shrink-0" />
+          <ShieldAlert size={14} className="text-[#8B5CF6] flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <p className="text-xs font-mono text-amber-200">
+            <p className="text-xs font-mono text-[#efefef]">
               {ownCollectionsMissingAdmin === 1
                 ? '1 of your collections needs authorize'
                 : `${ownCollectionsMissingAdmin} of your collections need authorize`}
             </p>
-            <p className="text-[11px] font-mono text-amber-200/70 mt-0.5">
+            <p className="text-[11px] font-mono text-[#888] mt-0.5">
               Tap to review and grant Kismet ADMIN — one onchain transaction per collection.
             </p>
           </div>
-          <span className="text-amber-300 font-mono text-xs flex-shrink-0" aria-hidden>
+          <span className="text-[#8B5CF6] font-mono text-xs flex-shrink-0" aria-hidden>
             →
           </span>
         </Link>

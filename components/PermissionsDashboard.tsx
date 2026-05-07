@@ -206,15 +206,15 @@ export function PermissionsDashboard() {
       ) : (
         <>
           {missingCount > 0 && (
-            <div className="border border-amber-700/50 bg-amber-950/30 p-3 sm:p-4 flex items-start gap-2.5">
-              <ShieldAlert size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="border border-[#8B5CF6]/40 bg-[#8B5CF6]/5 p-3 sm:p-4 flex items-start gap-2.5">
+              <ShieldAlert size={14} className="text-[#8B5CF6] flex-shrink-0 mt-0.5" />
               <div className="min-w-0 flex-1">
-                <p className="text-xs font-mono text-amber-200">
+                <p className="text-xs font-mono text-[#efefef]">
                   {missingCount === 1
                     ? '1 collection needs authorize'
                     : `${missingCount} collections need authorize`}
                 </p>
-                <p className="text-[11px] font-mono text-amber-200/70 mt-1">
+                <p className="text-[11px] font-mono text-[#888] mt-1">
                   Click any row marked ⚠️ below to grant Kismet ADMIN with a single onchain transaction.
                 </p>
               </div>
@@ -273,7 +273,7 @@ function PermissionRow({
 
   const containerClass =
     status === 'needs-auth'
-      ? 'border-amber-700/50 bg-amber-950/20 hover:bg-amber-950/30'
+      ? 'border-[#8B5CF6]/40 bg-[#8B5CF6]/5 hover:bg-[#8B5CF6]/10'
       : 'border-[#2a2a2a] bg-[#161616] hover:bg-[#1a1a1a]'
 
   const RowInner = (
@@ -340,9 +340,9 @@ function StatusBadge({
     )
   }
   return (
-    <div className="flex items-center gap-1.5 px-2 py-1 border border-amber-600 bg-amber-900/30 flex-shrink-0">
-      <ShieldAlert size={11} className="text-amber-300" />
-      <span className="text-[10px] font-mono text-amber-200 uppercase tracking-wider">
+    <div className="flex items-center gap-1.5 px-2 py-1 border border-[#8B5CF6]/60 bg-[#8B5CF6]/10 flex-shrink-0">
+      <ShieldAlert size={11} className="text-[#8B5CF6]" />
+      <span className="text-[10px] font-mono text-[#efefef] uppercase tracking-wider">
         authorize
       </span>
     </div>

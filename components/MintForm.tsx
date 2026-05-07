@@ -756,19 +756,19 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
             user would only see the transient post-mint toast. Routes
             to the collection page's existing Authorize banner. */}
         {autoDeployNeedsAuth && (
-          <div className="text-left p-3 sm:p-4 border border-amber-700/50 bg-amber-950/30 flex items-start gap-2.5">
-            <ShieldAlert size={14} className="text-amber-400 flex-shrink-0 mt-0.5" />
+          <div className="text-left p-3 sm:p-4 border border-[#8B5CF6]/40 bg-[#8B5CF6]/5 flex items-start gap-2.5">
+            <ShieldAlert size={14} className="text-[#8B5CF6] flex-shrink-0 mt-0.5" />
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-mono text-amber-200">
+              <p className="text-xs font-mono text-[#efefef]">
                 Authorize for follow-up mints
               </p>
-              <p className="text-[11px] font-mono text-amber-200/70 mt-1">
+              <p className="text-[11px] font-mono text-[#888] mt-1">
                 Your moment is on chain. To mint more into this collection, grant Kismet ADMIN — one onchain tx from your wallet.
               </p>
               <button
                 type="button"
                 onClick={() => router.push(`/collection/${autoDeployNeedsAuth}`)}
-                className="mt-2.5 text-[10px] font-mono uppercase tracking-wider px-3 py-1.5 border border-amber-600 text-amber-100 hover:border-amber-400 hover:bg-amber-900/40 transition-colors"
+                className="mt-2.5 text-[10px] font-mono uppercase tracking-wider px-4 py-2 btn-accent"
               >
                 authorize →
               </button>
@@ -986,7 +986,7 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
                 identify the specific ones. */}
             {collectionsMissingAdmin > 0 && (
               <span
-                className="w-2 h-2 bg-amber-400 rounded-full flex-shrink-0"
+                className="w-2 h-2 bg-[#8B5CF6] rounded-full flex-shrink-0"
                 title={
                   collectionsMissingAdmin === 1
                     ? '1 of your collections needs authorize before minting'
@@ -1016,15 +1016,15 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
                 still works — the banner above the form will then
                 surface the Authorize CTA. */}
             {collectionsMissingAdmin > 0 && (
-              <div className="px-3 py-2 border-b border-[#2a2a2a] bg-amber-950/30 flex items-start gap-2">
-                <ShieldAlert size={12} className="text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="px-3 py-2 border-b border-[#2a2a2a] bg-[#8B5CF6]/5 flex items-start gap-2">
+                <ShieldAlert size={12} className="text-[#8B5CF6] flex-shrink-0 mt-0.5" />
                 <div className="min-w-0">
-                  <p className="text-[11px] font-mono text-amber-200">
+                  <p className="text-[11px] font-mono text-[#efefef]">
                     {collectionsMissingAdmin === 1
                       ? '1 collection needs authorize'
                       : `${collectionsMissingAdmin} collections need authorize`}
                   </p>
-                  <p className="text-[10px] font-mono text-amber-200/60 mt-0.5">
+                  <p className="text-[10px] font-mono text-[#888] mt-0.5">
                     Pick one to see the authorize CTA. One-time onchain grant from your wallet.
                   </p>
                 </div>
@@ -1107,10 +1107,10 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
                       )}
                       {needsAuth && (
                         <div
-                          className="absolute top-1 right-1 w-5 h-5 bg-amber-500/95 border border-amber-300 flex items-center justify-center"
+                          className="absolute top-1 right-1 w-5 h-5 bg-[#8B5CF6]/95 border border-[#8B5CF6]/50 flex items-center justify-center"
                           aria-label="Needs authorize"
                         >
-                          <ShieldAlert size={11} className="text-amber-950" />
+                          <ShieldAlert size={11} className="text-[#efefef]" />
                         </div>
                       )}
                       <div className="absolute inset-x-0 bottom-0 bg-black/70 px-1.5 py-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
