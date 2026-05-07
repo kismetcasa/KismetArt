@@ -106,15 +106,34 @@ export function CollectionView({
     !!defaultAdminAddress &&
     connectedAddress.toLowerCase() === defaultAdminAddress.toLowerCase()
 
+  // The Authorize banner used to render only for the displayed creator
+  // (the address inprocess returns as defaultAdmin). That misses a real
+  // case: when a platform operator deployed a collection on an artist's
+  // behalf, the operator stayed as on-chain admin while the artist is
+  // shown as the creator. The chain enforces that only the actual admin
+  // can call addPermission, so we read the connected viewer's own
+  // permissions and let any wallet with on-chain ADMIN trigger the
+  // grant — not just the displayed creator. The grantee is still
+  // resolved from defaultAdminAddress (we authorize the artist's smart
+  // wallet, regardless of who's signing the tx).
+  const { data: viewerPerms } = useReadContract({
+    address: address as `0x${string}`,
+    abi: COLLECTION_ABI,
+    functionName: 'permissions',
+    args: connectedAddress ? [0n, connectedAddress as `0x${string}`] : undefined,
+    query: { enabled: !!connectedAddress },
+  })
+  const viewerHasAdmin =
+    viewerPerms !== undefined && hasAdminBit(viewerPerms as bigint)
+  const canGrantHere = isCreator || viewerHasAdmin
+
   // Retroactive authorize flow — for collections deployed before we
-  // started granting the creator's inprocess smart wallet ADMIN as a
-  // setupAction. Without that grant, every /api/mint into the collection
-  // reverts at gas estimation. The creator can grant it after the fact
-  // with a single addPermission call from their own wallet (they hold
-  // ADMIN already as defaultAdmin). The smart wallet on inprocess is
-  // per-EOA, so we look up the smart wallet bound to *this collection's
-  // creator* (defaultAdminAddress); when the connected viewer is the
-  // creator, that's the wallet they're authorizing on the collection.
+  // started granting the artist's inprocess smart wallet ADMIN as a
+  // setupAction. The smart wallet on inprocess is per-EOA, so we look
+  // up the wallet bound to *this collection's creator*
+  // (defaultAdminAddress) — that's the wallet whose ADMIN status the
+  // banner is gating on, and that's the grantee on the addPermission
+  // tx fired from canGrantHere viewers.
   const { address: inprocessSmartWallet } = useInprocessSmartWallet(
     defaultAdminAddress,
   )
@@ -127,11 +146,11 @@ export function CollectionView({
     args: inprocessConfigured
       ? [0n, inprocessSmartWallet as `0x${string}`]
       : undefined,
-    query: { enabled: inprocessConfigured && isCreator },
+    query: { enabled: inprocessConfigured && canGrantHere },
   })
   const inprocessIsAdmin =
     inprocessPerms !== undefined && hasAdminBit(inprocessPerms as bigint)
-  const showAuthorize = isCreator && inprocessConfigured && inprocessPerms !== undefined && !inprocessIsAdmin
+  const showAuthorize = canGrantHere && inprocessConfigured && inprocessPerms !== undefined && !inprocessIsAdmin
 
   // Centralized addPermission flow — same hook AirdropForm uses. Banner
   // grants the smart wallet ADMIN at tokenId 0 (collection-wide) since
@@ -430,10 +449,11 @@ export function CollectionView({
         </div>
       </div>
 
-      {/* Authorize banner — surfaces when the creator's collection
-          predates the inprocess-admin grant we now bake into deploy.
-          One click, one tx, and minting works end-to-end. Only renders
-          for the creator + only when the grant is actually missing. */}
+      {/* Authorize banner — surfaces when a collection predates the
+          inprocess-admin grant we now bake into deploy. Renders for
+          any wallet with on-chain ADMIN (creator OR a platform
+          operator who deployed on the artist's behalf), only when
+          the grant is actually missing. */}
       {showAuthorize && (
         <div className="mb-8 p-3 sm:p-4 border border-[#8B5CF6]/40 bg-[#8B5CF6]/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-start gap-2.5">
@@ -458,12 +478,12 @@ export function CollectionView({
       )}
 
       {/* Authorize minters — post-deploy MINTER grants for this
-          collection. Visible only to the creator (defaultAdmin can
-          grant collection-wide MINTER). The grant is at tokenId 0 so
-          the address can mint copies of any token in the collection,
+          collection. Visible to anyone with on-chain ADMIN (chain
+          enforces the same gate on addPermission). The grant is at
+          tokenId 0 so the address can mint copies of any token,
           present and future. ADMIN bit is reserved for the inprocess
           smart wallet (handled by the banner above). */}
-      {isCreator && (
+      {canGrantHere && (
         <div className="mb-8 p-3 sm:p-4 border border-[#2a2a2a] bg-[#0d0d0d]">
           <div className="flex items-center gap-1.5 mb-2">
             <ShieldCheck size={12} className="text-[#888]" />
