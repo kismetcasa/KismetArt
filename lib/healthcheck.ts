@@ -38,6 +38,11 @@ export async function assertPlatformCollectionAuthorized(): Promise<void> {
     // documented in .env.example.
     return
   }
+  // Both env-validation paths log an error and skip rather than throw:
+  // a typo in either var is a CONFIG mistake, not a permission mistake,
+  // and we want the operator to see a clear log entry on startup rather
+  // than crash the runtime over what's recoverable with an env fix.
+  // The site stays up; the problem is observable in Vercel function logs.
   if (!isAddress(operator)) {
     console.error(
       `[healthcheck] OPERATOR_SMART_WALLET=${operator} is not a valid address — skipping check`,
@@ -61,16 +66,32 @@ export async function assertPlatformCollectionAuthorized(): Promise<void> {
       operator as Address,
     )
   } catch (err) {
-    // RPC failure ≠ permission failure. Log and continue rather than
-    // refuse to boot for a transient network issue (paid RPC outage,
-    // DNS hiccup). The check will run again on next cold start.
+    // readPermissions retries 4× internally with backoff before
+    // throwing. A throw at this point means BOTH:
+    //   (a) every retry failed (transient network / RPC outage) — OR
+    //   (b) the contract returned a non-bigint (typeof guard added in
+    //       lib/permissions.ts), which is structural ("contract at this
+    //       address is wrong"), not transient.
+    //
+    // Distinguishing those two from out here requires per-error
+    // typing the readPermissions layer doesn't currently expose, so we
+    // log loudly and skip — instrumentation.ts already swallows any
+    // throw we'd raise, so even if we threw, the user-visible
+    // signal would be the same (logs only). Keeping this as
+    // "log + return" makes the lifecycle predictable.
     console.error(
-      `[healthcheck] could not read permissions on ${PLATFORM_COLLECTION} — skipping`,
+      `[healthcheck] could not read permissions on ${PLATFORM_COLLECTION} after retries — Kismet Casa mints may revert. Investigate logs.`,
       err instanceof Error ? err.message : String(err),
     )
     return
   }
   if (!hasAdminBit(perms)) {
+    // Definitive: the read succeeded and ADMIN bit IS missing. This is
+    // a real misconfig (the operator wallet isn't admin where it
+    // should be) and warrants the loudest possible signal. We throw
+    // up to instrumentation.ts which catches and logs — keeps the
+    // site serving but emits the alarm. To hard-fail at this point,
+    // wire a separate build-time check or a deploy-pipeline smoke test.
     throw new Error(
       `STARTUP HEALTHCHECK FAILED: OPERATOR_SMART_WALLET=${operator} ` +
         `does not have ADMIN (bit 2) on PLATFORM_COLLECTION=${PLATFORM_COLLECTION}. ` +
@@ -78,7 +99,7 @@ export async function assertPlatformCollectionAuthorized(): Promise<void> {
         `Kismet Casa mints will revert. Either grant ADMIN on chain ` +
         `(addPermission(0, ${operator}, 2) from an admin EOA) or update ` +
         `NEXT_PUBLIC_PLATFORM_COLLECTION to a collection where this wallet ` +
-        `is admin. Refusing to start.`,
+        `is admin.`,
     )
   }
   console.log(

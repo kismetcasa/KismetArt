@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { type Address, verifyMessage } from 'viem'
 import { isAddress } from '@/lib/address'
-import { INPROCESS_API } from '@/lib/inprocess'
 import { redis } from '@/lib/redis'
 import { getCollectionMeta, getTrackedCollections } from '@/lib/kv'
 import { PLATFORM_COLLECTION } from '@/lib/config'
 import { hasAdminBit, readPermissions } from '@/lib/permissions'
+import { resolveSmartWallet } from '@/lib/resolveSmartWallet'
 import { serverBaseClient } from '@/lib/rpc'
 
 // Mirrors the admin-session pattern used by app/api/featured/route.ts —
@@ -99,28 +99,15 @@ async function auditOne(
     return entry
   }
 
-  // Resolve the artist's inprocess smart wallet. Same endpoint pattern
-  // as lib/smartWalletPreflight.ts:87-95 — keep them in lockstep so a
-  // change to the upstream API surface only needs one update.
-  let smartWallet: string | null = null
-  try {
-    const url = new URL(`${INPROCESS_API}/smartwallet`)
-    url.searchParams.set('artist_wallet', artist)
-    const res = await fetch(url.toString(), {
-      headers: { Accept: 'application/json' },
-      // Caches under Next's data cache; smart-wallet → artist mapping
-      // is stable so an hour is plenty.
-      next: { revalidate: 3600 },
-    })
-    if (res.ok) {
-      const data = (await res.json()) as { address?: string }
-      if (data.address && isAddress(data.address)) {
-        smartWallet = data.address
-      }
-    }
-  } catch {
-    // fall through to the !smartWallet branch
-  }
+  // Resolve the artist's inprocess smart wallet via the shared helper.
+  // resolveSmartWallet centralizes the defensive shape parsing
+  // (`address`/`smartWallet`/`smart_wallet`/`smartAccount` + raw
+  // string), so this endpoint and the local proxy at
+  // /api/inprocess/smart-wallet can never drift on which response
+  // shapes they accept. Returns null on any failure (network,
+  // non-200, unparseable). Caches under Next's data cache for 1h
+  // (smart-wallet → artist mapping is effectively immutable).
+  const smartWallet = await resolveSmartWallet(artist)
 
   if (!smartWallet) {
     const entry: CollectionPermsCacheEntry = {
@@ -189,8 +176,20 @@ export async function GET() {
   for (let i = 0; i < addresses.length; i++) {
     const raw = raws[i]
     if (!raw) continue
-    const entry = typeof raw === 'string' ? (JSON.parse(raw) as CollectionPermsCacheEntry) : raw
-    results.push(entry)
+    // Guard JSON.parse per entry: a single corrupt cache entry
+    // (Upstash partial write, manual surgery, schema drift) shouldn't
+    // 500 the whole response and hide every other collection's status.
+    // Log + skip the bad entry instead.
+    try {
+      const entry =
+        typeof raw === 'string' ? (JSON.parse(raw) as CollectionPermsCacheEntry) : raw
+      results.push(entry)
+    } catch (err) {
+      console.error('[permissions/audit GET] could not parse cache entry', {
+        address: addresses[i],
+        err: err instanceof Error ? err.message : String(err),
+      })
+    }
   }
   return NextResponse.json({ results })
 }

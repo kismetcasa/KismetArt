@@ -74,13 +74,27 @@ export async function readPermissions(
   let lastErr: unknown = null
   for (let attempt = 0; attempt < retries; attempt++) {
     try {
-      const perms = (await client.readContract({
+      const result = await client.readContract({
         address: collection,
         abi: COLLECTION_PERMISSIONS_ABI,
         functionName: 'permissions',
         args: [tokenId, user],
-      })) as bigint
-      return perms
+      })
+      // Runtime guard. The ABI declares uint256 → bigint, but if the
+      // contract was ever swapped at this address (proxy upgrade, wrong
+      // chain, malformed bytecode, ABI drift) viem might decode to a
+      // string or number instead. A silent unsafe cast would feed a
+      // non-bigint into hasAdminBit() and the bitwise AND would surface
+      // as falsy — we'd interpret a "broken read" as "missing ADMIN"
+      // and fire false-negative warnings everywhere. Throwing here
+      // forces the retry path (transient) or surfaces a clear error
+      // (definitive) instead.
+      if (typeof result !== 'bigint') {
+        throw new Error(
+          `permissions(${tokenId}, ${user}) on ${collection} returned non-bigint: ${typeof result}`,
+        )
+      }
+      return result
     } catch (err) {
       lastErr = err
     }
