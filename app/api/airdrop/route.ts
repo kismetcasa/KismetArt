@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createPublicClient, http, verifyMessage, type Address } from 'viem'
+import { verifyMessage, type Address } from 'viem'
 import { isAddress } from '@/lib/address'
-import { base } from 'viem/chains'
 import { INPROCESS_API } from '@/lib/inprocess'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
 import { consumeNonce } from '@/lib/profile'
 import { getMomentMeta, writeNotification } from '@/lib/notifications'
+import { serverBaseClient } from '@/lib/rpc'
 
 const PERMISSION_BIT_ADMIN = 2n
 
@@ -30,7 +30,7 @@ const COLLECTION_PERMISSIONS_ABI = [
  */
 async function isOnChainAdmin(collectionAddress: string, tokenId: string, caller: string): Promise<boolean> {
   try {
-    const client = createPublicClient({ chain: base, transport: http() })
+    const client = serverBaseClient()
     const tokenScopedPerms = (await client.readContract({
       address: collectionAddress as Address,
       abi: COLLECTION_PERMISSIONS_ABI,
