@@ -144,24 +144,24 @@ export function MomentCard({ moment, hidePriceSupply, directLink }: MomentCardPr
           onMouseEnter={prefetchComments}
           className="cursor-pointer relative aspect-square bg-[#111] overflow-hidden"
         >
-          {owned > 0 && (
-            <span className="absolute top-2 left-2 z-10 px-1.5 py-0.5 bg-[#0d0d0d]/80 border border-[#2a2a2a] text-[#efefef] font-mono text-[10px] leading-tight">
-              ×{owned}
-            </span>
-          )}
           {isAdmin && (
             <button
               onClick={(e) => {
                 e.stopPropagation()
                 toggleFeatured(moment.address, moment.token_id)
               }}
-              className={`absolute top-2 right-2 z-10 p-1 transition-colors ${
+              className={`absolute top-2 left-2 z-10 p-1 transition-colors ${
                 isFeatured ? 'text-yellow-400' : 'text-[#333] hover:text-[#888]'
               }`}
               title={isFeatured ? 'Unfeature' : 'Feature'}
             >
               <Star size={16} fill={isFeatured ? 'currentColor' : 'none'} strokeWidth={1.5} />
             </button>
+          )}
+          {owned > 0 && maxSupply !== null && (
+            <span className="absolute top-2 right-2 z-10 px-1.5 py-0.5 bg-[#0d0d0d]/80 border border-[#2a2a2a] text-[#efefef] font-mono text-[10px] leading-tight">
+              ×{owned}
+            </span>
           )}
           {isVideo && mediaUrl ? (
             <video

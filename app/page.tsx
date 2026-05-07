@@ -84,7 +84,7 @@ function TabBar({
             onDragEnd={draggable ? onDragEnd : undefined}
             onClick={() => onSelect(tab)}
             className={`
-              relative px-3 py-2 text-[11px] font-mono tracking-wider uppercase
+              relative px-4 py-2.5 text-xs font-mono tracking-wider uppercase
               transition-colors select-none
               ${isActive ? 'text-[#efefef]' : 'text-[#444] hover:text-[#888]'}
               ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}
@@ -370,7 +370,7 @@ function MainFeed() {
         <button
           key={id}
           onClick={() => setSubTab(id)}
-          className={`text-xs font-mono tracking-wider px-2.5 py-1 border transition-colors ${
+          className={`text-[10px] font-mono tracking-wider px-2 py-0.5 border transition-colors ${
             subTab === id
               ? 'border-[#555] text-[#efefef]'
               : 'border-[#2a2a2a] text-[#444] hover:text-[#888] hover:border-[#444]'
@@ -382,7 +382,7 @@ function MainFeed() {
       {address && (
         <button
           onClick={() => setFollowingOn((v) => !v)}
-          className={`text-xs font-mono tracking-wider px-2.5 py-1 border transition-colors ${
+          className={`text-[10px] font-mono tracking-wider px-2 py-0.5 border transition-colors ${
             followingOn
               ? 'border-[#555] text-[#efefef]'
               : 'border-[#2a2a2a] text-[#444] hover:text-[#888] hover:border-[#444]'
