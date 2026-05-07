@@ -20,6 +20,7 @@ import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { uploadJson } from '@/lib/arweave/uploadJson'
 import { ListButton } from './ListButton'
 import { ProfileAvatar } from './ProfileAvatar'
+import { CopyAddress } from './CopyAddress'
 import { useAdmin } from '@/contexts/AdminContext'
 import { toastError } from '@/lib/toast'
 
@@ -39,11 +40,14 @@ interface Props {
     animation_url?: string
     content?: { mime?: string; uri?: string }
   }
+  // Server-prefetched body for text moments — warms the module-level cache
+  // so the writing panel renders on first paint without a client fetch.
+  initialTextContent?: string
 }
 
 const TOP_COMMENTS = 3
 
-export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta }: Props) {
+export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta, initialTextContent }: Props) {
   const { address: connectedAddress, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { signMessageAsync } = useSignMessage()
@@ -56,13 +60,14 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     detail?.metadata?.content?.mime === 'text/plain'
       ? detail.metadata.content.uri
       : undefined
-  const textContent = useTextContent(textContentUri)
+  const textContent = useTextContent(textContentUri, initialTextContent)
   const [comments, setComments] = useState<MomentComment[]>(
     () => getCachedComments(address, tokenId) ?? []
   )
   const [commentsLoading, setCommentsLoading] = useState(
     () => getCachedComments(address, tokenId) === undefined
   )
+  const [commentSenderNames, setCommentSenderNames] = useState<Record<string, string>>({})
   const [showAllComments, setShowAllComments] = useState(false)
   const [commentText, setCommentText] = useState('')
   const [collected, setCollected] = useState(false)
@@ -100,7 +105,8 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     args: connectedAddress ? [connectedAddress, BigInt(tokenId)] : undefined,
     query: { enabled: !!connectedAddress },
   })
-  const alreadyOwned = ownedBalance ? Number(ownedBalance) > 0 : false
+  const ownedCount = ownedBalance ? Number(ownedBalance) : 0
+  const alreadyOwned = ownedCount > 0
 
   // Total mints = collect count for this token. Authoritative count comes
   // from on-chain totalSupply (Zora 1155 maintains it per token id), which
@@ -190,6 +196,22 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   }, [address, tokenId])
 
   useEffect(() => { fetchComments() }, [fetchComments])
+
+  // Batch-resolve comment sender display names via shared profile cache
+  useEffect(() => {
+    if (comments.length === 0) return
+    let cancelled = false
+    const senders = Array.from(new Set(comments.map((c) => c.sender.toLowerCase())))
+    Promise.all(senders.map((a) => fetchCreatorProfile(a))).then((profiles) => {
+      if (cancelled) return
+      setCommentSenderNames((prev) => {
+        const next = { ...prev }
+        for (let i = 0; i < senders.length; i++) next[senders[i]] = profiles[i].name
+        return next
+      })
+    })
+    return () => { cancelled = true }
+  }, [comments])
 
   useEffect(() => {
     if (!address) return
@@ -490,7 +512,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     <div className="max-w-6xl mx-auto pb-16">
 
       {/* Back nav */}
-      <div className="px-4 py-3 border-b border-[#2a2a2a] flex items-center justify-between">
+      <div className="px-4 py-3 border-b border-[#2a2a2a]">
         <Link
           href="/"
           className="inline-flex items-center gap-1.5 text-xs font-mono text-[#555] hover:text-[#888] transition-colors"
@@ -498,11 +520,6 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
           <ArrowLeft size={12} />
           back
         </Link>
-        {totalMinted !== undefined && (
-          <p className="text-[10px] font-mono text-[#555] uppercase tracking-widest">
-            total collected: {Number(totalMinted).toLocaleString()}
-          </p>
-        )}
       </div>
 
       {/* Creator-only banner so the creator knows their moment is hidden */}
@@ -711,17 +728,20 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                 </div>
               </div>
             )}
-            <Link
-              href={creatorAddress ? `/profile/${creatorAddress}` : '#'}
-              className="flex items-center gap-2 group w-fit"
-            >
-              {creatorAddress && (
-                <ProfileAvatar address={creatorAddress} avatarUrl={creatorAvatar} size={22} />
-              )}
-              <span className="text-xs font-mono text-[#555] group-hover:text-[#888] transition-colors">
-                {creatorName || shortAddress(creatorAddress)}
-              </span>
-            </Link>
+            <div className="flex items-center gap-1.5">
+              <Link
+                href={creatorAddress ? `/profile/${creatorAddress}` : '#'}
+                className="flex items-center gap-2 group"
+              >
+                {creatorAddress && (
+                  <ProfileAvatar address={creatorAddress} avatarUrl={creatorAvatar} size={22} />
+                )}
+                <span className="text-xs font-mono text-[#555] group-hover:text-[#888] transition-colors">
+                  {creatorName || shortAddress(creatorAddress)}
+                </span>
+              </Link>
+              {creatorAddress && <CopyAddress address={creatorAddress} size={11} />}
+            </div>
             {collectionName && (
               <Link
                 href={`/collection/${address}`}
@@ -771,7 +791,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                       href={`/profile/${c.sender}`}
                       className="text-[11px] font-mono text-[#555] flex-shrink-0 hover:text-[#888] transition-colors"
                     >
-                      {shortAddress(c.sender)}
+                      {commentSenderNames[c.sender.toLowerCase()] ?? shortAddress(c.sender)}
                     </Link>
                     <span className="text-xs font-mono text-[#888] flex-1 break-words leading-relaxed">
                       {c.comment}
@@ -835,6 +855,22 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                 >
                   distributed: {distributeHash.slice(0, 10)}…{distributeHash.slice(-8)}
                 </a>
+              )}
+            </div>
+          )}
+
+          {/* Total mints + owned count — subtle, above action row */}
+          {(totalMinted !== undefined || ownedCount > 0) && (
+            <div className="px-5 pb-1 flex items-center gap-3">
+              {totalMinted !== undefined && (
+                <p className="text-[10px] font-mono text-[#444] uppercase tracking-widest">
+                  {Number(totalMinted).toLocaleString()} collected
+                </p>
+              )}
+              {ownedCount > 0 && (
+                <p className="text-[10px] font-mono text-[#555] uppercase tracking-widest">
+                  ×{ownedCount} owned
+                </p>
               )}
             </div>
           )}
