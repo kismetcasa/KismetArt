@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
@@ -64,6 +65,7 @@ interface MintFormProps {
 }
 
 export function MintForm({ collectionAddress }: MintFormProps = {}) {
+  const router = useRouter()
   const targetCollection = collectionAddress ?? PLATFORM_COLLECTION
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
@@ -92,6 +94,33 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
     setMintMode(mode)
     if (mode === 'text') clearFile()
     else setTextContent('')
+  }
+
+  // Detects the userOp-revert phrasing that comes back when minting into a
+  // collection where inprocess's smart account isn't yet ADMIN. If matched,
+  // shows an actionable toast (with a button that takes the user straight
+  // to the collection page where they can click "Authorize") and resets
+  // the form state. Returns true when handled — caller should bail out
+  // without throwing so the generic toastError path doesn't fire.
+  function maybeHandleAuthError(raw: string): boolean {
+    if (
+      !collectionAddress ||
+      !/useroperation reverted|user operation reverted|execution reverted/i.test(raw)
+    ) {
+      return false
+    }
+    toast.error('Authorization required', {
+      id: 'mint',
+      description:
+        "This collection hasn't authorized Kismet for minting. One-time onchain grant from your wallet.",
+      action: {
+        label: 'Authorize',
+        onClick: () => router.push(`/collection/${collectionAddress}`),
+      },
+    })
+    setStep('idle')
+    setUploadProgress(0)
+    return true
   }
 
   function addSplit() {
@@ -280,19 +309,10 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
             ? ': ' + data.errors.map((e: { field?: string; message?: string }) => `${e.field ?? ''} ${e.message ?? ''}`.trim()).join(', ')
             : ''
           const raw = (data.detail ?? data.error ?? data.message ?? 'Mint failed') + errors
-          // Inprocess submits the mint via an ERC-4337 smart account; if
-          // that account doesn't hold ADMIN on the target collection,
-          // setupNewToken reverts at gas estimation with this exact
-          // phrasing. The fix is a one-time addPermission tx the creator
-          // can do from the collection page. Point the user there.
-          if (
-            collectionAddress &&
-            /useroperation reverted|user operation reverted|execution reverted/i.test(raw)
-          ) {
-            throw new Error(
-              `This collection hasn't authorized Kismet for minting yet. Open the collection page (/collection/${collectionAddress}) and click "Authorize" — it's a one-time onchain grant from your wallet.`,
-            )
-          }
+          // The userOp-revert path replaces the toast with an actionable
+          // one (button → collection's authorize banner) and bails out;
+          // anything else falls through to the generic toastError below.
+          if (maybeHandleAuthError(raw)) return
           throw new Error(raw)
         }
         if (!data.tokenId) throw new Error('Mint succeeded but no tokenId returned')
@@ -352,19 +372,10 @@ export function MintForm({ collectionAddress }: MintFormProps = {}) {
             ? ': ' + data.errors.map((e: { field?: string; message?: string }) => `${e.field ?? ''} ${e.message ?? ''}`.trim()).join(', ')
             : ''
           const raw = (data.detail ?? data.error ?? data.message ?? 'Mint failed') + errors
-          // Inprocess submits the mint via an ERC-4337 smart account; if
-          // that account doesn't hold ADMIN on the target collection,
-          // setupNewToken reverts at gas estimation with this exact
-          // phrasing. The fix is a one-time addPermission tx the creator
-          // can do from the collection page. Point the user there.
-          if (
-            collectionAddress &&
-            /useroperation reverted|user operation reverted|execution reverted/i.test(raw)
-          ) {
-            throw new Error(
-              `This collection hasn't authorized Kismet for minting yet. Open the collection page (/collection/${collectionAddress}) and click "Authorize" — it's a one-time onchain grant from your wallet.`,
-            )
-          }
+          // The userOp-revert path replaces the toast with an actionable
+          // one (button → collection's authorize banner) and bails out;
+          // anything else falls through to the generic toastError below.
+          if (maybeHandleAuthError(raw)) return
           throw new Error(raw)
         }
         if (!data.tokenId) throw new Error('Mint succeeded but no tokenId returned')

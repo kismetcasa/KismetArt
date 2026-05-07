@@ -127,7 +127,7 @@ export function CollectionView({
   })
   const inprocessIsAdmin =
     inprocessPerms !== undefined &&
-    (BigInt(inprocessPerms as bigint) & PERMISSION_BIT_ADMIN) === PERMISSION_BIT_ADMIN
+    ((inprocessPerms as bigint) & PERMISSION_BIT_ADMIN) === PERMISSION_BIT_ADMIN
   const showAuthorize = isCreator && inprocessConfigured && inprocessPerms !== undefined && !inprocessIsAdmin
 
   const ensureBase = useEnsureBase()
