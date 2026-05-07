@@ -614,9 +614,23 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
         )}
       </div>
 
-      {/* Collections picker — sits below the media/text upload so the visual
-          hierarchy puts content first, container second. Optional; if the user
-          doesn't pick one, the platform default is used implicitly. */}
+      {/* Title */}
+      <div>
+        <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
+          Title <span className="text-[#efefef]">*</span>
+        </label>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="untitled"
+          required
+          className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+        />
+      </div>
+
+      {/* Collections picker — optional; if the user doesn't pick one, the
+          platform default is used implicitly. */}
       <div>
         <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
           Collections
@@ -670,7 +684,7 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
                 {loadingCollections
                   ? 'loading…'
                   : isConnected
-                    ? 'no collections deployed yet — your moment will mint to the platform feed'
+                    ? 'no collections created'
                     : 'connect a wallet to see your collections'}
               </p>
             ) : (
@@ -717,21 +731,6 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
             )}
           </div>
         )}
-      </div>
-
-      {/* Title */}
-      <div>
-        <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
-          Title <span className="text-[#efefef]">*</span>
-        </label>
-        <input
-          type="text"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="untitled"
-          required
-          className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
-        />
       </div>
 
       {/* Description — only meaningful for media moments (goes into Arweave
