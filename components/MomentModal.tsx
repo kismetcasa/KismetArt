@@ -480,20 +480,22 @@ export function MomentModal({
 
           {/* Action row: [price|supply] [list] [collect] */}
           <div className="px-5 pb-2 flex gap-2 items-stretch">
-            <div className="flex border border-[#2a2a2a] flex-none">
-              <div className="px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
-                <span className="text-[11px] font-mono accent-grad">{price ?? '…'}</span>
+            {!(alreadyOwned || collected) && (
+              <div className="flex border border-[#2a2a2a] flex-none">
+                <div className="px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
+                  <span className="text-[11px] font-mono accent-grad">{price ?? '…'}</span>
+                </div>
+                <div className="border-l border-[#2a2a2a] px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
+                  <span className="text-[11px] font-mono text-[#444]">
+                    {displayMaxSupply === undefined
+                      ? '…'
+                      : displayMaxSupply === null || displayMaxSupply === 0
+                        ? 'open'
+                        : displayMaxSupply.toLocaleString()}
+                  </span>
+                </div>
               </div>
-              <div className="border-l border-[#2a2a2a] px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
-                <span className="text-[11px] font-mono text-[#444]">
-                  {displayMaxSupply === undefined
-                    ? '…'
-                    : displayMaxSupply === null || displayMaxSupply === 0
-                      ? 'open'
-                      : displayMaxSupply.toLocaleString()}
-                </span>
-              </div>
-            </div>
+            )}
             {alreadyOwned && (
               <div className="flex-1 min-w-0">
                 <ListButton
@@ -506,7 +508,6 @@ export function MomentModal({
                   contentMime={meta.content?.mime}
                   buttonClassName="h-full"
                   ethOnly
-                  narrowInput
                 />
               </div>
             )}

@@ -228,7 +228,7 @@ export function MomentCard({ moment, hidePriceSupply }: MomentCardProps) {
 
         {/* Actions row: [price|supply] [list] [collect] */}
         <div className="px-4 pb-4 flex gap-2 items-stretch">
-          {!hidePriceSupply && (
+          {!hidePriceSupply && owned === 0 && !collected && (
             <div className="flex border border-[#2a2a2a] flex-none">
               <div className="px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
                 <span className="text-[11px] font-mono accent-grad">{price ?? '…'}</span>
@@ -251,7 +251,6 @@ export function MomentCard({ moment, hidePriceSupply }: MomentCardProps) {
                 contentUri={meta.content?.uri}
                 contentMime={meta.content?.mime}
                 ethOnly
-                narrowInput
               />
             </div>
           )}
