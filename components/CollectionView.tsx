@@ -109,13 +109,17 @@ export function CollectionView({
     connectedAddress.toLowerCase() === defaultAdminAddress.toLowerCase()
 
   // Retroactive authorize flow — for collections deployed before we
-  // started granting inprocess's smart wallet ADMIN as a setupAction.
-  // Without that grant, every /api/mint into the collection reverts at
-  // gas estimation. The creator can grant it after the fact with a
-  // single addPermission call from their own wallet (they hold ADMIN
-  // already as defaultAdmin). The smart wallet address comes from the
-  // inprocess /api/smartwallet endpoint (proxied + cached client-side).
-  const { address: inprocessSmartWallet } = useInprocessSmartWallet()
+  // started granting the creator's inprocess smart wallet ADMIN as a
+  // setupAction. Without that grant, every /api/mint into the collection
+  // reverts at gas estimation. The creator can grant it after the fact
+  // with a single addPermission call from their own wallet (they hold
+  // ADMIN already as defaultAdmin). The smart wallet on inprocess is
+  // per-EOA, so we look up the smart wallet bound to *this collection's
+  // creator* (defaultAdminAddress); when the connected viewer is the
+  // creator, that's the wallet they're authorizing on the collection.
+  const { address: inprocessSmartWallet } = useInprocessSmartWallet(
+    defaultAdminAddress,
+  )
   const inprocessConfigured =
     !!inprocessSmartWallet && isAddress(inprocessSmartWallet)
   const { data: inprocessPerms, refetch: refetchInprocessPerms } = useReadContract({

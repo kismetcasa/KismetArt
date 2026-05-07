@@ -2,66 +2,85 @@
 
 import { useEffect, useState } from 'react'
 
-// Module-level cache: the inprocess smart-wallet address is per-API-key
-// and effectively immutable, so once we've resolved it we hold it for
-// the lifetime of the tab. The shared in-flight Promise ensures that
-// concurrent callers (e.g. CreateCollectionForm on /mint and
-// CollectionView on /collection/X opened in adjacent tabs of the same
-// app shell) coalesce onto a single fetch.
-let cached: string | null | undefined = undefined
-let inFlight: Promise<string | null> | null = null
+// Per-artist module-level cache: each EOA on inprocess has its own
+// smart-wallet address, so the cache key is the lowercase artist EOA.
+// Two adjacent surfaces (e.g. CollectionView + CreateCollectionForm) for
+// the same artist coalesce on a single in-flight fetch via `inFlight`.
+const cache = new Map<string, string | null>()
+const inFlight = new Map<string, Promise<string | null>>()
 
-async function load(): Promise<string | null> {
-  if (cached !== undefined) return cached
-  if (inFlight) return inFlight
-  inFlight = (async () => {
+async function load(artistWallet: string): Promise<string | null> {
+  const key = artistWallet.toLowerCase()
+  if (cache.has(key)) return cache.get(key) ?? null
+  const existing = inFlight.get(key)
+  if (existing) return existing
+  const promise = (async () => {
     try {
-      const res = await fetch('/api/inprocess/smart-wallet')
+      const res = await fetch(
+        `/api/inprocess/smart-wallet?artist_wallet=${encodeURIComponent(key)}`,
+      )
       if (!res.ok) {
-        cached = null
+        cache.set(key, null)
         return null
       }
       const data = (await res.json()) as { address?: string }
-      cached = typeof data?.address === 'string' ? data.address : null
-      return cached
+      const addr = typeof data?.address === 'string' ? data.address : null
+      cache.set(key, addr)
+      return addr
     } catch {
-      cached = null
+      cache.set(key, null)
       return null
     } finally {
-      inFlight = null
+      inFlight.delete(key)
     }
   })()
-  return inFlight
+  inFlight.set(key, promise)
+  return promise
 }
 
 /**
  * Imperative resolver — returns the cached value when available, else
- * triggers (or joins) the single in-flight fetch. Use this from inside
- * an async handler (e.g. `handleCreate`) when you need the address
- * exactly once at action time and want to await it.
+ * triggers (or joins) the single in-flight fetch for that artist. Use
+ * from inside an async handler when you need the address exactly once
+ * at action time and want to await it (e.g. CreateCollectionForm).
  */
-export async function fetchInprocessSmartWallet(): Promise<string | null> {
-  return load()
+export async function fetchInprocessSmartWallet(
+  artistWallet: string,
+): Promise<string | null> {
+  return load(artistWallet)
 }
 
 /**
- * Reactive hook — subscribes a component to the resolved value. Returns
- * `{ address: null, loading: true }` on first mount, then re-renders with
- * the cached address (or null on failure) once the fetch completes.
- * Subsequent mounts hit the cache and skip the fetch entirely.
+ * Reactive hook — subscribes a component to the resolved address for
+ * the given artist EOA. Returns `{ address: null, loading: true }`
+ * before the fetch lands, then re-renders with the cached value (or
+ * null on failure) once it does. Pass `undefined` when the artist
+ * isn't known yet (e.g. CollectionView before defaultAdminAddress
+ * loads); the hook returns idle state and skips the fetch.
  */
-export function useInprocessSmartWallet(): { address: string | null; loading: boolean } {
-  const [address, setAddress] = useState<string | null>(cached ?? null)
-  const [loading, setLoading] = useState<boolean>(cached === undefined)
+export function useInprocessSmartWallet(
+  artistWallet: string | undefined,
+): { address: string | null; loading: boolean } {
+  const key = artistWallet ? artistWallet.toLowerCase() : null
+  const [address, setAddress] = useState<string | null>(
+    key && cache.has(key) ? (cache.get(key) ?? null) : null,
+  )
+  const [loading, setLoading] = useState<boolean>(!!key && !cache.has(key))
 
   useEffect(() => {
-    if (cached !== undefined) {
-      setAddress(cached ?? null)
+    if (!key) {
+      setAddress(null)
+      setLoading(false)
+      return
+    }
+    if (cache.has(key)) {
+      setAddress(cache.get(key) ?? null)
       setLoading(false)
       return
     }
     let cancelled = false
-    load().then((a) => {
+    setLoading(true)
+    load(key).then((a) => {
       if (cancelled) return
       setAddress(a)
       setLoading(false)
@@ -69,7 +88,7 @@ export function useInprocessSmartWallet(): { address: string | null; loading: bo
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [key])
 
   return { address, loading }
 }

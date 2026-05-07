@@ -299,12 +299,12 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
       // ("useroperation reverted: execution reverted") because Zora 1155's
       // setupNewToken is gated on the ADMIN bit. ADMIN — not MINTER —
       // because setupNewToken specifically requires admin per Zora's
-      // PermissionsConstants. The smart wallet address is resolved
-      // dynamically from inprocess (cached for the tab); if the lookup
-      // fails — e.g. the API key isn't configured — we skip the grant
-      // and let the deploy proceed, since dev environments without an
-      // inprocess key still need a working deploy path.
-      const inprocessSmartWallet = await fetchInprocessSmartWallet()
+      // PermissionsConstants. The smart wallet is per-EOA on inprocess; we
+      // look up the smart wallet bound to *this user's* wallet (the deployer)
+      // so the user can mint into their own collection. If the lookup fails
+      // we skip the grant — dev environments without an inprocess key still
+      // need a working deploy path.
+      const inprocessSmartWallet = await fetchInprocessSmartWallet(address)
       const inprocessAdminAction =
         inprocessSmartWallet && isAddress(inprocessSmartWallet)
           ? [encodeAdminPermission(inprocessSmartWallet as `0x${string}`)]
