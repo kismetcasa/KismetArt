@@ -97,7 +97,7 @@ export function PermissionsDashboard() {
     }
   }, [address])
 
-  const { byAddress: perms, missingCount, loading: permsLoading } =
+  const { byAddress: perms, missingCount, loading: permsLoading, refetch: refetchPerms } =
     useCollectionsPermissions(collections.map((c) => c.address))
 
   if (!isConnected) {
@@ -138,15 +138,34 @@ export function PermissionsDashboard() {
             Could not resolve your inprocess smart wallet
           </p>
           <p className="text-[11px] font-mono text-[#888]">
-            Sign in to inprocess.world at least once with this address ({shortAddress(address!)}) so it can issue your smart wallet, then reload this page.
+            Sign in to inprocess.world at least once with this address ({address ? shortAddress(address) : ''}) so it can issue your smart wallet, then reload this page.
           </p>
         </div>
       )}
 
       {smartWallet && (
-        <div className="text-[10px] font-mono text-[#555] flex items-center gap-2">
-          <span>kismet operator wallet:</span>
-          <code className="text-[#888]">{shortAddress(smartWallet)}</code>
+        <div className="text-[10px] font-mono text-[#555] flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="flex-shrink-0">your inprocess smart wallet:</span>
+            <code className="text-[#888] truncate">{shortAddress(smartWallet)}</code>
+          </div>
+          {/* Global recheck — re-runs the batched permissions read so
+              rows that errored ("unknown" state) get another shot
+              after a transient RPC blip without forcing a full page
+              reload. Also useful right after the user authorized a
+              collection on /collection/<addr>: come back here, click
+              recheck, see the row flip from ⚠️ to ✅. */}
+          {collections.length > 0 && (
+            <button
+              type="button"
+              onClick={() => refetchPerms()}
+              disabled={permsLoading}
+              className="flex-shrink-0 px-2 py-1 border border-[#2a2a2a] text-[#888] hover:border-[#555] hover:text-[#efefef] disabled:opacity-50 disabled:cursor-not-allowed transition-colors uppercase tracking-wider"
+              title="Re-read permissions on chain"
+            >
+              {permsLoading ? 'rechecking…' : 'recheck'}
+            </button>
+          )}
         </div>
       )}
 

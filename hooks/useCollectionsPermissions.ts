@@ -94,7 +94,23 @@ export function useCollectionsPermissions(
       byAddress[addr] = { hasAdmin: null }
       continue
     }
-    const perms = result.result as bigint
+    // Runtime bigint guard — same rationale as readPermissions in
+    // lib/permissions.ts. The ABI declares uint256 → bigint, but a
+    // proxy upgrade / wrong chain / ABI drift could decode to a
+    // string or number, which would silently feed hasAdminBit() a
+    // non-bigint and surface as `false` (false-negative warnings).
+    // Treat a typeof mismatch as "unknown" rather than "missing
+    // ADMIN" — same shape as an RPC error.
+    const raw = result.result
+    if (typeof raw !== 'bigint') {
+      console.warn(
+        '[useCollectionsPermissions] non-bigint result from permissions read; treating as unknown',
+        { collection: addr, type: typeof raw },
+      )
+      byAddress[addr] = { hasAdmin: null }
+      continue
+    }
+    const perms = raw
     const hasAdmin = hasAdminBit(perms)
     byAddress[addr] = { hasAdmin, perms }
     if (!hasAdmin) missingCount += 1
