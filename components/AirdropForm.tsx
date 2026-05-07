@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { useAccount, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
@@ -16,6 +17,7 @@ interface AirdropFormProps {
 }
 
 export function AirdropForm({ moments, loadingMoments }: AirdropFormProps) {
+  const router = useRouter()
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { signMessageAsync } = useSignMessage()
@@ -82,6 +84,25 @@ export function AirdropForm({ moments, loadingMoments }: AirdropFormProps) {
             recipients: recipients.map((r) => ({ recipientAddress: r, tokenId: selected.token_id })),
           },
         })
+        // Mirrors MintForm.maybeHandleAuthError: when the artist's
+        // inprocess smart wallet lacks ADMIN on the collection,
+        // /api/airdrop returns { code: 'AUTHORIZE_REQUIRED' }. Route
+        // the user to the collection page where the existing
+        // Authorize banner (CollectionView) lets them grant ADMIN in
+        // one tx from their own wallet. Bail out early so the
+        // generic toastError below doesn't fire.
+        if (data.code === 'AUTHORIZE_REQUIRED') {
+          toast.error('Authorization required', {
+            id: 'airdrop',
+            description:
+              "This collection hasn't authorized Kismet for minting. One-time onchain grant from your wallet.",
+            action: {
+              label: 'Authorize',
+              onClick: () => router.push(`/collection/${selected.address}`),
+            },
+          })
+          return
+        }
         const errors = Array.isArray(data.errors)
           ? ': ' + data.errors.map((e: { field?: string; message?: string }) => `${e.field ?? ''} ${e.message ?? ''}`.trim()).join(', ')
           : ''
