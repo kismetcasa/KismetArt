@@ -17,7 +17,7 @@ import { useUploadSession } from '@/hooks/useUploadSession'
 import { useInprocessSmartWallet } from '@/hooks/useInprocessSmartWallet'
 import { useCollectionsPermissions } from '@/hooks/useCollectionsPermissions'
 import { PLATFORM_COLLECTION, CREATE_REFERRAL, RESIDENCIES_ADDRESS } from '@/lib/config'
-import { COLLECTION_ABI, PERMISSION_BIT_ADMIN } from '@/lib/collections'
+import { COLLECTION_ABI } from '@/lib/collections'
 import { hasAdminBit, readPermissions } from '@/lib/permissions'
 import { USDC_BASE } from '@/lib/zoraMint'
 import { toastError } from '@/lib/toast'
@@ -245,7 +245,7 @@ export function MintForm({ collectionAddress, collectionName }: MintFormProps = 
     !isAutoDeploy &&
     !!smartWalletForCaller &&
     smartWalletPerms !== undefined &&
-    ((smartWalletPerms as bigint) & PERMISSION_BIT_ADMIN) !== PERMISSION_BIT_ADMIN
+    !hasAdminBit(smartWalletPerms as bigint)
 
   const [mintMode, setMintMode] = useState<MintMode>('media')
   const [file, setFile] = useState<File | null>(null)

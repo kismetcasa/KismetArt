@@ -2,7 +2,8 @@
 
 import { useAccount, useReadContracts } from 'wagmi'
 import { type Address, isAddress } from 'viem'
-import { COLLECTION_ABI, PERMISSION_BIT_ADMIN } from '@/lib/collections'
+import { COLLECTION_ABI } from '@/lib/collections'
+import { hasAdminBit } from '@/lib/permissions'
 import { useInprocessSmartWallet } from './useInprocessSmartWallet'
 
 export interface CollectionPermStatus {
@@ -94,7 +95,7 @@ export function useCollectionsPermissions(
       continue
     }
     const perms = result.result as bigint
-    const hasAdmin = (perms & PERMISSION_BIT_ADMIN) === PERMISSION_BIT_ADMIN
+    const hasAdmin = hasAdminBit(perms)
     byAddress[addr] = { hasAdmin, perms }
     if (!hasAdmin) missingCount += 1
   }

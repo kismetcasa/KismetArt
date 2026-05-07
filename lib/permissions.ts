@@ -28,10 +28,18 @@ type PublicClientLike = {
 //   METADATA       = 1<<4 = 16  — can update tokenURI
 //   FUNDS_MANAGER  = 1<<5 = 32  — can manage funds recipient
 //
-// We only export ADMIN here because Phase 1 verifications only need it.
-// The other constants are duplicated in lib/zoraMint.ts where the deploy
-// flow encodes setupActions — leaving those alone to avoid spurious churn.
+// Single source of truth — every server route, hook, and component
+// in the app imports from here. Previously these constants were
+// redefined ad-hoc in 5+ places; consolidating prevents drift if
+// Zora ever ships a v2 with different bit assignments (and prevents
+// the most likely human bug: someone setting bit value `1` thinking
+// it's the first role, when bit *position* 0 has no role and ADMIN
+// starts at value 2).
 export const PERMISSION_BIT_ADMIN = 2n
+export const PERMISSION_BIT_MINTER = 4n
+export const PERMISSION_BIT_SALES = 8n
+export const PERMISSION_BIT_METADATA = 16n
+export const PERMISSION_BIT_FUNDS_MANAGER = 32n
 
 // Minimal ABI fragment — only the `permissions` view fn. Lets this module
 // import cleanly on the client without dragging in the full COLLECTION_ABI

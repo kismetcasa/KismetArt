@@ -1,9 +1,8 @@
 import { type Address } from 'viem'
 import { isAddress } from '@/lib/address'
 import { INPROCESS_API } from '@/lib/inprocess'
+import { hasAdminBit } from '@/lib/permissions'
 import { serverBaseClient } from '@/lib/rpc'
-
-const PERMISSION_BIT_ADMIN = 2n
 
 const COLLECTION_PERMISSIONS_ABI = [
   {
@@ -124,10 +123,7 @@ export async function checkSmartWalletAdmin(
       return { status: 'unknown', smartWallet, perms, reason: 'rpc read failed' }
     }
     const effective = (reads as bigint[]).reduce((acc, r) => acc | r, 0n)
-    const status: PreflightStatus =
-      (effective & PERMISSION_BIT_ADMIN) === PERMISSION_BIT_ADMIN
-        ? 'authorized'
-        : 'unauthorized'
+    const status: PreflightStatus = hasAdminBit(effective) ? 'authorized' : 'unauthorized'
     return { status, smartWallet, perms }
   } catch (err) {
     return {

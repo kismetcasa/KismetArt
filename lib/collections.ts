@@ -22,14 +22,20 @@ const FIXED_PRICE_STRATEGY_ADDRESS = ZORA_FIXED_PRICE_STRATEGY
 const OPEN_EDITION_MINT_SIZE = 18446744073709551615n
 
 // Per Zora's PermissionsConstants: ADMIN=2, MINTER=4, SALES=8, METADATA=16,
-// FUNDS_MANAGER=32.
-// - MINTER (4): the address can mint copies of an existing token but cannot
-//   create new tokens.
-// - ADMIN (2): the address can do everything an admin can — including
-//   setupNewToken. Required for inprocess's platform smart wallet, which
-//   submits new-token userOps via /api/mint and is gated on this bit.
-export const PERMISSION_BIT_ADMIN = 2n
-const PERMISSION_BIT_MINTER = 4n
+// FUNDS_MANAGER=32. Canonical exports live in lib/permissions.ts; this
+// file re-imports for use in encodeAdminPermission / encodeMinterPermission
+// below. New code should import directly from @/lib/permissions —
+// these were left re-exported temporarily so existing import sites
+// could be migrated without breaking the build mid-commit.
+import {
+  PERMISSION_BIT_ADMIN,
+  PERMISSION_BIT_MINTER,
+} from './permissions'
+
+// Re-export so callers that already import PERMISSION_BIT_ADMIN from
+// '@/lib/collections' keep working without churn. New imports should
+// target '@/lib/permissions' directly.
+export { PERMISSION_BIT_ADMIN }
 
 const COLLECTION_ABI = [
   {
