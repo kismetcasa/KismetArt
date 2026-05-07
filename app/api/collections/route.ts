@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createPublicClient, http, type Address } from 'viem'
+import { type Address } from 'viem'
 import { isAddress } from '@/lib/address'
-import { base } from 'viem/chains'
 import { INPROCESS_API } from '@/lib/inprocess'
+import { serverBaseClient } from '@/lib/rpc'
 import { PLATFORM_COLLECTION } from '@/lib/config'
 import {
   getTrackedCollections,
@@ -281,7 +281,7 @@ export async function POST(req: NextRequest) {
   // rather than trusting an off-chain claim. tokenId 0 is the collection-wide
   // permission row.
   try {
-    const client = createPublicClient({ chain: base, transport: http() })
+    const client = serverBaseClient()
     const perms = (await client.readContract({
       address: body.address as Address,
       abi: COLLECTION_PERMISSIONS_ABI,
