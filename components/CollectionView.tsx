@@ -139,6 +139,57 @@ export function CollectionView({
     receipt: authorizeReceipt,
   } = useGrantPermission()
 
+  // Separate hook instance for the post-deploy minter grants — keeps its
+  // tx watcher independent of the smart-wallet authorize banner so a
+  // pending minter grant doesn't fight with a concurrent banner click.
+  const {
+    grant: grantMinter,
+    reset: resetMinterGrant,
+    busy: minterGranting,
+    receipt: minterReceipt,
+  } = useGrantPermission()
+  const [minterInput, setMinterInput] = useState('')
+
+  useEffect(() => {
+    if (!minterReceipt) return
+    resetMinterGrant()
+    if (minterReceipt.status === 'reverted') {
+      toast.error('Authorize failed', {
+        id: 'authorize-minter',
+        description: 'The transaction reverted on-chain — only collection admins can grant minter.',
+      })
+      return
+    }
+    setMinterInput('')
+    toast.success('Minter authorized', { id: 'authorize-minter' })
+  }, [minterReceipt, resetMinterGrant])
+
+  async function handleAuthorizeMinter() {
+    const target = minterInput.trim()
+    if (!isAddress(target)) {
+      toast.error('Invalid address', { id: 'authorize-minter' })
+      return
+    }
+    try {
+      toast.loading('Confirm in wallet…', { id: 'authorize-minter' })
+      const outcome = await grantMinter({
+        collection: address as `0x${string}`,
+        grantee: target as `0x${string}`,
+        tokenId: 0n,
+        bit: 'minter',
+      })
+      if (outcome === 'submitted') {
+        toast.loading('Authorizing minter…', { id: 'authorize-minter' })
+        return
+      }
+      // Already had MINTER on chain
+      setMinterInput('')
+      toast.success('Already a minter on this collection', { id: 'authorize-minter' })
+    } catch (err) {
+      toastError('Authorize minter', err, { id: 'authorize-minter' })
+    }
+  }
+
   // When the authorize tx confirms, refetch the permission read so the
   // banner hides itself without a manual reload.
   useEffect(() => {
@@ -388,6 +439,49 @@ export function CollectionView({
           >
             {authorizing ? 'authorizing…' : 'authorize'}
           </button>
+        </div>
+      )}
+
+      {/* Authorize minters — post-deploy MINTER grants for this
+          collection. Visible only to the creator (defaultAdmin can
+          grant collection-wide MINTER). The grant is at tokenId 0 so
+          the address can mint copies of any token in the collection,
+          present and future. ADMIN bit is reserved for the inprocess
+          smart wallet (handled by the banner above). */}
+      {isCreator && (
+        <div className="mb-8 p-3 sm:p-4 border border-[#2a2a2a] bg-[#0d0d0d]">
+          <div className="flex items-center gap-1.5 mb-2">
+            <ShieldCheck size={12} className="text-[#888]" />
+            <p className="text-xs font-mono text-[#888] uppercase tracking-wider">
+              Authorize minters
+            </p>
+          </div>
+          <p className="text-[11px] font-mono text-[#555] mb-3">
+            Grant another wallet permission to mint copies of any token in this collection.
+          </p>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={minterInput}
+              onChange={(e) => setMinterInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  void handleAuthorizeMinter()
+                }
+              }}
+              placeholder="0x… wallet address"
+              className="flex-1 bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+            />
+            <button
+              type="button"
+              onClick={() => void handleAuthorizeMinter()}
+              disabled={minterGranting || !minterInput.trim()}
+              className="px-4 text-[10px] font-mono tracking-wider uppercase border border-[#2a2a2a] text-[#888] hover:border-[#555] hover:text-[#efefef] transition-colors disabled:opacity-50"
+            >
+              {minterGranting ? 'authorizing…' : 'authorize'}
+            </button>
+          </div>
         </div>
       )}
 
