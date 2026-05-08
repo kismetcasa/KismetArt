@@ -169,6 +169,14 @@ export async function POST(req: NextRequest) {
   // fresh tokens the indexer hasn't picked up yet.
   const callerLower = body.callerAddress.toLowerCase()
   let authorized = false
+  // Capture inprocess's reported admin set so the upstream-error
+  // branch below can surface it for diagnostics — comparing
+  // momentAdmins (inprocess's view) against the on-chain ADMIN
+  // grants tells us whether a rejection is indexer lag (operator
+  // missing from the list, but on-chain ADMIN is set) or a wallet
+  // mismatch (operator IS in the list but inprocess still rejects,
+  // meaning they route through some other identity entirely).
+  let inprocessMomentAdmins: string[] = []
   try {
     const momentUrl = new URL(`${INPROCESS_API}/moment`)
     momentUrl.searchParams.set('collectionAddress', body.collectionAddress)
@@ -182,6 +190,7 @@ export async function POST(req: NextRequest) {
             .filter((a): a is string => typeof a === 'string')
             .map((a) => a.toLowerCase())
         : []
+      inprocessMomentAdmins = adminsLower
       authorized = adminsLower.includes(callerLower)
     }
   } catch {
@@ -414,6 +423,23 @@ export async function POST(req: NextRequest) {
         recipientCount: upstreamPayload.recipients.length,
         account: upstreamPayload.account,
       }
+      // Surface inprocess's own view of the collection's admin set so
+      // the next failure tells us which scenario we're in:
+      //
+      //   1. operator NOT in inprocessMomentAdmins, but on-chain perms
+      //      show ADMIN → real indexer lag. Inprocess just hasn't
+      //      re-indexed since our addPermission tx landed. Wait + retry.
+      //   2. operator IS in inprocessMomentAdmins, upstream STILL says
+      //      "no admin" → inprocess sees the grant but routes airdrops
+      //      through some OTHER wallet. The OPERATOR_SMART_WALLET we
+      //      configured isn't actually the right grantee for airdrop;
+      //      identify the real one and re-grant.
+      //   3. operator NOT in inprocessMomentAdmins AND on-chain perms
+      //      ALSO show no ADMIN → the addPermission tx never landed
+      //      (user signed but it reverted, or wrong collection). Banner
+      //      should re-show.
+      const operatorLower = process.env.OPERATOR_SMART_WALLET?.toLowerCase()
+      const operatorInInprocessAdmins = !!operatorLower && inprocessMomentAdmins.includes(operatorLower)
       return NextResponse.json(
         treatAsIndexerLag
           ? {
@@ -425,6 +451,8 @@ export async function POST(req: NextRequest) {
               upstreamSent,
               smartWallet: preflightSnapshot.smartWallet,
               perms: preflightSnapshot.perms,
+              inprocessMomentAdmins,
+              operatorInInprocessAdmins,
             }
           : {
               code: 'AUTHORIZE_REQUIRED',
@@ -435,6 +463,8 @@ export async function POST(req: NextRequest) {
               upstreamSent,
               smartWallet: preflightSnapshot.smartWallet,
               perms: preflightSnapshot.perms,
+              inprocessMomentAdmins,
+              operatorInInprocessAdmins,
             },
         { status: 403 },
       )
