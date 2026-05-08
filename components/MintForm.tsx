@@ -464,12 +464,18 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
     ): Promise<void> {
       verifyTargetRef.current = contractAddress
 
+      // Mark this contract as an auto-deployed wrapper (the protocol
+      // creates one per first-mint when no collection is picked). The
+      // server records it in the tracked set for moment fan-out but
+      // keeps it out of the Collections feed and the artist's "Collections"
+      // section — auto-deploy wrappers belong with mints, not collections.
       await registerCollectionWithBackoff({
         address: contractAddress,
         name: resolvedCollectionName,
         description: description.trim() || undefined,
         image: imageUri,
         artist: address,
+        source: 'auto-deploy',
       })
 
       if (publicClient && smartWalletForCaller && isAddress(smartWalletForCaller)) {

@@ -21,6 +21,11 @@ export interface RegisterCollectionPayload {
   description?: string
   image?: string
   artist?: string
+  // 'create-form' = explicit Create Collection form deploy (default).
+  // 'auto-deploy' = protocol auto-deployed wrapper from a first-mint
+  // without a selected collection. Auto-deploy is recorded in our tracked
+  // set for moment fan-out but excluded from collection-shaped surfaces.
+  source?: 'create-form' | 'auto-deploy'
 }
 
 export async function registerCollectionWithBackoff(
