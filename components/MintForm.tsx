@@ -898,7 +898,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
                         e.stopPropagation()
                         switchMode('text')
                       }}
-                      className="accent-grad hover:underline cursor-pointer"
+                      className="hover:underline cursor-pointer"
                     >
                       text
                     </button>
@@ -1117,29 +1117,20 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
               </p>
             </button>
             {collectionOptions.length === 0 ? (
+              // No empty-state copy when we have no collections — the
+              // "+ create new collection" button above already covers
+              // the only meaningful action. Loading/disconnected states
+              // are still surfaced inline so the dropdown communicates
+              // what's happening when it isn't user-actionable.
               loadingCollections ? (
                 <p className="text-xs font-mono text-[#555] px-3 py-4">
                   loading existing collections…
                 </p>
-              ) : isConnected ? (
-                <p className="text-xs font-mono text-[#555] px-3 py-4">
-                  Create a{' '}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setPickerOpen(false)
-                      onSwitchToCreate?.()
-                    }}
-                    className="accent-grad hover:underline cursor-pointer"
-                  >
-                    Collection
-                  </button>
-                </p>
-              ) : (
+              ) : !isConnected ? (
                 <p className="text-xs font-mono text-[#555] px-3 py-4">
                   connect a wallet to see your collections
                 </p>
-              )
+              ) : null
             ) : (
               <div className="grid grid-cols-3 gap-px bg-[#2a2a2a]">
                 {collectionOptions.map((c, idx) => {

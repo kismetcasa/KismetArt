@@ -407,9 +407,7 @@ export function AirdropForm({ moments, loadingMoments }: AirdropFormProps) {
                 <div className="w-8 h-8 flex-shrink-0 bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a] flex items-center justify-center">
                   <span className="text-[7px] font-mono text-[#555] uppercase tracking-widest">txt</span>
                 </div>
-              ) : (
-                <div className="w-8 h-8 bg-[#1a1a1a] flex-shrink-0" />
-              )}
+              ) : null}
               <span className="text-sm text-[#efefef] font-mono truncate flex-1">
                 {selectedMeta.name ?? `#${selected.token_id}`}
               </span>

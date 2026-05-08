@@ -79,7 +79,16 @@ export function MintTabs({ initialCollection, initialCollectionName }: MintTabsP
         <MintForm
           collectionAddress={deployedCollection?.address}
           collectionName={deployedCollection?.name}
-          onSwitchToCreate={() => setTab('create')}
+          onSwitchToCreate={() => {
+            setTab('create')
+            // Bring the user to the top of the Create Collection form;
+            // without this they land halfway down the page (where they
+            // were scrolled in the mint form) and the form they just
+            // asked to see isn't actually in the viewport.
+            if (typeof window !== 'undefined') {
+              window.scrollTo({ top: 0, behavior: 'smooth' })
+            }
+          }}
         />
       )}
 
