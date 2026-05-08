@@ -56,6 +56,20 @@ const getFallbackMeta = cache(async (
   return { name: kv.name, image: kv.image, description: kv.description }
 })
 
+// Server-side hydration for the collection chip on the detail panel.
+// Without this, MomentDetailView fires a client-side fetch on mount and
+// the chip pops in a beat after first paint — particularly noticeable on
+// kismet-deployed collections where the data is sitting right next to us
+// in KV. Pulled for every tokenId (the chip is shown regardless of which
+// token in the collection you're viewing).
+const getInitialCollectionMeta = cache(async (
+  address: string,
+): Promise<{ name?: string; image?: string } | undefined> => {
+  const kv = await getKvCollectionMeta(address)
+  if (!kv?.name && !kv?.image) return undefined
+  return { name: kv.name, image: kv.image }
+})
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { address, tokenId } = await params
   if (!isAddress(address) || !isValidTokenId(tokenId)) {
@@ -98,9 +112,10 @@ export default async function MomentPage({ params }: Props) {
   const sessionToken = cookieStore.get(SESSION_COOKIE)?.value
   const viewer = sessionToken ? await verifySession(sessionToken) : null
 
-  const [detail, fallbackMeta] = await Promise.all([
+  const [detail, fallbackMeta, initialCollectionMeta] = await Promise.all([
     fetchDetail(address, tokenId),
     getFallbackMeta(address, tokenId),
+    getInitialCollectionMeta(address),
   ])
 
   // Prefer the dedicated `creator` field injected by /api/moment from the
@@ -151,6 +166,7 @@ export default async function MomentPage({ params }: Props) {
       tokenId={tokenId}
       initialDetail={detail}
       fallbackMeta={fallbackMeta}
+      initialCollectionMeta={initialCollectionMeta}
       initialTextContent={initialTextContent}
     />
   )

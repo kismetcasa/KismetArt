@@ -887,7 +887,22 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
                 <Upload size={24} className="text-[#555]" />
                 <div className="text-center">
                   <p className="text-xs font-mono text-[#555]">drop file or click to upload</p>
-                  <p className="text-xs font-mono text-[#333] mt-1">image, video, gif</p>
+                  <p className="text-xs font-mono text-[#333] mt-1">
+                    image, video, gif,{' '}
+                    {/* "text" is a shortcut into the writing-moment mode.
+                        stopPropagation so we don't also trigger the parent
+                        drop zone's file-picker click handler. */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        switchMode('text')
+                      }}
+                      className="accent-grad hover:underline cursor-pointer"
+                    >
+                      text
+                    </button>
+                  </p>
                 </div>
               </div>
             )}
@@ -950,6 +965,54 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
           />
         </div>
       )}
+
+      {/* Price + Supply — placed before the Collection picker so the
+          submission-shape fields cluster together; the picker (which can
+          be left at "auto-deploy") sits below as a step-down decision. */}
+      <div className="flex gap-3">
+        <div className="flex-1">
+          <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
+            Price
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              inputMode="decimal"
+              value={price}
+              onChange={(e) => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setPrice(v) }}
+              className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] pr-14"
+            />
+            <button
+              type="button"
+              onClick={() => setPriceCurrency((c) => c === 'eth' ? 'usdc' : 'eth')}
+              title="toggle currency"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-mono text-[#888] hover:text-[#efefef] transition-colors px-1.5 py-0.5 rounded"
+            >
+              {priceCurrency === 'eth' ? 'ETH' : 'USDC'}
+            </button>
+          </div>
+          {price === '0' && (
+            <p className="text-xs text-[#555] font-mono mt-1">free mint</p>
+          )}
+        </div>
+
+        <div className="flex-1">
+          <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
+            Supply
+          </label>
+          <input
+            type="text"
+            inputMode="numeric"
+            value={maxSupply}
+            onChange={(e) => { const v = e.target.value; if (v === '' || /^[1-9]\d*$/.test(v)) setMaxSupply(v) }}
+            placeholder="unlimited"
+            className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+          />
+          {!maxSupply.trim() && (
+            <p className="text-xs text-[#555] font-mono mt-1">open edition</p>
+          )}
+        </div>
+      </div>
 
       {/* Collections picker — optional; if the user doesn't pick one, the
           auto-deploy is the default when nothing's selected. */}
@@ -1054,13 +1117,29 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
               </p>
             </button>
             {collectionOptions.length === 0 ? (
-              <p className="text-xs font-mono text-[#555] px-3 py-4">
-                {loadingCollections
-                  ? 'loading existing collections…'
-                  : isConnected
-                    ? 'no existing collections — pick the option above to create one'
-                    : 'connect a wallet to see your collections'}
-              </p>
+              loadingCollections ? (
+                <p className="text-xs font-mono text-[#555] px-3 py-4">
+                  loading existing collections…
+                </p>
+              ) : isConnected ? (
+                <p className="text-xs font-mono text-[#555] px-3 py-4">
+                  Create a{' '}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPickerOpen(false)
+                      onSwitchToCreate?.()
+                    }}
+                    className="accent-grad hover:underline cursor-pointer"
+                  >
+                    Collection
+                  </button>
+                </p>
+              ) : (
+                <p className="text-xs font-mono text-[#555] px-3 py-4">
+                  connect a wallet to see your collections
+                </p>
+              )
             ) : (
               <div className="grid grid-cols-3 gap-px bg-[#2a2a2a]">
                 {collectionOptions.map((c, idx) => {
@@ -1124,52 +1203,6 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
           </div>
         )}
 
-      </div>
-
-      {/* Price + Supply */}
-      <div className="flex gap-3">
-        <div className="flex-1">
-          <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
-            Price
-          </label>
-          <div className="relative">
-            <input
-              type="text"
-              inputMode="decimal"
-              value={price}
-              onChange={(e) => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setPrice(v) }}
-              className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] pr-14"
-            />
-            <button
-              type="button"
-              onClick={() => setPriceCurrency((c) => c === 'eth' ? 'usdc' : 'eth')}
-              title="toggle currency"
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-mono text-[#888] hover:text-[#efefef] transition-colors px-1.5 py-0.5 rounded"
-            >
-              {priceCurrency === 'eth' ? 'ETH' : 'USDC'}
-            </button>
-          </div>
-          {price === '0' && (
-            <p className="text-xs text-[#555] font-mono mt-1">free mint</p>
-          )}
-        </div>
-
-        <div className="flex-1">
-          <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
-            Supply
-          </label>
-          <input
-            type="text"
-            inputMode="numeric"
-            value={maxSupply}
-            onChange={(e) => { const v = e.target.value; if (v === '' || /^[1-9]\d*$/.test(v)) setMaxSupply(v) }}
-            placeholder="unlimited"
-            className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
-          />
-          {!maxSupply.trim() && (
-            <p className="text-xs text-[#555] font-mono mt-1">open edition</p>
-          )}
-        </div>
       </div>
 
       {/* Revenue splits */}

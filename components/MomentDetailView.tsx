@@ -41,6 +41,10 @@ interface Props {
     animation_url?: string
     content?: { mime?: string; uri?: string }
   }
+  // Server-side hydration for the collection chip below the title. Without
+  // this the chip pops in once the client-side /api/collections fetch lands;
+  // pre-loading from KV at SSR time keeps it on the first paint.
+  initialCollectionMeta?: { name?: string; image?: string }
   // Server-prefetched body for text moments — warms the module-level cache
   // so the writing panel renders on first paint without a client fetch.
   initialTextContent?: string
@@ -48,7 +52,7 @@ interface Props {
 
 const TOP_COMMENTS = 3
 
-export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta, initialTextContent }: Props) {
+export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta, initialCollectionMeta, initialTextContent }: Props) {
   const { address: connectedAddress, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { signMessageAsync } = useSignMessage()
@@ -81,8 +85,15 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   const [showFullDesc, setShowFullDesc] = useState(false)
   const [descOverflows, setDescOverflows] = useState(false)
   const descRef = useRef<HTMLParagraphElement>(null)
-  const [collectionName, setCollectionName] = useState<string | null>(null)
-  const [collectionImage, setCollectionImage] = useState<string | null>(null)
+  // Seeded from server-prefetched KV metadata when available so the
+  // collection chip renders on first paint instead of popping in after
+  // the client-side /api/collections fetch lands.
+  const [collectionName, setCollectionName] = useState<string | null>(
+    initialCollectionMeta?.name ?? null,
+  )
+  const [collectionImage, setCollectionImage] = useState<string | null>(
+    initialCollectionMeta?.image ? resolveUri(initialCollectionMeta.image) : null,
+  )
   const [hasSplits, setHasSplits] = useState(false)
   const [distributing, setDistributing] = useState(false)
   const [distributeHash, setDistributeHash] = useState<string | null>(null)
