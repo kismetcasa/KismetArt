@@ -74,16 +74,6 @@ export async function getAllCreatorLists(): Promise<CreatorList[]> {
   }
 }
 
-export async function getCreatorList(slug: string): Promise<CreatorList | null> {
-  try {
-    const raw = await redis.hget(KEY, slug)
-    const stored = parseStored(raw)
-    return stored ? { slug, ...stored } : null
-  } catch {
-    return null
-  }
-}
-
 /**
  * Create or replace a list. Address normalization happens here (lowercase,
  * deduplicate, drop non-EOA strings) so the API route doesn't need to
@@ -105,7 +95,17 @@ export async function saveCreatorList(input: {
     addresses.push(lower)
   }
 
-  const existing = await getCreatorList(input.slug)
+  // Re-read just this slug to preserve createdAt across updates without
+  // pulling the entire hash on every save.
+  let existing: CreatorList | null = null
+  try {
+    const raw = await redis.hget(KEY, input.slug)
+    const stored = parseStored(raw)
+    if (stored) existing = { slug: input.slug, ...stored }
+  } catch {
+    // Treat read failure as "no prior entry" — saveCreatorList still
+    // writes the new value; only createdAt drifts to now.
+  }
   const now = Date.now()
   const next: CreatorList = {
     slug: input.slug,
