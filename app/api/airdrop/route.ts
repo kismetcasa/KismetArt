@@ -221,18 +221,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid or expired nonce' }, { status: 401 })
   }
 
-  // Inprocess expects the same `moment: { collectionAddress, tokenId,
-  // chainId }` envelope used by /moment/update-uri (their Zod validator
-  // returns "Invalid input: moment Invalid input: expected object, received
-  // undefined" when omitted). Recipients ride alongside as a flat array of
-  // { recipientAddress, tokenId } so per-recipient tokenIds are still
-  // permitted by the upstream schema.
+  // Wire shape per inprocess's documented /moment/airdrop endpoint:
+  //   { collectionAddress, recipients: [{ recipientAddress, tokenId }] }
+  // Top-level collectionAddress (no `moment: { … }` envelope) and no
+  // chainId in the request — chainId is inferred from the API key's
+  // network binding and only appears in the response. Per-recipient
+  // tokenIds remain in the recipients array (we constrain them to a
+  // single value above so one signature can't fan out to multiple
+  // tokens, but the schema supports per-recipient values).
   const upstreamPayload = {
-    moment: {
-      collectionAddress: body.collectionAddress,
-      tokenId,
-      chainId: 8453,
-    },
+    collectionAddress: body.collectionAddress,
     recipients: body.recipients,
   }
 
