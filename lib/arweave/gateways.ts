@@ -3,14 +3,14 @@
 // of arweave.net during the propagation window) doesn't block verification
 // or rendering on the others. Order matters: arweave.net is canonical and
 // listed first so healthy moments load from it without paying any fallback.
-export const ARWEAVE_GATEWAYS = [
+const ARWEAVE_GATEWAYS = [
   'https://arweave.net',
   'https://permagate.io',
   'https://g8way.io',
   'https://ar-io.dev',
 ] as const
 
-export const IPFS_GATEWAYS = [
+const IPFS_GATEWAYS = [
   'https://ipfs.io/ipfs',
   'https://dweb.link/ipfs',
   'https://cloudflare-ipfs.com/ipfs',

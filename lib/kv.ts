@@ -52,18 +52,21 @@ export async function getTrackedCollectionsByScope(
   scope: CollectionScope = 'all',
 ): Promise<string[]> {
   if (scope === 'all') return getTrackedCollections()
-  if (scope === 'collections') return getUserCollections()
-  // standalone: tracked minus the curated-collection set
-  // (= PLATFORM_COLLECTION + every auto-deployed wrapper). Computing the
-  // difference here keeps a single source of truth for what counts as a
-  // collection and means we never have to write PLATFORM_COLLECTION into
-  // any auxiliary set just to filter it back out.
-  const [all, userCreated] = await Promise.all([
+  // 'collections' and 'standalone' are complementary slices of the same
+  // tracked set. Load both source sets once and slice from there — the
+  // earlier shape called getTrackedCollections() twice (once directly and
+  // once inside getUserCollections), doubling the Redis read.
+  const [all, autoDeploy] = await Promise.all([
     getTrackedCollections(),
-    getUserCollections(),
+    getAutoDeployCollections(),
   ])
-  const userSet = new Set(userCreated.map((a) => a.toLowerCase()))
-  return all.filter((a) => !userSet.has(a.toLowerCase()))
+  const auto = new Set(autoDeploy.map((a) => a.toLowerCase()))
+  const platform = PLATFORM_COLLECTION.toLowerCase()
+  const isCollection = (a: string) => {
+    const lower = a.toLowerCase()
+    return lower !== platform && !auto.has(lower)
+  }
+  return scope === 'collections' ? all.filter(isCollection) : all.filter((a) => !isCollection(a))
 }
 
 /**
@@ -75,23 +78,13 @@ export async function getTrackedCollectionsByScope(
  * seeing them in the Collections feed and the mint-dropdown picker.
  *
  * Empty on Redis errors so a transient outage surfaces as an empty feed
- * instead of accidentally exposing the marker set's contents.
+ * instead of a partial one — the marker-set read is fail-open (treat
+ * unread marker as "not auto-deploy"), which means a partial outage
+ * could briefly leak auto-deploy wrappers into the Collections feed.
+ * That's a less-bad failure mode than hiding every legitimate collection.
  */
 export async function getUserCollections(): Promise<string[]> {
-  try {
-    const [all, autoDeploy] = await Promise.all([
-      getTrackedCollections(),
-      getAutoDeployCollections(),
-    ])
-    const auto = new Set(autoDeploy.map((a) => a.toLowerCase()))
-    const platform = PLATFORM_COLLECTION.toLowerCase()
-    return all.filter((a) => {
-      const lower = a.toLowerCase()
-      return lower !== platform && !auto.has(lower)
-    })
-  } catch {
-    return []
-  }
+  return getTrackedCollectionsByScope('collections')
 }
 
 async function getAutoDeployCollections(): Promise<string[]> {
@@ -207,8 +200,7 @@ export async function searchCollections(query: string): Promise<CollectionMeta[]
   // Search ranges over the curated-collection set — auto-deployed wrappers
   // (whose name is just the moment title) shouldn't surface as collection
   // search results. Moment search has its own endpoint; this is strictly
-  // for curated
-  // collections.
+  // for curated collections.
   const addresses = await getUserCollections()
   if (!addresses.length) return []
   const keys = addresses.map(keyCollectionMeta)
