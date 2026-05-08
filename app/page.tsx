@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useAccount } from 'wagmi'
 import { RefreshCw } from 'lucide-react'
 import { MomentCard } from '@/components/MomentCard'
@@ -522,26 +522,26 @@ export default function DiscoverPage() {
 
 // ─── trending feed ───────────────────────────────────────────────────────────
 
-const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000
-
 function TrendingFeed() {
   const [weekOnly, setWeekOnly] = useState(false)
-  // The cutoff is computed when the toggle flips so the URL is stable
-  // across re-renders (otherwise feedKey would change every render and
-  // refetch perpetually). When weekOnly flips off, cutoff goes null.
-  const cutoff = weekOnly ? Date.now() - SEVEN_DAYS_MS : null
 
-  const apiUrl = (() => {
+  // Memoize on weekOnly so the URL is stable across re-renders. Without
+  // memoization, raw Date.now() would produce a different ms value each
+  // render — apiUrl would change, MomentFeed's fetch_ closure would change,
+  // and any future state added to TrendingFeed could refetch on every
+  // render. Bucketing to the start of the UTC day gives a fresh cutoff
+  // each calendar day without continuous churn.
+  const apiUrl = useMemo(() => {
     const params = new URLSearchParams({ sort: 'trending', scope: 'standalone' })
-    if (cutoff !== null) params.set('after', String(cutoff))
+    if (weekOnly) {
+      const dayMs = 24 * 60 * 60 * 1000
+      const cutoff = (Math.floor(Date.now() / dayMs) - 7) * dayMs
+      params.set('after', String(cutoff))
+    }
     return `/api/timeline?${params.toString()}`
-  })()
+  }, [weekOnly])
 
-  // Bucket the cutoff to the day so toggling on/off within the same day
-  // doesn't churn feedKey or the network. Date.now bucket changes once a
-  // day, refreshing the cutoff naturally.
-  const bucket = cutoff !== null ? Math.floor(cutoff / (24 * 60 * 60 * 1000)) : 'all'
-  const feedKey = `trending-${bucket}`
+  const feedKey = `trending-${weekOnly ? 'week' : 'all'}`
 
   const header = (
     <button
