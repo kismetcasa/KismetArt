@@ -173,15 +173,11 @@ export function MomentCard({ moment, hidePriceSupply, directLink }: MomentCardPr
               <Star size={16} fill={isFeatured ? 'currentColor' : 'none'} strokeWidth={1.5} />
             </button>
           )}
-          {moment.hidden ? (
+          {moment.hidden && (
             <span className="absolute top-2 right-2 z-10 p-1 bg-[#0d0d0d]/80 border border-[#2a2a2a]">
               <EyeOff size={10} className="text-[#555]" />
             </span>
-          ) : (owned > 0 && maxSupply !== null) ? (
-            <span className="absolute top-2 right-2 z-10 px-1.5 py-0.5 bg-[#0d0d0d]/80 border border-[#2a2a2a] text-[#efefef] font-mono text-[10px] leading-tight">
-              ×{owned}
-            </span>
-          ) : null}
+          )}
           {isVideo && mediaUrl ? (
             <video
               src={mediaUrl}
