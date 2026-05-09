@@ -109,10 +109,15 @@ export function CollectionView({
     !!defaultAdminAddress &&
     connectedAddress.toLowerCase() === defaultAdminAddress.toLowerCase()
 
-  // Read the connected viewer's own perms so any wallet with on-chain
-  // ADMIN can authorize — not just the displayed creator. Covers the
-  // case where a platform operator deployed on an artist's behalf and
-  // remains as on-chain admin.
+  // Authorize-creators panel is restricted to the deployer
+  // (defaultAdmin). Delegated admins still hold ADMIN on chain and
+  // could `addPermission` from etherscan, but the UI doesn't surface
+  // that — keeps "who can add other artists here" a single, clear
+  // role. Authorized artists land on the creator chip → MintForm
+  // instead, which is the surface that actually matters to them.
+  const canGrantHere = isCreator
+  // We still read the viewer's EOA perms — needed for the legacy
+  // MINTER chip that surfaces existing on-chain MINTER grants.
   const { data: viewerPerms } = useReadContract({
     address: address as `0x${string}`,
     abi: COLLECTION_ABI,
@@ -120,9 +125,6 @@ export function CollectionView({
     args: connectedAddress ? [0n, connectedAddress as `0x${string}`] : undefined,
     query: { enabled: !!connectedAddress },
   })
-  const viewerHasAdmin =
-    viewerPerms !== undefined && hasAdminBit(viewerPerms as bigint)
-  const canGrantHere = isCreator || viewerHasAdmin
   // MINTER-only viewers can adminMint but not setupNewToken, so their
   // chip routes to the Airdrop tab.
   const viewerHasMinter =
@@ -298,8 +300,9 @@ export function CollectionView({
       // Both bits were already set on chain. Persist the KV mapping
       // anyway so the list shows the entry — without it, a re-grant
       // under the same admin would never visibly land.
+      let kvOk = true
       try {
-        await fetch('/api/collection/authorized-creators', {
+        const res = await fetch('/api/collection/authorized-creators', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -309,11 +312,30 @@ export function CollectionView({
             label,
           }),
         })
-      } catch {
-        // KV write failure is non-fatal; the chain grant exists.
+        if (!res.ok) {
+          kvOk = false
+          const detail = await res.text().catch(() => '')
+          console.error('[authorize-creator] KV write rejected', {
+            status: res.status,
+            detail,
+          })
+        }
+      } catch (err) {
+        kvOk = false
+        console.error('[authorize-creator] KV write failed', err)
       }
       setCreatorInput('')
-      toast.success('Already an authorized creator', { id: 'authorize-creator' })
+      if (kvOk) {
+        toast.success('Already an authorized creator', { id: 'authorize-creator' })
+      } else {
+        // On-chain ADMIN exists; KV display row didn't land. The
+        // chain-merge in GET will still surface the entry as
+        // (unmapped) so the row at least appears.
+        toast.warning('Authorized on chain, but couldn’t save display label', {
+          id: 'authorize-creator',
+          description: 'Check the browser console for the server response.',
+        })
+      }
       void refetchCreators()
     } catch (err) {
       toastError('Authorize creator', err, { id: 'authorize-creator' })
@@ -393,9 +415,10 @@ export function CollectionView({
     }
     // On success, reconcile KV so the list reflects the new state.
     void (async () => {
+      let kvOk = true
       try {
         if (action.kind === 'grant') {
-          await fetch('/api/collection/authorized-creators', {
+          const res = await fetch('/api/collection/authorized-creators', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -405,21 +428,49 @@ export function CollectionView({
               label: action.label,
             }),
           })
+          if (!res.ok) {
+            kvOk = false
+            const detail = await res.text().catch(() => '')
+            console.error('[authorize-creator] KV write rejected', {
+              status: res.status,
+              detail,
+            })
+          }
           setCreatorInput('')
         } else if (action.eoa) {
-          await fetch(
+          const res = await fetch(
             `/api/collection/authorized-creators?collection=${address}&eoa=${action.eoa}`,
             { method: 'DELETE' },
           )
+          if (!res.ok) {
+            kvOk = false
+            console.error('[authorize-creator] KV delete rejected', {
+              status: res.status,
+            })
+          }
         }
-      } catch {
-        // KV write failure surfaces only as a stale row; the chain
-        // state is correct, and the next grant/revoke will reconcile.
+      } catch (err) {
+        kvOk = false
+        console.error('[authorize-creator] KV request failed', err)
       } finally {
-        toast.success(
-          action.kind === 'revoke' ? 'Creator revoked' : 'Creator authorized',
-          { id: 'authorize-creator' },
-        )
+        if (kvOk) {
+          toast.success(
+            action.kind === 'revoke' ? 'Creator revoked' : 'Creator authorized',
+            { id: 'authorize-creator' },
+          )
+        } else {
+          // Chain state is correct; the chain-merge in GET will still
+          // surface the entry as (unmapped) so it doesn't go ghost.
+          toast.warning(
+            action.kind === 'revoke'
+              ? 'Revoked on chain, but couldn’t clear display row'
+              : 'Authorized on chain, but couldn’t save display label',
+            {
+              id: 'authorize-creator',
+              description: 'Check the browser console for the server response.',
+            },
+          )
+        }
         void refetchCreators()
       }
     })()
