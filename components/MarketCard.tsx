@@ -138,7 +138,12 @@ export function MarketCard({ listing, onRemove }: MarketCardProps) {
         ) : isTextListing ? (
           <div className="w-full h-full flex flex-col p-5 bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a]">
             <span className="text-[10px] font-mono text-[#555] uppercase tracking-widest mb-2">writing</span>
-            <p className="text-xs sm:text-sm font-mono text-[#bbb] line-clamp-7 leading-relaxed whitespace-pre-wrap">
+            {listing.name && (
+              <p className="text-sm sm:text-base font-mono text-[#efefef] truncate mb-2">
+                {listing.name}
+              </p>
+            )}
+            <p className="text-xs sm:text-sm font-mono text-[#bbb] line-clamp-6 leading-relaxed whitespace-pre-wrap">
               {textSnippet ?? listing.name ?? 'untitled'}
             </p>
           </div>

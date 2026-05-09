@@ -22,8 +22,6 @@ import { ProfileAvatar } from './ProfileAvatar'
 import { useAdmin } from '@/contexts/AdminContext'
 import { toastError } from '@/lib/toast'
 
-const TOP_COMMENTS = 3
-
 interface MomentModalProps {
   moment: Moment
   onClose: () => void
@@ -66,7 +64,6 @@ export function MomentModal({
   const [commentsLoading, setCommentsLoading] = useState(
     () => getCachedComments(moment.address, moment.token_id) === undefined
   )
-  const [showAllComments, setShowAllComments] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
   const [showFullDesc, setShowFullDesc] = useState(false)
   const [descOverflows, setDescOverflows] = useState(false)
@@ -287,9 +284,6 @@ export function MomentModal({
     }
   }
 
-  const visibleComments = showAllComments ? comments : comments.slice(0, TOP_COMMENTS)
-  const hiddenCount = comments.length - TOP_COMMENTS
-
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4"
@@ -346,7 +340,12 @@ export function MomentModal({
           ) : isTextMoment ? (
             <div className="w-full h-full flex flex-col p-6 sm:p-8 bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a]">
               <span className="text-[10px] font-mono text-[#555] uppercase tracking-widest mb-3">writing</span>
-              <p className="text-sm font-mono text-[#bbb] line-clamp-[14] leading-relaxed whitespace-pre-wrap">
+              {meta.name && (
+                <p className="text-base font-mono text-[#efefef] truncate mb-3">
+                  {meta.name}
+                </p>
+              )}
+              <p className="text-sm font-mono text-[#bbb] line-clamp-[12] leading-relaxed whitespace-pre-wrap">
                 {textSnippet ?? meta.name ?? 'untitled'}
               </p>
             </div>
@@ -412,33 +411,25 @@ export function MomentModal({
             {!commentsLoading && comments.length > 0 && (
               <div className="flex flex-col gap-2">
                 <p className="text-[10px] font-mono text-[#333] uppercase tracking-wider">comments</p>
-                {visibleComments.map((c, i) => (
-                  <div key={i} className="flex gap-2 items-baseline">
-                    <Link
-                      href={`/profile/${c.sender}`}
-                      onClick={onClose}
-                      className="text-[11px] font-mono text-[#555] flex-shrink-0 hover:text-[#888] transition-colors"
-                    >
-                      {shortAddress(c.sender)}
-                    </Link>
-                    <span className="text-xs font-mono text-[#888] flex-1 break-words leading-relaxed">
-                      {c.comment}
-                    </span>
-                    <span className="text-[10px] font-mono text-[#333] flex-shrink-0">
-                      {formatRelativeTime(c.timestamp)}
-                    </span>
-                  </div>
-                ))}
-                {hiddenCount > 0 && (
-                  <button
-                    onClick={() => setShowAllComments((v) => !v)}
-                    className="flex items-center gap-1 text-[10px] font-mono text-[#555] hover:text-[#888] transition-colors w-fit"
-                  >
-                    {showAllComments
-                      ? <><ChevronUp size={10} /> show less</>
-                      : <><ChevronDown size={10} /> {hiddenCount} more</>}
-                  </button>
-                )}
+                <div className="flex flex-col gap-2 max-h-48 overflow-y-auto pr-1">
+                  {comments.map((c, i) => (
+                    <div key={i} className="flex gap-2 items-baseline">
+                      <Link
+                        href={`/profile/${c.sender}`}
+                        onClick={onClose}
+                        className="text-[11px] font-mono text-[#555] flex-shrink-0 hover:text-[#888] transition-colors"
+                      >
+                        {shortAddress(c.sender)}
+                      </Link>
+                      <span className="text-xs font-mono text-[#888] flex-1 break-words leading-relaxed">
+                        {c.comment}
+                      </span>
+                      <span className="text-[10px] font-mono text-[#333] flex-shrink-0">
+                        {formatRelativeTime(c.timestamp)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>

@@ -57,8 +57,6 @@ interface Props {
   initialTextContent?: string
 }
 
-const TOP_COMMENTS = 3
-
 export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta, initialCollectionMeta, kvCreatorAddress, initialTextContent }: Props) {
   const { address: connectedAddress, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
@@ -80,7 +78,6 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     () => getCachedComments(address, tokenId) === undefined
   )
   const [commentSenderNames, setCommentSenderNames] = useState<Record<string, string>>({})
-  const [showAllComments, setShowAllComments] = useState(false)
   const [commentText, setCommentText] = useState('')
   const [collected, setCollected] = useState(false)
   const { collect, status: collectStatus } = useDirectCollect()
@@ -537,9 +534,6 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     ? formatPrice(detail.saleConfig.pricePerToken, inferCollectCurrency(detail.saleConfig))
     : null
 
-  const visibleComments = showAllComments ? comments : comments.slice(0, TOP_COMMENTS)
-  const hiddenCount = comments.length - TOP_COMMENTS
-
   // Hidden moments are visible only to their creator (so they can unhide).
   // Non-creator viewers see a placeholder with no metadata leak so the
   // creator's intent to hide is honored even on direct URL access.
@@ -847,32 +841,24 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
             {!commentsLoading && comments.length > 0 && (
               <div className="flex flex-col gap-2">
                 <p className="text-[10px] font-mono text-[#333] uppercase tracking-wider">comments</p>
-                {visibleComments.map((c, i) => (
-                  <div key={i} className="flex gap-2 items-baseline">
-                    <Link
-                      href={`/profile/${c.sender}`}
-                      className="text-[11px] font-mono text-[#555] flex-shrink-0 hover:text-[#888] transition-colors"
-                    >
-                      {commentSenderNames[c.sender.toLowerCase()] ?? shortAddress(c.sender)}
-                    </Link>
-                    <span className="text-xs font-mono text-[#888] flex-1 break-words leading-relaxed">
-                      {c.comment}
-                    </span>
-                    <span className="text-[10px] font-mono text-[#333] flex-shrink-0">
-                      {formatRelativeTime(c.timestamp)}
-                    </span>
-                  </div>
-                ))}
-                {hiddenCount > 0 && (
-                  <button
-                    onClick={() => setShowAllComments((v) => !v)}
-                    className="flex items-center gap-1 text-[10px] font-mono text-[#555] hover:text-[#888] transition-colors w-fit"
-                  >
-                    {showAllComments
-                      ? <><ChevronUp size={10} /> show less</>
-                      : <><ChevronDown size={10} /> {hiddenCount} more</>}
-                  </button>
-                )}
+                <div className="flex flex-col gap-2 max-h-64 overflow-y-auto pr-1">
+                  {comments.map((c, i) => (
+                    <div key={i} className="flex gap-2 items-baseline">
+                      <Link
+                        href={`/profile/${c.sender}`}
+                        className="text-[11px] font-mono text-[#555] flex-shrink-0 hover:text-[#888] transition-colors"
+                      >
+                        {commentSenderNames[c.sender.toLowerCase()] ?? shortAddress(c.sender)}
+                      </Link>
+                      <span className="text-xs font-mono text-[#888] flex-1 break-words leading-relaxed">
+                        {c.comment}
+                      </span>
+                      <span className="text-[10px] font-mono text-[#333] flex-shrink-0">
+                        {formatRelativeTime(c.timestamp)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
             <textarea
