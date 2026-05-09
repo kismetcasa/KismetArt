@@ -50,9 +50,15 @@ export async function findMintableCollections(
   client: GetLogsClient,
   candidates: Address[],
   viewer: Address,
+  /** Bitmask the latest perms must intersect to qualify. Defaults to
+   *  ADMIN | MINTER — the same mask Zora's adminMint enforces. Pass
+   *  PERMISSION_BIT_ADMIN alone when scanning a smart wallet for
+   *  MintForm picker eligibility (creator-tier authorizations grant
+   *  ADMIN to the SW; MINTER on a SW is unusual and not what
+   *  setupNewToken cares about anyway). */
+  mask: bigint = PERMISSION_BIT_ADMIN | PERMISSION_BIT_MINTER,
 ): Promise<Address[]> {
   if (candidates.length === 0) return []
-  const MINT_MASK = PERMISSION_BIT_ADMIN | PERMISSION_BIT_MINTER
   const logs = await client.getLogs({
     address: candidates,
     event: UPDATED_PERMISSIONS_EVENT,
@@ -81,7 +87,7 @@ export async function findMintableCollections(
   }
   const out: Address[] = []
   for (const [addr, { perms }] of latest.entries()) {
-    if ((perms & MINT_MASK) !== 0n) out.push(addr as Address)
+    if ((perms & mask) !== 0n) out.push(addr as Address)
   }
   return out
 }

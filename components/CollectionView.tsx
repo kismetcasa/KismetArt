@@ -411,10 +411,12 @@ export function CollectionView({
       const outcome = await grantCreatorBatch([
         // ADMIN to smart wallet → unlocks setupNewToken via MintForm.
         { collection: address as `0x${string}`, grantee: swLower, tokenId: 0n, bit: 'admin' },
-        // MINTER to EOA → unlocks adminMint from the user's own
-        // wallet, so the same authorization also works for direct
-        // airdrops without going through the inprocess relay.
-        { collection: address as `0x${string}`, grantee: eoa, tokenId: 0n, bit: 'minter' },
+        // ADMIN to EOA → full delegated authority from the user's own
+        // wallet (adminMint, addPermission, setupNewToken, callSale).
+        // Same bit on both targets keeps the mental model simple:
+        // "this address can act on this collection" — independent of
+        // which wallet they sign from.
+        { collection: address as `0x${string}`, grantee: eoa, tokenId: 0n, bit: 'admin' },
       ])
       if (outcome === 'submitted') {
         pendingCreatorRef.current = { kind: 'grant', eoa, smartWallet: swLower, label }
@@ -462,7 +464,7 @@ export function CollectionView({
           collection: address as `0x${string}`,
           grantee: eoa as `0x${string}`,
           tokenId: 0n,
-          bit: 'minter',
+          bit: 'admin',
         },
       ])
       if (outcome === 'submitted') {
