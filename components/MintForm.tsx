@@ -621,7 +621,10 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
         // staircasing after them. By the time we block below, media
         // has had the metadata- (and collection-metadata-) upload
         // duration as free propagation buffer.
-        const mediaVerify = verifyArweaveAvailable(mediaUri)
+        // Media bundles up to 420 MB can take longer than the 45s default
+        // to surface across the gateway pool, so widen the budget here —
+        // a false-negative wastes the user's entire upload.
+        const mediaVerify = verifyArweaveAvailable(mediaUri, 90_000)
 
         setStep('uploading-metadata')
         setUploadProgress(0)
