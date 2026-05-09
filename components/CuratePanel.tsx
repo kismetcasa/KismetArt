@@ -31,13 +31,9 @@ function parseMomentRef(input: string): { address: string; tokenId: string } | n
   return null
 }
 
-/**
- * Curator surface for adding moments to the homepage Featured tab. Renders
- * inside the curator's own profile only (gated by AdminContext.isCurator
- * + ProfileView.isOwner), and reuses the existing toggleFeatured plumbing
- * — server-side /api/featured already accepts curator signatures alongside
- * admin signatures, so this is purely UI: parse the input, dispatch.
- */
+// Curator surface — feature moments, manage roster lists, promote legacy
+// collections, and run the global mints backfill. Rendered only on the
+// curator's own profile (AdminContext.isCurator + ProfileView.isOwner).
 export function CuratePanel() {
   const { featuredKeys, toggleFeatured, withSession } = useAdmin()
   const [input, setInput] = useState('')

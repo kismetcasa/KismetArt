@@ -244,7 +244,7 @@ export async function POST(req: NextRequest) {
     // 'create-form' is the explicit Create Collection flow.
     source?: CollectionSource
     // tokenId minted as the collection's cover (Create Collection form
-    // only). Marked in cover-moments so it stays out of Mints feeds.
+    // only). Marked as a created-mint so it surfaces in the Mints feed.
     coverTokenId?: string
   }
   try {
