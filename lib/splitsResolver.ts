@@ -30,12 +30,13 @@ type ResolverClient = {
   getTransaction: (args: { hash: Hex }) => Promise<{ input: Hex }>
 }
 
-// Last-resort SplitMain address for 0xSplits v1 on Base. Used only when
-// reading the SplitWallet's `splitMain()` getter fails (network blip on
-// the only RPC call we can't recover from). The dynamic read below is
-// preferred — it removes the chain-specific hardcode and makes this
-// resolver portable to any v1 SplitMain deployment.
-const SPLITMAIN_BASE_FALLBACK: Address = '0x80f1B766817D04870f115fEBbcCADF8DBF75E017'
+// Last-resort SplitMain address for 0xSplits v1. The same address is
+// reused across every chain v1 was deployed on (BSC, Holesky, Sepolia
+// have overrides — Base does not), so this works for the path the
+// dynamic `splitMain()` read below can't recover (transient RPC error
+// on the only call between us and a usable address). Sourced from
+// 0xSplits' splits-sdk constants.
+const SPLITMAIN_FALLBACK: Address = '0x2ed6c4B5dA6378c7897AC67Ba9e43102Feb694EE'
 
 const SPLIT_WALLET_ABI = parseAbi([
   'function splitMain() view returns (address)',
@@ -94,7 +95,7 @@ export async function resolveSplitRecipientsOnChain(
   const splitMain: Address =
     dynamicSplitMain && dynamicSplitMain.toLowerCase() !== ZERO_ADDRESS
       ? dynamicSplitMain
-      : SPLITMAIN_BASE_FALLBACK
+      : SPLITMAIN_FALLBACK
 
   let logs: readonly { transactionHash: Hex | null }[] = []
   try {
