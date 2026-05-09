@@ -184,11 +184,14 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     !!creatorAddress &&
     connectedAddress.toLowerCase() === creatorAddress.toLowerCase()
 
-  const { hasSplits, splitAddress, distribute, distributing, distributeHash } = useMomentSplits({
+  const { hasSplits, recipients: splitRecipients, splitAddress, distribute, distributing, distributeHash } = useMomentSplits({
     address,
     tokenId,
     isCreator,
   })
+  const [recipientProfiles, setRecipientProfiles] = useState<
+    Record<string, { name: string; avatarUrl?: string }>
+  >({})
 
   // Fetch moment detail. We retry on the client when initialDetail is null
   // (server-side fetch returned no data, e.g. inprocess hasn't indexed a
@@ -265,6 +268,25 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   }, [address, tokenId])
 
   useEffect(() => { fetchComments() }, [fetchComments])
+
+  // Resolve display names + avatars for split recipients so the splits
+  // panel below renders @username chips and avatars instead of bare
+  // addresses. Each lookup hits the cached /api/profile path so repeat
+  // visits to a moment with overlapping recipient sets are free.
+  useEffect(() => {
+    if (splitRecipients.length === 0) return
+    let cancelled = false
+    splitRecipients.forEach((r) => {
+      fetchCreatorProfile(r.address).then(({ name, avatarUrl }) => {
+        if (cancelled) return
+        setRecipientProfiles((prev) => ({
+          ...prev,
+          [r.address.toLowerCase()]: { name, avatarUrl },
+        }))
+      })
+    })
+    return () => { cancelled = true }
+  }, [splitRecipients])
 
   // Batch-resolve comment sender display names via shared profile cache
   useEffect(() => {
@@ -807,6 +829,33 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                     {showFullDesc ? <><ChevronUp size={10} /> show less</> : <><ChevronDown size={10} /> show more</>}
                   </button>
                 )}
+              </div>
+            )}
+            {hasSplits && splitRecipients.length > 0 && (
+              <div className="flex flex-col gap-1.5">
+                <p className="text-[10px] font-mono text-[#333] uppercase tracking-wider">splits</p>
+                <div className="flex flex-col gap-1">
+                  {splitRecipients.map((r) => {
+                    const lower = r.address.toLowerCase()
+                    const profile = recipientProfiles[lower]
+                    const label = profile?.name || shortAddress(r.address)
+                    return (
+                      <Link
+                        key={lower}
+                        href={`/profile/${r.address}`}
+                        className="flex items-center gap-2 group"
+                      >
+                        <ProfileAvatar address={r.address} avatarUrl={profile?.avatarUrl} size={18} />
+                        <span className="text-xs font-mono text-[#555] group-hover:text-[#888] transition-colors flex-1 truncate">
+                          {label}
+                        </span>
+                        <span className="text-[10px] font-mono text-[#444] flex-shrink-0">
+                          {r.percentAllocation}%
+                        </span>
+                      </Link>
+                    )
+                  })}
+                </div>
               </div>
             )}
             {!commentsLoading && comments.length > 0 && (

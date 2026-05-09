@@ -115,11 +115,14 @@ export function MomentModal({
     !!connectedAddress &&
     connectedAddress.toLowerCase() === creatorAddress.toLowerCase()
 
-  const { hasSplits, splitAddress, distribute, distributing, distributeHash } = useMomentSplits({
+  const { hasSplits, recipients: splitRecipients, splitAddress, distribute, distributing, distributeHash } = useMomentSplits({
     address: moment.address,
     tokenId: moment.token_id,
     isCreator,
   })
+  const [recipientProfiles, setRecipientProfiles] = useState<
+    Record<string, { name: string; avatarUrl?: string }>
+  >({})
 
   // Derived price and supply — prefer passed-in values, fall back to fetched detail
   const pricePerToken = initialPricePerToken ?? (detail ? BigInt(detail.saleConfig.pricePerToken) : null)
@@ -188,6 +191,23 @@ export function MomentModal({
   }, [moment.address, moment.token_id])
 
   useEffect(() => { fetchComments() }, [fetchComments])
+
+  // Resolve display names + avatars for split recipients so the splits
+  // panel below renders @username chips instead of bare addresses.
+  useEffect(() => {
+    if (splitRecipients.length === 0) return
+    let cancelled = false
+    splitRecipients.forEach((r) => {
+      fetchCreatorProfile(r.address).then(({ name, avatarUrl }) => {
+        if (cancelled) return
+        setRecipientProfiles((prev) => ({
+          ...prev,
+          [r.address.toLowerCase()]: { name, avatarUrl },
+        }))
+      })
+    })
+    return () => { cancelled = true }
+  }, [splitRecipients])
 
   // Measure description overflow once after mount (element is clamped at that point)
   useEffect(() => {
@@ -347,6 +367,36 @@ export function MomentModal({
                     {showFullDesc ? <><ChevronUp size={10} /> show less</> : <><ChevronDown size={10} /> show more</>}
                   </button>
                 )}
+              </div>
+            )}
+
+            {/* Splits */}
+            {hasSplits && splitRecipients.length > 0 && (
+              <div className="flex flex-col gap-1">
+                <p className="text-[10px] font-mono text-[#333] uppercase tracking-wider">splits</p>
+                <div className="flex flex-col gap-1">
+                  {splitRecipients.map((r) => {
+                    const lower = r.address.toLowerCase()
+                    const profile = recipientProfiles[lower]
+                    const label = profile?.name || shortAddress(r.address)
+                    return (
+                      <Link
+                        key={lower}
+                        href={`/profile/${r.address}`}
+                        onClick={onClose}
+                        className="flex items-center gap-2 group"
+                      >
+                        <ProfileAvatar address={r.address} avatarUrl={profile?.avatarUrl} size={18} />
+                        <span className="text-xs font-mono text-[#555] group-hover:text-[#888] transition-colors flex-1 truncate">
+                          {label}
+                        </span>
+                        <span className="text-[10px] font-mono text-[#444] flex-shrink-0">
+                          {r.percentAllocation}%
+                        </span>
+                      </Link>
+                    )
+                  })}
+                </div>
               </div>
             )}
 

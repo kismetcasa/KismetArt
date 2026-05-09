@@ -13,8 +13,17 @@ interface Options {
   isCreator: boolean
 }
 
+export interface MomentSplitRecipient {
+  address: string
+  percentAllocation: number
+}
+
 interface SplitsState {
   hasSplits: boolean
+  // Stored recipient list for this moment (with percent allocations).
+  // Empty for legacy mints persisted as the `'1'` flag — those can be
+  // populated retroactively via the admin backfill route.
+  recipients: MomentSplitRecipient[]
   splitAddress: `0x${string}` | undefined
   distribute: (currency: CollectCurrency) => Promise<void>
   distributing: boolean
@@ -22,12 +31,16 @@ interface SplitsState {
 }
 
 /**
- * Bundles the creator-only "distribute split earnings" flow shared between
- * MomentModal and MomentDetailView:
- *   1. Polls /api/moment/splits to check the kismetart:splits:* flag (only
- *      moments minted with multiple splits via /api/mint expose this UI).
+ * Bundles the splits state shared between MomentModal and
+ * MomentDetailView: stored recipient list (for the public splits panel)
+ * plus the creator-only distribute flow.
+ *
+ *   1. Polls /api/moment/splits for `{ hasSplits, recipients }`. Runs
+ *      for every viewer (not just the creator) so the splits panel can
+ *      render recipient avatars + percentages on the moment page.
  *   2. Reads the on-chain split contract address via Zora's
- *      getCreatorRewardRecipient (gated until both isCreator and hasSplits).
+ *      getCreatorRewardRecipient (gated on isCreator && hasSplits — it's
+ *      only used by the distribute UI, which is creator-only).
  *   3. distribute(currency) signs a nonce'd message and POSTs to
  *      /api/distribute. Currency is injected by the caller — the inprocess
  *      side needs tokenAddress=USDC_BASE for USDC moments, otherwise the
@@ -37,16 +50,24 @@ export function useMomentSplits({ address, tokenId, isCreator }: Options): Split
   const { address: connectedAddress } = useAccount()
   const { signMessageAsync } = useSignMessage()
   const [hasSplits, setHasSplits] = useState(false)
+  const [recipients, setRecipients] = useState<MomentSplitRecipient[]>([])
   const [distributing, setDistributing] = useState(false)
   const [distributeHash, setDistributeHash] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isCreator) return
+    let cancelled = false
+    setHasSplits(false)
+    setRecipients([])
     fetch(`/api/moment/splits?collectionAddress=${address}&tokenId=${tokenId}`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((d) => setHasSplits(d.hasSplits === true))
+      .then((d) => {
+        if (cancelled) return
+        setHasSplits(d.hasSplits === true)
+        setRecipients(Array.isArray(d.recipients) ? d.recipients : [])
+      })
       .catch(() => {})
-  }, [address, tokenId, isCreator])
+    return () => { cancelled = true }
+  }, [address, tokenId])
 
   const { data: splitAddress } = useReadContract({
     address: address as `0x${string}`,
@@ -94,5 +115,5 @@ export function useMomentSplits({ address, tokenId, isCreator }: Options): Split
     }
   }
 
-  return { hasSplits, splitAddress, distribute, distributing, distributeHash }
+  return { hasSplits, recipients, splitAddress, distribute, distributing, distributeHash }
 }

@@ -48,23 +48,6 @@ export async function getStoredSplits(
   return decodeStoredSplits(raw)
 }
 
-// Batched reader for the collection page. Fans out to a single `mget`
-// so a collection with N moments costs one Upstash round-trip instead
-// of N. Returns a tokenId -> result map keyed by the input order.
-export async function getStoredSplitsBatch(
-  collection: string,
-  tokenIds: string[],
-): Promise<Record<string, StoredSplitsResult>> {
-  const out: Record<string, StoredSplitsResult> = {}
-  if (tokenIds.length === 0) return out
-  const keys = tokenIds.map((t) => splitsKey(collection, t))
-  const raws = (await redis.mget<unknown[]>(...keys)) ?? []
-  tokenIds.forEach((tokenId, idx) => {
-    out[tokenId] = decodeStoredSplits(raws[idx])
-  })
-  return out
-}
-
 function decodeStoredSplits(raw: unknown): StoredSplitsResult {
   if (raw === null || raw === undefined) {
     return { hasSplits: false, recipients: [] }
