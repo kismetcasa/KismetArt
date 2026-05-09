@@ -312,13 +312,13 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
     setSplitInput({ address: '', pct: '' })
   }
 
-  const MAX_FILE_BYTES = 50 * 1024 * 1024
+  const MAX_FILE_BYTES = 420 * 1024 * 1024
   const TEXT_MAX = 5000
 
   function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
     const f = e.target.files?.[0]
     if (!f) return
-    if (f.size > MAX_FILE_BYTES) { toast.error('File too large', { description: 'Maximum file size is 50 MB' }); return }
+    if (f.size > MAX_FILE_BYTES) { toast.error('File too large', { description: 'Maximum file size is 420 MB' }); return }
     if (preview) URL.revokeObjectURL(preview)
     setFile(f)
     setPreview(URL.createObjectURL(f))
@@ -328,7 +328,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
     e.preventDefault()
     const f = e.dataTransfer.files[0]
     if (!f) return
-    if (f.size > MAX_FILE_BYTES) { toast.error('File too large', { description: 'Maximum file size is 50 MB' }); return }
+    if (f.size > MAX_FILE_BYTES) { toast.error('File too large', { description: 'Maximum file size is 420 MB' }); return }
     if (preview) URL.revokeObjectURL(preview)
     setFile(f)
     setPreview(URL.createObjectURL(f))
@@ -621,7 +621,10 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
         // staircasing after them. By the time we block below, media
         // has had the metadata- (and collection-metadata-) upload
         // duration as free propagation buffer.
-        const mediaVerify = verifyArweaveAvailable(mediaUri)
+        // Media bundles up to 420 MB can take longer than the 45s default
+        // to surface across the gateway pool, so widen the budget here —
+        // a false-negative wastes the user's entire upload.
+        const mediaVerify = verifyArweaveAvailable(mediaUri, 90_000)
 
         setStep('uploading-metadata')
         setUploadProgress(0)
