@@ -180,8 +180,11 @@ export function CollectionView({
   // Live list of MINTER-bit holders, scoped collection-wide. Refetched
   // after every grant/revoke confirms so the panel mirrors chain state
   // without a manual reload.
-  const { minters: authorizedMinters, refetch: refetchMinters } =
-    useCollectionMinters(canGrantHere ? (address as `0x${string}`) : undefined)
+  const {
+    minters: authorizedMinters,
+    loading: mintersLoading,
+    refetch: refetchMinters,
+  } = useCollectionMinters(canGrantHere ? (address as `0x${string}`) : undefined)
 
   // Mainnet client for client-side ENS resolution. Wagmi already
   // configures a mainnet transport for ENS (lib/wagmi.ts), so we reuse
@@ -593,32 +596,46 @@ export function CollectionView({
               {minterGranting && !revokingAddr ? 'authorizing…' : 'authorize'}
             </button>
           </div>
-          {authorizedMinters.length > 0 && (
-            <ul className="mt-3 flex flex-col gap-1">
-              {authorizedMinters.map((m) => {
-                const isRevoking = revokingAddr === m.toLowerCase()
-                const otherTxBusy = minterGranting && !isRevoking
-                return (
-                  <li
-                    key={m}
-                    className="flex items-center justify-between bg-[#111] border border-[#2a2a2a] px-3 py-2"
-                  >
-                    <span className="text-xs font-mono text-[#888] truncate">
-                      {shortAddress(m)}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => void handleRevokeMinter(m)}
-                      disabled={otherTxBusy || isRevoking}
-                      title="Revoke MINTER permission"
-                      className="ml-2 text-[#555] hover:text-[#efefef] disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0"
-                    >
-                      <Trash2 size={12} />
-                    </button>
-                  </li>
-                )
-              })}
+          {mintersLoading && authorizedMinters.length === 0 ? (
+            <ul className="mt-3 flex flex-col gap-1" aria-busy="true">
+              {[0, 1].map((i) => (
+                <li
+                  key={i}
+                  className="flex items-center justify-between bg-[#111] border border-[#1a1a1a] px-3 py-2 animate-pulse"
+                >
+                  <span className="h-3 w-32 bg-[#1a1a1a]" />
+                  <span className="h-3 w-3 bg-[#1a1a1a] flex-shrink-0" />
+                </li>
+              ))}
             </ul>
+          ) : (
+            authorizedMinters.length > 0 && (
+              <ul className="mt-3 flex flex-col gap-1">
+                {authorizedMinters.map((m) => {
+                  const isRevoking = revokingAddr === m.toLowerCase()
+                  const otherTxBusy = minterGranting && !isRevoking
+                  return (
+                    <li
+                      key={m}
+                      className="flex items-center justify-between bg-[#111] border border-[#2a2a2a] px-3 py-2"
+                    >
+                      <span className="text-xs font-mono text-[#888] truncate">
+                        {shortAddress(m)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleRevokeMinter(m)}
+                        disabled={otherTxBusy || isRevoking}
+                        title="Revoke MINTER permission"
+                        className="ml-2 text-[#555] hover:text-[#efefef] disabled:opacity-30 disabled:cursor-not-allowed flex-shrink-0"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            )
           )}
         </div>
       )}

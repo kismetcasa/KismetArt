@@ -4,7 +4,25 @@ import { useCallback, useEffect, useState } from 'react'
 import type { Address } from 'viem'
 import { usePublicClient } from 'wagmi'
 import { base } from 'wagmi/chains'
+// Side-effect import: lib/collections runs a module-init topic-hash
+// assertion against UPDATED_PERMISSIONS_TOPIC, so a drifted event
+// signature surfaces as a console error before any silent-empty
+// getLogs result. The event is duplicated below as a typed const so
+// viem can infer log.args structure (the COLLECTION_ABI find()
+// narrows to readonly unknown[] | Record<string,unknown>).
+import '@/lib/collections'
 import { PERMISSION_BIT_MINTER } from '@/lib/permissions'
+
+const UPDATED_PERMISSIONS_EVENT = {
+  type: 'event',
+  name: 'UpdatedPermissions',
+  inputs: [
+    { name: 'tokenId', type: 'uint256', indexed: true },
+    { name: 'user', type: 'address', indexed: true },
+    { name: 'permissions', type: 'uint256', indexed: true },
+  ],
+  anonymous: false,
+} as const
 
 /**
  * Reads the live set of addresses holding MINTER (collection-wide,
@@ -37,15 +55,7 @@ export function useCollectionMinters(collection: Address | undefined) {
     try {
       const logs = await publicClient.getLogs({
         address: collection,
-        event: {
-          type: 'event',
-          name: 'UpdatedPermissions',
-          inputs: [
-            { name: 'tokenId', type: 'uint256', indexed: true },
-            { name: 'user', type: 'address', indexed: true },
-            { name: 'permissions', type: 'uint256', indexed: true },
-          ],
-        },
+        event: UPDATED_PERMISSIONS_EVENT,
         args: { tokenId: 0n },
         fromBlock: 'earliest',
         toBlock: 'latest',
