@@ -2,18 +2,17 @@ import { redis } from './redis'
 import { PLATFORM_COLLECTION } from './config'
 import { INPROCESS_API } from './inprocess'
 
+// Master tracked set — every contract Kismet has registered. Drives
+// timeline fan-out for moment lookups across all scopes.
 const KEY = 'kismetart:collections'
-// Positive tracking — populated at form-submission time, not derived.
-// CREATED_COLLECTIONS_KEY is the curator's source of truth for "what
-// counts as a real collection". CREATED_MINTS_KEY is the same for
-// individual mints. Anything not in these sets isn't recognized.
+// Curator-blessed positive set — Create Collection form deploys plus
+// any legacy real collection the curator manually promoted. Source
+// of truth for collection-shaped surfaces.
 const CREATED_COLLECTIONS_KEY = 'kismetart:created-collections'
+// Mints minted via Kismet's MintForm or as a Create Collection cover.
+// Members are `<addr>:<tokenId>` strings. Source of truth for the
+// Mints feed; the timeline route filters scope=standalone by membership.
 const CREATED_MINTS_KEY = 'kismetart:created-mints'
-// Cover tokens (tokenId minted during Create Collection deploy when the
-// "mint cover" toggle is on). Members are `<addr>:<tokenId>` strings.
-// Filtered out of every Mints surface so collection cover art doesn't
-// appear as a standalone mint card.
-const COVER_MOMENTS_KEY = 'kismetart:cover-moments'
 
 export interface CollectionMeta {
   address: string
@@ -24,6 +23,7 @@ export interface CollectionMeta {
 }
 
 export type CollectionSource = 'create-form' | 'auto-deploy'
+export type CollectionScope = 'standalone' | 'collections' | 'all'
 
 const keyCollectionMeta = (address: string) =>
   `kismetart:collection-meta:${address.toLowerCase()}`
@@ -38,23 +38,21 @@ export async function getTrackedCollections(): Promise<string[]> {
   }
 }
 
-// 'collections' returns curated only (Create Collection deploys).
-// 'standalone' and 'all' fan-out to every tracked contract; the
-// timeline route narrows 'standalone' post-merge by created-mints
-// membership, so moments inside curated collections (from MintForm
-// or cover-mint) still reach the Mints feed.
-export type CollectionScope = 'standalone' | 'collections' | 'all'
-
+// 'collections' returns curated only; 'standalone' and 'all' both
+// fan-out to every tracked contract. The timeline route narrows
+// 'standalone' post-merge by created-mints membership, so moments
+// inside curated collections still reach the Mints feed.
 export async function getTrackedCollectionsByScope(
   scope: CollectionScope = 'all',
 ): Promise<string[]> {
-  if (scope === 'collections') return getCreatedCollections()
+  if (scope === 'collections') return getUserCollections()
   return getTrackedCollections()
 }
 
-// Curator-blessed set: contracts deployed via the Create Collection form,
-// plus any legacy real collection the curator manually promoted.
-export async function getCreatedCollections(): Promise<string[]> {
+// "user collections" = the curator-blessed positive set. Used by
+// every collection-shaped surface (Collections feed, profile
+// collections list, mint dropdown, search, moment-detail chip).
+export async function getUserCollections(): Promise<string[]> {
   try {
     return (await redis.smembers(CREATED_COLLECTIONS_KEY)) as string[]
   } catch {
@@ -62,13 +60,12 @@ export async function getCreatedCollections(): Promise<string[]> {
   }
 }
 
+// Legacy-promote entry point. Writes both KEY (so timeline fan-outs
+// include the address) and CREATED_COLLECTIONS_KEY (so collection
+// surfaces render it). The going-forward path goes through
+// addTrackedCollection, which writes the same two keys.
 export async function markCreatedCollection(address: string): Promise<void> {
   try {
-    // Write to both the master tracked set (so timeline fan-outs include
-    // it) and the curator-blessed positive set (so collection-shaped
-    // surfaces render it). markCreatedCollection is the legacy-promote
-    // entry point — addTrackedCollection handles the going-forward path
-    // and writes the same two keys via its own logic.
     await Promise.all([
       redis.sadd(KEY, address),
       redis.sadd(CREATED_COLLECTIONS_KEY, address),
@@ -87,7 +84,6 @@ export async function unmarkCreatedCollection(address: string): Promise<boolean>
   }
 }
 
-// Mints minted via Kismet's MintForm. Members are `<addr>:<tokenId>`.
 export async function getCreatedMintsSet(): Promise<Set<string>> {
   try {
     const members = (await redis.smembers(CREATED_MINTS_KEY)) as string[]
@@ -105,29 +101,6 @@ export async function markCreatedMint(address: string, tokenId: string): Promise
   }
 }
 
-// Backward-compat alias — existing call sites read "collections in the
-// curatorial sense" through this name. Now resolves to created-collections.
-export async function getUserCollections(): Promise<string[]> {
-  return getCreatedCollections()
-}
-
-export async function getCoverMomentsSet(): Promise<Set<string>> {
-  try {
-    const members = (await redis.smembers(COVER_MOMENTS_KEY)) as string[]
-    return new Set(members.map((m) => m.toLowerCase()))
-  } catch {
-    return new Set()
-  }
-}
-
-export async function markCoverMoment(address: string, tokenId: string): Promise<void> {
-  try {
-    await redis.sadd(COVER_MOMENTS_KEY, `${address.toLowerCase()}:${tokenId}`)
-  } catch {
-    /* non-critical — cover will leak into Mints feed but no other harm */
-  }
-}
-
 export async function addTrackedCollection(
   address: string,
   meta?: Omit<CollectionMeta, 'address'>,
@@ -135,10 +108,8 @@ export async function addTrackedCollection(
 ): Promise<void> {
   try {
     const ops: Promise<unknown>[] = [redis.sadd(KEY, address)]
-    // Create Collection form deploys join the curator-blessed positive
-    // set. Auto-deploy wrappers (MintForm without selection) skip it —
-    // the contract still tracks for moment fan-out, but it never
-    // surfaces as a collection.
+    // Auto-deploy wrappers join only KEY — never the curator-blessed
+    // set, so they don't surface as collections.
     if (source === 'create-form') {
       ops.push(redis.sadd(CREATED_COLLECTIONS_KEY, address))
     }
@@ -148,7 +119,7 @@ export async function addTrackedCollection(
     }
     await Promise.all(ops)
   } catch (err) {
-    // Log instead of swallow — a silent KV write failure means the
+    // Log instead of swallow — silent KV write failure means the
     // collection never appears in any feed despite a green-toast UI.
     console.error('[kv] addTrackedCollection failed', {
       address,
@@ -159,7 +130,7 @@ export async function addTrackedCollection(
   }
 }
 
-// Fallback when the inprocess indexer hasn't picked up a fresh deploy.
+// Inprocess-indexer-lag fallback for the collection page.
 export async function getCollectionMeta(
   address: string
 ): Promise<CollectionMeta | null> {
@@ -174,9 +145,8 @@ export async function getCollectionMeta(
   }
 }
 
-// Fallback for the artist profile page when inprocess hasn't indexed
-// a fresh deploy. Walks curated collections only — auto-deploy
-// wrappers belong in the artist's Mints feed.
+// Profile-page fallback when inprocess hasn't indexed a fresh deploy.
+// Walks curated only — auto-deploy wrappers belong in the artist's Mints.
 export async function getCollectionsByArtist(
   artist: string
 ): Promise<CollectionMeta[]> {
@@ -199,7 +169,7 @@ export async function getCollectionsByArtist(
 }
 
 // Cover-image fallback for KV entries registered before the cover flow
-// shipped. 5min upstream cache bounds the search-query fan-out cost.
+// shipped. 5min upstream cache bounds the per-search fan-out.
 async function fetchInprocessCollectionImage(address: string): Promise<string | undefined> {
   try {
     const url = new URL(`${INPROCESS_API}/collection`)
@@ -219,7 +189,7 @@ async function fetchInprocessCollectionImage(address: string): Promise<string | 
   }
 }
 
-// Searches curated collections only; moments have their own search endpoint.
+// Searches curated collections only; moments have their own search.
 export async function searchCollections(query: string): Promise<CollectionMeta[]> {
   const addresses = await getUserCollections()
   if (!addresses.length) return []
@@ -229,7 +199,7 @@ export async function searchCollections(query: string): Promise<CollectionMeta[]
   const results: CollectionMeta[] = []
   for (let i = 0; i < addresses.length; i++) {
     const raw = raws[i]
-    if (!raw) continue // skip auto-tracked collections without an explicit name
+    if (!raw) continue
     const address = addresses[i].toLowerCase()
     const meta: CollectionMeta = typeof raw === 'string' ? JSON.parse(raw) : raw
     if (meta.name.toLowerCase().includes(q) || address.startsWith(q)) {
@@ -237,8 +207,7 @@ export async function searchCollections(query: string): Promise<CollectionMeta[]
       if (results.length >= 20) break
     }
   }
-  // Backfill missing cover images from inprocess. Scoped to matches so
-  // latency stays bounded.
+  // Backfill missing cover images from inprocess (scoped to matches).
   return Promise.all(
     results.map(async (meta) => {
       if (meta.image) return meta

@@ -27,8 +27,8 @@ export interface RegisterCollectionPayload {
   // set for moment fan-out but excluded from collection-shaped surfaces.
   source?: 'create-form' | 'auto-deploy'
   // tokenId of the cover artwork minted at deploy time, when applicable.
-  // Server flags it in the cover-moments set so it doesn't appear as a
-  // standalone mint in any Mints feed.
+  // Server flags it as a created-mint so the cover surfaces in the Mints
+  // feed alongside MintForm mints.
   coverTokenId?: string
 }
 

@@ -39,9 +39,9 @@ export async function GET(req: NextRequest) {
 
   const singleCollection = searchParams.get('collection')?.toLowerCase() ?? null
 
-  // standalone = PLATFORM + auto-deploy wrappers; collections = curated
-  // (user-deployed) only; all = unfiltered. Mints feed uses standalone
-  // so collection moments don't double up across sub-tabs.
+  // standalone = strict Mints surface (filtered post-merge by created-mints
+  // membership). collections = curated only (Create Collection deploys).
+  // all = every tracked contract, no narrowing.
   const rawScope = searchParams.get('scope')
   const scope: CollectionScope =
     rawScope === 'standalone' || rawScope === 'collections' ? rawScope : 'all'
