@@ -109,10 +109,15 @@ export function CollectionView({
     !!defaultAdminAddress &&
     connectedAddress.toLowerCase() === defaultAdminAddress.toLowerCase()
 
-  // Read the connected viewer's own perms so any wallet with on-chain
-  // ADMIN can authorize — not just the displayed creator. Covers the
-  // case where a platform operator deployed on an artist's behalf and
-  // remains as on-chain admin.
+  // Authorize-creators panel is restricted to the deployer
+  // (defaultAdmin). Delegated admins still hold ADMIN on chain and
+  // could `addPermission` from etherscan, but the UI doesn't surface
+  // that — keeps "who can add other artists here" a single, clear
+  // role. Authorized artists land on the creator chip → MintForm
+  // instead, which is the surface that actually matters to them.
+  const canGrantHere = isCreator
+  // We still read the viewer's EOA perms — needed for the legacy
+  // MINTER chip that surfaces existing on-chain MINTER grants.
   const { data: viewerPerms } = useReadContract({
     address: address as `0x${string}`,
     abi: COLLECTION_ABI,
@@ -120,9 +125,6 @@ export function CollectionView({
     args: connectedAddress ? [0n, connectedAddress as `0x${string}`] : undefined,
     query: { enabled: !!connectedAddress },
   })
-  const viewerHasAdmin =
-    viewerPerms !== undefined && hasAdminBit(viewerPerms as bigint)
-  const canGrantHere = isCreator || viewerHasAdmin
   // MINTER-only viewers can adminMint but not setupNewToken, so their
   // chip routes to the Airdrop tab.
   const viewerHasMinter =
