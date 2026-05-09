@@ -147,7 +147,129 @@ export function AdminDashboard() {
         adminAddress={address!}
         signMessage={signMessageAsync}
       />
+      <AirdropRemoveCard
+        adminAddress={address!}
+        signMessage={signMessageAsync}
+      />
     </div>
+  )
+}
+
+interface RemoveResponse {
+  ok?: boolean
+  removedFromLog?: number
+  removedFromCollected?: number
+  error?: string
+}
+
+function AirdropRemoveCard({
+  adminAddress,
+  signMessage,
+}: {
+  adminAddress: string
+  signMessage: (args: { message: string }) => Promise<string>
+}) {
+  const [sender, setSender] = useState('')
+  const [collection, setCollection] = useState('')
+  const [tokenId, setTokenId] = useState('')
+  const [recipient, setRecipient] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [result, setResult] = useState<RemoveResponse | null>(null)
+
+  async function handleSubmit() {
+    setResult(null)
+    if (!sender.trim() || !collection.trim() || !tokenId.trim() || !recipient.trim()) {
+      toast.error('every field is required', { id: 'unbackfill' })
+      return
+    }
+    if (!isAddress(recipient.trim())) {
+      toast.error('recipient must be a 0x address (resolve ENS first)', { id: 'unbackfill' })
+      return
+    }
+    setSubmitting(true)
+    try {
+      const ts = Date.now()
+      const message = `Kismet Art admin session\nAddress: ${adminAddress.toLowerCase()}\nTimestamp: ${ts}`
+      const signature = await signMessage({ message })
+      const res = await fetch('/api/airdrop/unbackfill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          signature,
+          timestamp: ts,
+          sender: sender.trim(),
+          collectionAddress: collection.trim(),
+          tokenId: tokenId.trim(),
+          recipient: recipient.trim(),
+        }),
+      })
+      const json = (await res.json().catch(() => ({}))) as RemoveResponse
+      setResult(json)
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error ?? 'Remove failed')
+      }
+      toast.success(
+        `Removed ${json.removedFromLog ?? 0} log row, ${json.removedFromCollected ?? 0} collected entry`,
+        { id: 'unbackfill' },
+      )
+    } catch (err) {
+      toastError('Remove', err, { id: 'unbackfill' })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <section className="border border-[#2a2a2a] bg-[#161616] p-4 flex flex-col gap-3">
+      <div>
+        <h2 className="text-[#efefef] font-mono text-sm">Remove airdrop entry</h2>
+        <p className="text-[11px] font-mono text-[#888] mt-1 leading-relaxed">
+          Reverse a backfill that pointed at the wrong recipient. Removes the row
+          from the sender&apos;s airdrop log and the moment from the recipient&apos;s
+          collected zset. Recipient must be a 0x address — resolve ENS first.
+        </p>
+      </div>
+
+      <Field
+        label="sender"
+        value={sender}
+        onChange={setSender}
+        placeholder="0x…"
+      />
+      <Field
+        label="collection address"
+        value={collection}
+        onChange={setCollection}
+        placeholder="0x…"
+      />
+      <Field
+        label="token id"
+        value={tokenId}
+        onChange={setTokenId}
+        placeholder="1"
+      />
+      <Field
+        label="recipient (the bad address to remove)"
+        value={recipient}
+        onChange={setRecipient}
+        placeholder="0x…"
+      />
+
+      <button
+        type="button"
+        onClick={handleSubmit}
+        disabled={submitting}
+        className="text-xs font-mono tracking-wider uppercase px-4 py-2 border border-[#2a2a2a] text-[#efefef] hover:border-[#555] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >
+        {submitting ? 'signing + removing…' : 'sign & remove'}
+      </button>
+
+      {result && (
+        <div className="border border-[#2a2a2a] bg-[#0a0a0a] p-2 text-[10px] font-mono text-[#888] whitespace-pre-wrap break-all">
+          {JSON.stringify(result, null, 2)}
+        </div>
+      )}
+    </section>
   )
 }
 
