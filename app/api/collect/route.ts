@@ -15,7 +15,11 @@ import { getMomentMeta, writeNotification } from '@/lib/notifications'
  */
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req)
-  const allowed = await checkRateLimit(`collect:${ip}`, 20, 60)
+  // 60/min covers a full MAX_COLLECT_ALL_BATCH (20) collect-all plus normal
+  // per-token collects from the same NAT in the same minute window. Without
+  // the headroom, a legitimate batch consumes the cap and blocks shared-IP
+  // peers (offices, mobile networks) for ~60s.
+  const allowed = await checkRateLimit(`collect:${ip}`, 60, 60)
   if (!allowed) return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
 
   const body = (await req.json().catch(() => null)) as {

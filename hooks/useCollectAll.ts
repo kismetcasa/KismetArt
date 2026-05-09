@@ -53,6 +53,16 @@ interface RecordEntry {
   currency: 'eth' | 'usdc'
 }
 
+// Bundle calls and the record entries they're responsible for stay in
+// lockstep so that, after waitForCallsStatus returns, we can attribute
+// each receipt's success/failure back to the exact tokens it covered.
+// USDC.approve has no records (it's a setup call); ETH multicall carries
+// every ETH mint's record; USDC mints carry one record each.
+interface CallSegment {
+  call: { to: Address; data: Hex; value?: bigint }
+  records: RecordEntry[]
+}
+
 interface UseCollectAllReturn {
   collectAll: (args: CollectAllArgs) => Promise<{ minted: number } | null>
   status: Status
@@ -149,8 +159,7 @@ export function useCollectAll(): UseCollectAllReturn {
           return null
         }
 
-        const calls: { to: Address; data: Hex; value?: bigint }[] = []
-        const recordEntries: RecordEntry[] = []
+        const segments: CallSegment[] = []
 
         // ─── ETH leg ─────────────────────────────────────────────────────
         if (ethBatch.length > 0) {
@@ -179,22 +188,25 @@ export function useCollectAll(): UseCollectAllReturn {
             (sum, e) => sum + mintFee + e.pricePerToken,
             0n,
           )
-          calls.push({
-            to: collectionAddress,
-            data: encodeFunctionData({
-              abi: ZORA_MULTICALL_ABI,
-              functionName: 'multicall',
-              args: [ethCalls],
-            }) as Hex,
-            value: ethValue,
-          })
-          for (const e of ethBatch) {
-            recordEntries.push({
+          segments.push({
+            call: {
+              to: collectionAddress,
+              data: encodeFunctionData({
+                abi: ZORA_MULTICALL_ABI,
+                functionName: 'multicall',
+                args: [ethCalls],
+              }) as Hex,
+              value: ethValue,
+            },
+            // OZ multicall is atomic — either all sub-mints succeed or the
+            // whole call reverts — so the single ETH segment carries every
+            // ETH record. The receipt's status applies to the whole group.
+            records: ethBatch.map((e) => ({
               tokenId: e.tokenId.toString(),
               pricePerToken: e.pricePerToken,
-              currency: 'eth',
-            })
-          }
+              currency: 'eth' as const,
+            })),
+          })
         }
 
         // ─── USDC leg ────────────────────────────────────────────────────
@@ -210,42 +222,49 @@ export function useCollectAll(): UseCollectAllReturn {
             args: [address as Address, ZORA_ERC20_MINTER],
           })
           if (currentAllowance < usdcTotal) {
-            calls.push({
-              to: USDC_BASE,
-              data: encodeFunctionData({
-                abi: ERC20_ABI,
-                functionName: 'approve',
-                args: [ZORA_ERC20_MINTER, usdcTotal],
-              }) as Hex,
+            segments.push({
+              call: {
+                to: USDC_BASE,
+                data: encodeFunctionData({
+                  abi: ERC20_ABI,
+                  functionName: 'approve',
+                  args: [ZORA_ERC20_MINTER, usdcTotal],
+                }) as Hex,
+              },
+              // Approve is a setup call, not a mint. No records to attribute.
+              records: [],
             })
           }
 
           for (const e of usdcBatch) {
-            calls.push({
-              to: ZORA_ERC20_MINTER,
-              data: encodeFunctionData({
-                abi: ZORA_ERC20_MINTER_ABI,
-                functionName: 'mint',
-                args: [
-                  address as Address,
-                  1n,
-                  collectionAddress,
-                  e.tokenId,
-                  e.pricePerToken,
-                  USDC_BASE,
-                  KISMET_REFERRAL,
-                  '',
-                ],
-              }) as Hex,
-            })
-            recordEntries.push({
-              tokenId: e.tokenId.toString(),
-              pricePerToken: e.pricePerToken,
-              currency: 'usdc',
+            segments.push({
+              call: {
+                to: ZORA_ERC20_MINTER,
+                data: encodeFunctionData({
+                  abi: ZORA_ERC20_MINTER_ABI,
+                  functionName: 'mint',
+                  args: [
+                    address as Address,
+                    1n,
+                    collectionAddress,
+                    e.tokenId,
+                    e.pricePerToken,
+                    USDC_BASE,
+                    KISMET_REFERRAL,
+                    '',
+                  ],
+                }) as Hex,
+              },
+              records: [{
+                tokenId: e.tokenId.toString(),
+                pricePerToken: e.pricePerToken,
+                currency: 'usdc' as const,
+              }],
             })
           }
         }
 
+        const calls = segments.map((s) => s.call)
         const totalMints = ethBatch.length + usdcBatch.length
 
         setStatus('minting')
@@ -265,55 +284,95 @@ export function useCollectAll(): UseCollectAllReturn {
         setStatus('confirming')
         toast.loading('Confirming on-chain…', { id: TOAST_ID })
 
+        // throwOnFailure: false so we can inspect per-receipt status —
+        // sequential-fallback bundles can have some sub-txs revert while
+        // others succeed, and we want to record the survivors.
         const result = await waitForCallsStatus(config, {
           id,
-          throwOnFailure: true,
+          throwOnFailure: false,
           // Bundles with ≥3 sequential txs on slow wallets can exceed the
           // default 60s. 5 minutes covers worst-case fallback paths.
           timeout: 300_000,
         })
-        if (result.status !== 'success') {
-          throw new Error(`Bundle ${result.status ?? 'failed'}`)
+
+        // Walk segments[] against result.receipts[] to attribute success
+        // back to specific records. Two shapes to handle:
+        //   • Atomic mode: receipts.length === 1 — that single receipt's
+        //     status applies to every record in every segment.
+        //   • Sequential / per-call mode: receipts.length === segments.length
+        //     — each segment gets its own receipt and is recorded only if
+        //     its receipt succeeded.
+        // If receipts is missing or sized unexpectedly, treat as a total
+        // failure rather than guessing — better to under-record than to
+        // poison trending with phantom mints.
+        const receipts = result.receipts ?? []
+        type Recorded = { entry: RecordEntry; txHash: Hex }
+        const recorded: Recorded[] = []
+        if (receipts.length === 1 && receipts[0].status === 'success') {
+          for (const seg of segments) {
+            for (const entry of seg.records) {
+              recorded.push({ entry, txHash: receipts[0].transactionHash })
+            }
+          }
+        } else if (receipts.length === segments.length) {
+          for (let i = 0; i < segments.length; i++) {
+            if (receipts[i].status !== 'success') continue
+            for (const entry of segments[i].records) {
+              recorded.push({ entry, txHash: receipts[i].transactionHash })
+            }
+          }
+        }
+
+        if (recorded.length === 0) {
+          throw new Error(
+            result.status === 'failure'
+              ? 'Bundle reverted on-chain'
+              : `Bundle ${result.status ?? 'failed'}`,
+          )
         }
 
         // Best-effort post-mint hooks: trending score, collected list,
-        // creator notification — one POST per token. Failure is non-critical.
-        // We use the first receipt's hash as a representative txHash; for
-        // sequential-fallback bundles each mint has its own hash but the
-        // /api/collect endpoint only uses txHash for de-dup display.
-        const representativeHash =
-          result.receipts && result.receipts.length > 0
-            ? result.receipts[0].transactionHash
-            : '0x'
+        // creator notification. Each entry uses ITS OWN tx hash so the
+        // recording endpoint can de-dup correctly even in fallback mode.
         setStatus('recording')
         await Promise.all(
-          recordEntries.map((r) =>
+          recorded.map(({ entry, txHash }) =>
             fetch('/api/collect', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 moment: {
                   collectionAddress,
-                  tokenId: r.tokenId,
+                  tokenId: entry.tokenId,
                   chainId: base.id,
                 },
                 account: address,
                 amount: 1,
                 comment: '',
-                pricePerToken: r.pricePerToken.toString(),
-                currency: r.currency,
-                txHash: representativeHash,
+                pricePerToken: entry.pricePerToken.toString(),
+                currency: entry.currency,
+                txHash,
               }),
             }).catch(() => {}),
           ),
         )
 
         setStatus('done')
-        toast.success(
-          `Collected ${totalMints} moment${totalMints === 1 ? '' : 's'}!`,
-          { id: TOAST_ID },
-        )
-        return { minted: totalMints }
+        if (recorded.length === totalMints) {
+          toast.success(
+            `Collected ${totalMints} moment${totalMints === 1 ? '' : 's'}!`,
+            { id: TOAST_ID },
+          )
+        } else {
+          // Partial — common in sequential-fallback mode when a later
+          // sub-tx reverts (sale ended mid-bundle, slippage, etc.). Be
+          // explicit so the user knows their wallet history is correct.
+          toast.warning(
+            `Collected ${recorded.length} of ${totalMints} — see your wallet for the rest`,
+            { id: TOAST_ID },
+          )
+        }
+        return { minted: recorded.length }
       } catch (err) {
         setStatus('error')
         toastError('Collect all', err, { id: TOAST_ID })

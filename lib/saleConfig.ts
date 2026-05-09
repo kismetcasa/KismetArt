@@ -33,6 +33,14 @@ const FPSS_SALE_ABI = [
 // pricePerToken widened to uint256 and a trailing currency field. We treat
 // currency != USDC_BASE as ineligible (collect-all only supports USDC for
 // the ERC20 path; other ERC20s would need their own approve/decimals logic).
+//
+// ABI provenance: matches the SalesConfig struct in Zora's IERC20Minter.sol
+// (zora-protocol monorepo, packages/protocol-rewards/src/erc20-minter).
+// Verify against the deployed contract at ZORA_ERC20_MINTER on Base by
+// reading getABIs from BaseScan or running:
+//   cast interface 0xE27d9Dc88dAB82ACa3ebC49895c663C6a0CfA014 --rpc-url base
+// If the on-chain ABI ever drifts, fetchUsdcEligibleTokens will return [] —
+// the ETH leg keeps working, so this fails closed (graceful degradation).
 const ERC20_MINTER_SALE_ABI = [
   {
     name: 'sale',
@@ -182,6 +190,11 @@ export async function fetchEthEligibleTokens(
   // maxPerAddress === 0 means unlimited (no filter); otherwise filter when
   // balance has hit the cap. Covers single-edition (=== 1) AND multi-edition
   // ceilings — minting +1 over the cap reverts atomically.
+  //
+  // Fail-closed: when `account` is provided and the per-token balance read
+  // FAILS, we DROP the candidate rather than passing it through. On atomic
+  // EIP-5792 wallets a single revert cascades the whole bundle, so it's
+  // safer to under-include than to detonate the batch on an RPC blip.
   let balanceResults
   try {
     balanceResults = await multicall(client, {
@@ -194,12 +207,14 @@ export async function fetchEthEligibleTokens(
       allowFailure: true,
     })
   } catch {
-    return candidates
+    // Outer multicall failure means we can't verify any balance — drop all
+    // candidates rather than risk a cascade revert.
+    return []
   }
 
   return candidates.filter((c, i) => {
     const r = balanceResults[i]
-    if (r.status !== 'success') return true
+    if (r.status !== 'success') return false
     const balance = r.result as bigint
     return !(c.maxPerAddress > 0n && balance >= c.maxPerAddress)
   })
@@ -281,6 +296,8 @@ export async function fetchUsdcEligibleTokens(
 
   if (!account || candidates.length === 0) return candidates
 
+  // Same fail-closed semantics as the ETH path — on balance-read failure,
+  // drop the candidate rather than risk a cascading revert in the bundle.
   let balanceResults
   try {
     balanceResults = await multicall(client, {
@@ -293,12 +310,12 @@ export async function fetchUsdcEligibleTokens(
       allowFailure: true,
     })
   } catch {
-    return candidates
+    return []
   }
 
   return candidates.filter((c, i) => {
     const r = balanceResults[i]
-    if (r.status !== 'success') return true
+    if (r.status !== 'success') return false
     const balance = r.result as bigint
     return !(c.maxPerAddress > 0n && balance >= c.maxPerAddress)
   })
