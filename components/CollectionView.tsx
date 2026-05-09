@@ -18,6 +18,7 @@ import { useInprocessSmartWallet } from '@/hooks/useInprocessSmartWallet'
 import { useGrantPermission } from '@/hooks/useGrantPermission'
 import { useCollectionMinters } from '@/hooks/useCollectionMinters'
 import { COLLECTION_ABI } from '@/lib/collections'
+import { OPERATOR_SMART_WALLET } from '@/lib/config'
 import { hasAdminBit } from '@/lib/permissions'
 import { MomentCard } from './MomentCard'
 import { ProfileAvatar } from './ProfileAvatar'
@@ -25,6 +26,11 @@ import { ProfileAvatar } from './ProfileAvatar'
 interface AvatarProfile {
   name: string
   avatarUrl?: string
+}
+
+interface SplitRecipientLite {
+  address: string
+  percentAllocation: number
 }
 
 function AvatarRow({
@@ -100,6 +106,9 @@ export function CollectionView({
   // /api/timeline route (creator sees their own hidden moments; others don't).
   const [moments, setMoments] = useState<Moment[] | null>(null)
   const [hidePending, setHidePending] = useState(false)
+  // Stored split recipients keyed by tokenId. Populated by the batch
+  // /api/collection/[addr]/splits route after moments load.
+  const [splitsByMoment, setSplitsByMoment] = useState<Record<string, SplitRecipientLite[]>>({})
   const { ensureSession } = useUploadSession()
 
   const isFeatured = featuredCollectionAddrs.has(address.toLowerCase())
@@ -351,6 +360,7 @@ export function CollectionView({
   useEffect(() => {
     let cancelled = false
     setMoments(null) // reset to loading when address changes
+    setSplitsByMoment({})
     fetch(`/api/timeline?collection=${address}&limit=50`)
       .then((r) => (r.ok ? r.json() : { moments: [] }))
       .then((d) => {
@@ -365,6 +375,47 @@ export function CollectionView({
             .filter((a) => !creatorSet.has(a.address.toLowerCase()))
             .map((a) => a.address.toLowerCase()),
         )
+
+        // Pull stored split recipients in one batch so the splits panel
+        // can render real user wallets instead of the on-chain admin
+        // list (which contains the deployed 0xSplits contract). Profile
+        // fetches for any new recipient addresses join the same loop.
+        const tokenIds = loaded
+          .map((m) => m.token_id)
+          .filter((t): t is string => typeof t === 'string' && t.length > 0)
+        if (tokenIds.length > 0) {
+          fetch(
+            `/api/collection/${address}/splits?tokenIds=${encodeURIComponent(tokenIds.join(','))}`,
+          )
+            .then((r) => (r.ok ? r.json() : null))
+            .then((sd) => {
+              if (cancelled || !sd?.moments) return
+              const map: Record<string, SplitRecipientLite[]> = {}
+              const recipientAddrs = new Set<string>()
+              for (const [tid, info] of Object.entries(sd.moments) as [
+                string,
+                { recipients?: SplitRecipientLite[] } | null,
+              ][]) {
+                const recipients = Array.isArray(info?.recipients) ? info!.recipients : []
+                if (recipients.length > 0) {
+                  map[tid] = recipients
+                  recipients.forEach((r) =>
+                    recipientAddrs.add(r.address.toLowerCase()),
+                  )
+                }
+              }
+              setSplitsByMoment(map)
+              recipientAddrs.forEach((addr) => {
+                if (creatorSet.has(addr) || adminAddrs.has(addr)) return
+                fetchCreatorProfile(addr).then(({ name, avatarUrl }) => {
+                  if (!cancelled)
+                    setProfiles((prev) => ({ ...prev, [addr]: { name, avatarUrl } }))
+                })
+              })
+            })
+            .catch(() => {})
+        }
+
         ;[...creatorSet, ...adminAddrs].forEach((addr) => {
           fetchCreatorProfile(addr).then(({ name, avatarUrl }) => {
             if (!cancelled)
@@ -407,17 +458,49 @@ export function CollectionView({
     new Set(loadedMoments.map((m) => m.creator.address.toLowerCase()))
   )
 
-  // Unique split admin addresses (from moment admins, excluding moment creators)
+  // Unique split admin addresses (from moment admins). Excludes moment
+  // creators and the platform operator smart wallet — both of which would
+  // otherwise leak into the splits panel even though neither represents
+  // a real recipient profile. The deployed 0xSplits SplitWallet contract
+  // also lives in admins[]; we can't filter it here without a chain read,
+  // so when stored recipients are available below they take precedence
+  // over this fallback.
+  const operatorLower = OPERATOR_SMART_WALLET
+    ? OPERATOR_SMART_WALLET.toLowerCase()
+    : ''
   const uniqueAdmins = Array.from(
     loadedMoments
       .flatMap((m) => m.admins ?? [])
       .reduce((map, admin) => {
         const lower = admin.address.toLowerCase()
-        if (!uniqueCreators.includes(lower)) map.set(lower, admin)
+        if (uniqueCreators.includes(lower)) return map
+        if (operatorLower && lower === operatorLower) return map
+        map.set(lower, admin)
         return map
       }, new Map<string, MomentAdmin>())
       .values()
   )
+
+  // Real recipient wallets, fetched per-moment from
+  // /api/collection/[addr]/splits and aggregated across the moments
+  // rendered on this page. When at least one moment in the collection
+  // has stored recipients, the splits panel renders these instead of
+  // the on-chain admin list — so visitors land on actual user profiles.
+  // For collections minted before recipient persistence (legacy `'1'`
+  // flag in KV), this stays empty and the panel falls back to the
+  // filtered admin list above.
+  const uniqueRecipients = Array.from(
+    new Set(
+      Object.values(splitsByMoment)
+        .flat()
+        .map((r) => r.address.toLowerCase())
+        .filter((addr) => !uniqueCreators.includes(addr))
+    )
+  )
+  const splitsPanelAddresses =
+    uniqueRecipients.length > 0
+      ? uniqueRecipients
+      : uniqueAdmins.map((a) => a.address)
 
   const indexing = isTracked && moments !== null && loadedMoments.length === 0
 
@@ -637,13 +720,16 @@ export function CollectionView({
         </section>
       )}
 
-      {/* Splits */}
-      {uniqueAdmins.length > 0 && (
+      {/* Splits — prefers stored recipient wallets; falls back to the
+          filtered admin list (creator + operator wallet excluded) so
+          legacy moments still surface non-creator admins until the
+          recipient list is backfilled via /api/admin/splits. */}
+      {splitsPanelAddresses.length > 0 && (
         <section className="mb-10">
           <h2 className="text-xs font-mono text-[#555] uppercase tracking-widest mb-4">splits</h2>
           <div className="flex flex-wrap gap-2">
-            {uniqueAdmins.map((admin) => (
-              <AvatarRow key={admin.address} addr={admin.address} profiles={profiles} />
+            {splitsPanelAddresses.map((addr) => (
+              <AvatarRow key={addr} addr={addr} profiles={profiles} />
             ))}
           </div>
         </section>

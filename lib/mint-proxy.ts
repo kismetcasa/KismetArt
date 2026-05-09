@@ -1,7 +1,6 @@
 import { type NextRequest, NextResponse } from 'next/server'
 import { isAddress } from '@/lib/address'
 import { INPROCESS_API } from './inprocess'
-import { redis } from './redis'
 import { trackWallet } from './profile'
 import { checkRateLimit, getClientIp } from './ratelimit'
 import { setMomentMeta, writeNotification } from './notifications'
@@ -9,6 +8,7 @@ import { setMomentContent } from './momentContent'
 import { getFollowers } from './follows'
 import { checkSmartWalletAdmin } from './smartWalletPreflight'
 import { markCreatedMint } from './kv'
+import { setStoredSplits } from './splits'
 
 // 0xSplits' SplitMain caps usable recipients well below this in practice
 // (gas-bound), but 50 is a generous safety net that no legitimate UI flow
@@ -314,9 +314,14 @@ export async function proxyMintRequest(
       })()
 
       if (splitsValidation.kind === 'ok' && splitsValidation.splits.length >= 2) {
-        void redis
-          .set(`kismetart:splits:${contractAddress.toLowerCase()}:${tokenId}`, '1')
-          .catch(() => {})
+        // Persists the validated recipient list (not just a `'1'` flag) so
+        // the collection page can render real wallet addresses under
+        // "splits" instead of inprocess's on-chain admin list — which
+        // includes the deployed 0xSplits contract and the operator smart
+        // wallet, neither of which corresponds to a user profile.
+        void setStoredSplits(contractAddress, tokenId, splitsValidation.splits).catch(
+          (err) => console.error('[mint-proxy] setStoredSplits failed', err),
+        )
       }
     }
   }

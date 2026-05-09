@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAddress, isValidTokenId } from '@/lib/address'
-import { redis } from '@/lib/redis'
+import { getStoredSplits } from '@/lib/splits'
 
+// Returns the splits state for a single moment.
+//   { hasSplits, recipients }
+// `hasSplits` gates the creator-only "distribute" UI in useMomentSplits.
+// `recipients` is non-empty only for mints persisted with the recipient
+// list (post-recipient-storage) — legacy mints written as the literal
+// `'1'` flag still report `hasSplits: true` so the distribute flow keeps
+// working, but `recipients` will be empty until backfilled.
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const collectionAddress = searchParams.get('collectionAddress')
@@ -17,7 +24,9 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'Invalid tokenId' }, { status: 400 })
   }
 
-  const key = `kismetart:splits:${collectionAddress.toLowerCase()}:${tokenId}`
-  const exists = await redis.exists(key).catch(() => 0)
-  return NextResponse.json({ hasSplits: exists === 1 })
+  const stored = await getStoredSplits(collectionAddress, tokenId).catch(() => ({
+    hasSplits: false,
+    recipients: [],
+  }))
+  return NextResponse.json(stored)
 }
