@@ -5,7 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { resolveUri, shortAddress, type Moment } from '@/lib/inprocess'
 import { fetchCreatorProfile } from '@/lib/profileCache'
-import { OPERATOR_SMART_WALLET } from '@/lib/config'
+import { isOperatorAddress } from '@/lib/config'
 import { MomentCard } from './MomentCard'
 import { CollectAllAction } from './CollectAllAction'
 
@@ -35,19 +35,13 @@ export function CollectionRow({ collection, primaryAction }: CollectionRowProps)
   const name = c.metadata?.name || c.name || shortAddress(c.contractAddress)
   const description = c.metadata?.description
 
+  // `default_admin` resolves to the operator smart wallet when the
+  // platform deployed on the artist's behalf. The plural endpoint
+  // doesn't surface a distinct artist EOA, so we suppress the chip
+  // rather than dead-link to an empty profile.
   const rawAdminAddr = c.default_admin?.address
-  // `default_admin` from inprocess can be the platform operator smart
-  // wallet for collections deployed on behalf of an artist. That wallet
-  // has no Kismet profile, so linking to it sends visitors to an empty
-  // page. Suppress the chip entirely in that case rather than render a
-  // dead link — the plural endpoint doesn't surface the artist EOA on
-  // these rows, so there's no better label to fall back to here.
-  const isOperatorAdmin =
-    !!rawAdminAddr &&
-    !!OPERATOR_SMART_WALLET &&
-    rawAdminAddr.toLowerCase() === OPERATOR_SMART_WALLET.toLowerCase()
-  const adminAddr = isOperatorAdmin ? undefined : rawAdminAddr
-  const initialUsername = isOperatorAdmin ? undefined : c.default_admin?.username
+  const adminAddr = isOperatorAddress(rawAdminAddr) ? undefined : rawAdminAddr
+  const initialUsername = isOperatorAddress(rawAdminAddr) ? undefined : c.default_admin?.username
   const [creatorLabel, setCreatorLabel] = useState<string | null>(
     initialUsername ? `@${initialUsername}` : adminAddr ? shortAddress(adminAddr) : null,
   )

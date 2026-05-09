@@ -5,6 +5,7 @@ import { useAccount, useReadContract, useSignMessage } from 'wagmi'
 import { toast } from 'sonner'
 import { ZORA_CREATOR_REWARD_RECIPIENT_ABI } from '@/lib/zoraMint'
 import { toastError } from '@/lib/toast'
+import type { SplitRecipient } from '@/lib/splits'
 import type { CollectCurrency } from '@/hooks/useDirectCollect'
 
 interface Options {
@@ -13,17 +14,9 @@ interface Options {
   isCreator: boolean
 }
 
-export interface MomentSplitRecipient {
-  address: string
-  percentAllocation: number
-}
-
 interface SplitsState {
   hasSplits: boolean
-  // Stored recipient list for this moment (with percent allocations).
-  // Empty for legacy mints persisted as the `'1'` flag — those can be
-  // populated retroactively via the admin backfill route.
-  recipients: MomentSplitRecipient[]
+  recipients: SplitRecipient[]
   splitAddress: `0x${string}` | undefined
   distribute: (currency: CollectCurrency) => Promise<void>
   distributing: boolean
@@ -31,26 +24,20 @@ interface SplitsState {
 }
 
 /**
- * Bundles the splits state shared between MomentModal and
- * MomentDetailView: stored recipient list (for the public splits panel)
+ * Bundles the splits state shared between MomentModal and MomentDetailView:
+ * the stored recipient list (rendered for every viewer in the splits panel)
  * plus the creator-only distribute flow.
  *
- *   1. Polls /api/moment/splits for `{ hasSplits, recipients }`. Runs
- *      for every viewer (not just the creator) so the splits panel can
- *      render recipient avatars + percentages on the moment page.
- *   2. Reads the on-chain split contract address via Zora's
- *      getCreatorRewardRecipient (gated on isCreator && hasSplits — it's
- *      only used by the distribute UI, which is creator-only).
- *   3. distribute(currency) signs a nonce'd message and POSTs to
- *      /api/distribute. Currency is injected by the caller — the inprocess
- *      side needs tokenAddress=USDC_BASE for USDC moments, otherwise the
- *      call defaults to ETH and a USDC splits contract distributes nothing.
+ * `splitAddress` is gated on `isCreator && hasSplits` because only the
+ * distribute UI uses it. `currency` is injected by the caller — inprocess
+ * needs `tokenAddress=USDC_BASE` for USDC moments or it defaults to ETH
+ * and distributes nothing from a USDC splits contract.
  */
 export function useMomentSplits({ address, tokenId, isCreator }: Options): SplitsState {
   const { address: connectedAddress } = useAccount()
   const { signMessageAsync } = useSignMessage()
   const [hasSplits, setHasSplits] = useState(false)
-  const [recipients, setRecipients] = useState<MomentSplitRecipient[]>([])
+  const [recipients, setRecipients] = useState<SplitRecipient[]>([])
   const [distributing, setDistributing] = useState(false)
   const [distributeHash, setDistributeHash] = useState<string | null>(null)
 

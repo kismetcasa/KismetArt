@@ -7,6 +7,7 @@ import { toast } from 'sonner'
 import { useAccount, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toastError } from '@/lib/toast'
+import { MAX_SPLITS } from '@/lib/splits'
 
 /**
  * Admin-only dashboard. Hosts moderation utilities that bypass the
@@ -285,11 +286,8 @@ function HideContentCard({
   )
 }
 
-// Backfill splits for legacy moments — collections minted before
-// recipient persistence in mint-proxy.ts hold a `'1'` flag in KV
-// instead of the recipient list, so the moment-detail splits panel
-// stays empty until populated here. Mints going forward record
-// recipients automatically; this card is a curator escape-hatch.
+// Curator escape-hatch for legacy moments whose splits predate
+// recipient persistence — new mints record recipients automatically.
 function BackfillSplitsCard({
   adminAddress,
   signMessage,
@@ -325,7 +323,7 @@ function BackfillSplitsCard({
     setRows((rs) => rs.map((r, i) => (i === idx ? { ...r, [key]: value } : r)))
   }
   function addRow() {
-    if (rows.length >= 50) return
+    if (rows.length >= MAX_SPLITS) return
     setRows((rs) => [...rs, { address: '', percent: '' }])
   }
   function removeRow(idx: number) {
@@ -436,7 +434,7 @@ function BackfillSplitsCard({
           <button
             type="button"
             onClick={addRow}
-            disabled={rows.length >= 50}
+            disabled={rows.length >= MAX_SPLITS}
             className="text-[10px] font-mono uppercase tracking-wider text-[#555] hover:text-[#888] disabled:opacity-30 w-fit"
           >
             + add recipient

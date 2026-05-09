@@ -7,12 +7,9 @@ import {
 } from 'viem'
 import type { SplitRecipient } from './splits'
 
-// Structural type that any viem PublicClient satisfies regardless of its
-// chain generic. The `PublicClient<Transport, Chain>` instance returned by
-// serverBaseClient() carries Base/OP-Stack tx variants that don't unify
-// with viem's default `PublicClient`, so accepting a structural shape is
-// the cleanest way to keep this resolver chain-agnostic — same pattern
-// as `PublicClientLike` in lib/permissions.ts.
+// Structural client type — viem's `PublicClient<Transport, Chain>` from
+// serverBaseClient carries Base-specific tx variants that don't unify
+// with the default. Same pattern as PublicClientLike in lib/permissions.ts.
 type ResolverClient = {
   readContract: (args: {
     address: Address
@@ -30,12 +27,9 @@ type ResolverClient = {
   getTransaction: (args: { hash: Hex }) => Promise<{ input: Hex }>
 }
 
-// Last-resort SplitMain address for 0xSplits v1. The same address is
-// reused across every chain v1 was deployed on (BSC, Holesky, Sepolia
-// have overrides — Base does not), so this works for the path the
-// dynamic `splitMain()` read below can't recover (transient RPC error
-// on the only call between us and a usable address). Sourced from
-// 0xSplits' splits-sdk constants.
+// 0xSplits v1 SplitMain — same address on every chain v1 was deployed
+// on (Base included). Used as a last-resort if the dynamic splitMain()
+// read below fails for transport reasons. Sourced from splits-sdk.
 const SPLITMAIN_FALLBACK: Address = '0x2ed6c4B5dA6378c7897AC67Ba9e43102Feb694EE'
 
 const SPLIT_WALLET_ABI = parseAbi([
@@ -52,24 +46,18 @@ const SPLITMAIN_ABI = parseAbi([
 
 const ZERO_ADDRESS: Address = '0x0000000000000000000000000000000000000000'
 
-// SplitMain stores percentages as fixed-point with 1e6 scale (100% = 1_000_000).
-// Our `SplitRecipient.percentAllocation` is the integer 1-100 the mint flow
-// validates; divide by 10_000 to convert. Round to absorb tiny rounding
-// drift in case a split was created with non-integer precision upstream.
+// SplitMain stores percentages with 1e6 scale (100% = 1_000_000). Our
+// SplitRecipient stores the integer 1-100; round to absorb sub-percent
+// precision created outside our flow.
 const PERCENTAGE_SCALE = 1_000_000
 
 /**
- * Recovers the recipient list for a 0xSplits v1 SplitWallet by:
- *   1. Filtering SplitMain `CreateSplit` logs to the indexed split address
- *      (single-log query — split addresses are deterministic, so there's
- *      exactly one `CreateSplit` per split contract).
- *   2. Reading the originating transaction calldata.
- *   3. Decoding against `createSplit(address[], uint32[], uint32, address)`.
- *
- * Returns null on any failure (RPC error, no log found, calldata didn't
- * decode as `createSplit` — e.g. the split was deployed via a contract
- * that wraps SplitMain). Callers should treat null as "couldn't resolve"
- * and fall through to whatever behavior they had before.
+ * Recovers the recipient list for a 0xSplits v1 SplitWallet by filtering
+ * SplitMain CreateSplit logs to the indexed split address, reading the
+ * originating tx, and decoding the calldata. Returns null when the
+ * split's deployment tx didn't expose `createSplit` at the top level
+ * (e.g. wrapped in a 4337 UserOp / multicall), when the address is a v2
+ * PullSplit, or on any RPC failure — admin backfill is the fallback.
  */
 export async function resolveSplitRecipientsOnChain(
   client: ResolverClient,
@@ -77,14 +65,8 @@ export async function resolveSplitRecipientsOnChain(
 ): Promise<SplitRecipient[] | null> {
   if (!splitAddress || splitAddress.toLowerCase() === ZERO_ADDRESS) return null
 
-  // Discover the SplitMain factory from the SplitWallet itself rather
-  // than hardcoding it. The 0xSplits v1 SplitWallet exposes a public
-  // immutable `splitMain` getter that points back to the factory that
-  // deployed it, so this works on any chain v1 is deployed on. v2
-  // PullSplit doesn't expose this getter, so the read reverts and we
-  // fall back to the known v1 address on Base — that fallback also
-  // catches the rare case where the dynamic read fails for transport
-  // reasons rather than ABI mismatch.
+  // v1 SplitWallets expose `splitMain()` pointing back to their factory,
+  // so we discover SplitMain dynamically rather than hardcoding it.
   const dynamicSplitMain = (await client
     .readContract({
       address: splitAddress,

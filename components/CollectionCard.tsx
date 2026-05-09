@@ -5,7 +5,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { resolveUri, shortAddress } from '@/lib/inprocess'
 import { fetchCreatorProfile } from '@/lib/profileCache'
-import { OPERATOR_SMART_WALLET } from '@/lib/config'
+import { isOperatorAddress } from '@/lib/config'
 import { CollectAllAction } from './CollectAllAction'
 
 /**
@@ -44,22 +44,13 @@ export function CollectionCard({ collection, primaryAction }: CollectionCardProp
   const collectionName = c.metadata?.name || c.name || shortAddress(c.contractAddress)
   const description = c.metadata?.description
 
-  // Resolve creator's display name from either the inline default_admin
-  // (when /api/collection populated it) or our profile cache. Falls back
-  // to shortAddress so the chip never disappears — except when
-  // `default_admin` resolves to the platform operator smart wallet
-  // (collections deployed on behalf of an artist), which has no Kismet
-  // profile. Suppress the chip in that case rather than dead-link it;
-  // the plural endpoint doesn't surface the artist EOA here so there's
-  // no better label to fall back to.
+  // Suppress the chip when default_admin resolves to the operator smart
+  // wallet (platform-deployed on behalf of an artist) — it has no Kismet
+  // profile and the plural endpoint doesn't surface a distinct artist
+  // EOA we could fall back to.
   const rawAdminAddr = c.default_admin?.address
-  const rawAdminUsername = c.default_admin?.username
-  const isOperatorAdmin =
-    !!rawAdminAddr &&
-    !!OPERATOR_SMART_WALLET &&
-    rawAdminAddr.toLowerCase() === OPERATOR_SMART_WALLET.toLowerCase()
-  const adminAddr = isOperatorAdmin ? undefined : rawAdminAddr
-  const initialUsername = isOperatorAdmin ? undefined : rawAdminUsername
+  const adminAddr = isOperatorAddress(rawAdminAddr) ? undefined : rawAdminAddr
+  const initialUsername = isOperatorAddress(rawAdminAddr) ? undefined : c.default_admin?.username
   const initialName = initialUsername
     ?? (adminAddr ? shortAddress(adminAddr) : null)
   const [creatorLabel, setCreatorLabel] = useState<string | null>(

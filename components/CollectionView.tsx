@@ -621,12 +621,6 @@ export function CollectionView({
         </section>
       )}
 
-      {/* Moment-level splits live on the moment detail page now —
-          aggregating per-token recipient sets here was misleading
-          (different tokens can have different splits, and percentages
-          don't aggregate cleanly). The collection-level payout chip
-          near the header covers what genuinely is collection-wide. */}
-
       {/* NFT grid */}
       <section>
         <h2 className="text-xs font-mono text-[#555] uppercase tracking-widest mb-4">

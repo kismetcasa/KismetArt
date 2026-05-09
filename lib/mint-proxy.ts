@@ -8,86 +8,22 @@ import { setMomentContent } from './momentContent'
 import { getFollowers } from './follows'
 import { checkSmartWalletAdmin } from './smartWalletPreflight'
 import { markCreatedMint } from './kv'
-import { setStoredSplits } from './splits'
-
-// 0xSplits' SplitMain caps usable recipients well below this in practice
-// (gas-bound), but 50 is a generous safety net that no legitimate UI flow
-// hits. Keeps a malformed body from blowing up the upstream call.
-const MAX_SPLITS = 50
-
-interface ValidatedSplit {
-  address: string
-  percentAllocation: number
-}
+import { setStoredSplits, validateSplitsArray, type SplitRecipient } from './splits'
 
 type SplitsValidation =
   | { kind: 'absent' }
-  | { kind: 'ok'; splits: ValidatedSplit[] }
+  | { kind: 'ok'; splits: SplitRecipient[] }
   | { kind: 'error'; message: string }
 
-/**
- * Validates and normalizes a splits array off the request body. Pre-empts
- * the on-chain SplitMain.createSplit revert (`InvalidSplit__*`) by catching
- * malformed input client-side and returning a clear 400. Returns the
- * normalized array sorted ascending by address — SplitMain requires that.
- */
+// Distinguishes "no splits provided" from "provided but invalid" so the
+// mint route can either pass through or 400 — validateSplitsArray treats
+// missing as invalid.
 function validateSplits(raw: unknown): SplitsValidation {
   if (raw === undefined || raw === null) return { kind: 'absent' }
-  if (!Array.isArray(raw)) return { kind: 'error', message: 'splits must be an array' }
-  if (raw.length === 0) return { kind: 'absent' }
-  if (raw.length === 1) return { kind: 'error', message: 'splits require at least 2 recipients' }
-  if (raw.length > MAX_SPLITS) {
-    return { kind: 'error', message: `splits cannot exceed ${MAX_SPLITS} recipients` }
-  }
-
-  const seen = new Set<string>()
-  const normalized: ValidatedSplit[] = []
-  let sum = 0
-
-  for (const entry of raw) {
-    if (!entry || typeof entry !== 'object') {
-      return { kind: 'error', message: 'invalid splits entry shape' }
-    }
-    const e = entry as { address?: unknown; percentAllocation?: unknown }
-    if (typeof e.address !== 'string' || !isAddress(e.address)) {
-      return { kind: 'error', message: 'invalid splits address' }
-    }
-    // Inprocess docs require integer percentAllocation values summing to
-    // exactly 100%. Rejecting decimals here pre-empts the on-chain
-    // mis-parse that surfaced as a generic "execution reverted" upstream.
-    if (
-      typeof e.percentAllocation !== 'number' ||
-      !Number.isInteger(e.percentAllocation) ||
-      e.percentAllocation < 1 ||
-      e.percentAllocation > 100
-    ) {
-      return { kind: 'error', message: 'splits allocation must be a whole number 1–100' }
-    }
-    const lower = e.address.toLowerCase()
-    if (seen.has(lower)) {
-      return { kind: 'error', message: `duplicate splits address ${e.address}` }
-    }
-    seen.add(lower)
-    sum += e.percentAllocation
-    normalized.push({ address: e.address, percentAllocation: e.percentAllocation })
-  }
-
-  // Strict 100 since allocations are now required to be integers — no
-  // floating-point tolerance needed.
-  if (sum !== 100) {
-    return {
-      kind: 'error',
-      message: `splits must sum to exactly 100% (got ${sum}%)`,
-    }
-  }
-
-  normalized.sort((a, b) => {
-    const al = a.address.toLowerCase()
-    const bl = b.address.toLowerCase()
-    return al < bl ? -1 : al > bl ? 1 : 0
-  })
-
-  return { kind: 'ok', splits: normalized }
+  if (Array.isArray(raw) && raw.length === 0) return { kind: 'absent' }
+  const result = validateSplitsArray(raw, { requireIntegerPercents: true })
+  if (!result.ok) return { kind: 'error', message: result.error }
+  return { kind: 'ok', splits: result.splits }
 }
 
 export async function proxyMintRequest(
@@ -314,11 +250,6 @@ export async function proxyMintRequest(
       })()
 
       if (splitsValidation.kind === 'ok' && splitsValidation.splits.length >= 2) {
-        // Persists the validated recipient list (not just a `'1'` flag) so
-        // the collection page can render real wallet addresses under
-        // "splits" instead of inprocess's on-chain admin list — which
-        // includes the deployed 0xSplits contract and the operator smart
-        // wallet, neither of which corresponds to a user profile.
         void setStoredSplits(contractAddress, tokenId, splitsValidation.splits).catch(
           (err) => console.error('[mint-proxy] setStoredSplits failed', err),
         )

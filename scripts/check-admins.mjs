@@ -1,17 +1,9 @@
 #!/usr/bin/env node
-// Probes a list of addresses on Base to classify each as either a contract
-// (has bytecode) or an EOA. Useful for diagnosing the moment "splits" panel
-// when a moment's `momentAdmins[]` includes addresses that link to empty
-// profile pages — contracts in that list are typically the deployed 0xSplits
-// SplitWallet, and EOAs are usually the operator smart wallet or a real
-// recipient.
+// Classifies a list of addresses on Base as contract vs EOA. Useful for
+// diagnosing entries in inprocess's `momentAdmins[]` that link to empty
+// profile pages.
 //
-// Usage:
-//   node scripts/check-admins.mjs 0xabc... 0xdef...
-//
-// Reads NEXT_PUBLIC_BASE_RPC_URL when set so the run uses the same RPC the
-// app is configured with; otherwise falls through to viem's default Base
-// transport.
+// Usage: node scripts/check-admins.mjs 0x... [0x... ...]
 import { createPublicClient, http } from 'viem'
 import { base } from 'viem/chains'
 

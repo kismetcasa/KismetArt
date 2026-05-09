@@ -6,28 +6,27 @@ export interface SplitRecipient {
   percentAllocation: number
 }
 
-export interface StoredSplits {
-  recipients: SplitRecipient[]
-}
-
 export interface StoredSplitsResult {
   hasSplits: boolean
   recipients: SplitRecipient[]
 }
 
+// SplitMain enforces a smaller cap in practice (gas-bound). 50 is a
+// generous safety net that no legitimate UI hits.
+export const MAX_SPLITS = 50
+
 const splitsKey = (collection: string, tokenId: string) =>
   `kismetart:splits:${collection.toLowerCase()}:${tokenId}`
 
-// Persists the actual split recipients in KV under the same key the
-// distribute flow uses for its truthy `hasSplits` gate. Distribute reads
-// the value via `redis.get` and only checks for falsiness, so a JSON
-// string remains compatible with the legacy `'1'` flag.
+// JSON values stay truthy so the distribute flow's `hasSplits` gate
+// (a `redis.get` truthy check) keeps working alongside the legacy
+// `'1'` flag from older mints.
 export async function setStoredSplits(
   collection: string,
   tokenId: string,
   recipients: SplitRecipient[],
 ): Promise<void> {
-  const payload: StoredSplits = {
+  const payload = {
     recipients: recipients.map((r) => ({
       address: r.address.toLowerCase(),
       percentAllocation: r.percentAllocation,
@@ -36,10 +35,6 @@ export async function setStoredSplits(
   await redis.set(splitsKey(collection, tokenId), JSON.stringify(payload))
 }
 
-// Reads a single token's stored splits. The legacy `'1'` value (written
-// by mints predating recipient persistence) maps to `hasSplits: true`
-// with an empty recipients list, so the distribute flow's gate keeps
-// working for old mints while the UI hides them from the splits panel.
 export async function getStoredSplits(
   collection: string,
   tokenId: string,
@@ -55,14 +50,14 @@ function decodeStoredSplits(raw: unknown): StoredSplitsResult {
   if (typeof raw === 'string') {
     if (raw === '1') return { hasSplits: true, recipients: [] }
     try {
-      const parsed = JSON.parse(raw) as Partial<StoredSplits>
+      const parsed = JSON.parse(raw) as { recipients?: unknown }
       return { hasSplits: true, recipients: validateRecipients(parsed?.recipients) }
     } catch {
       return { hasSplits: true, recipients: [] }
     }
   }
   if (typeof raw === 'object') {
-    const obj = raw as Partial<StoredSplits>
+    const obj = raw as { recipients?: unknown }
     return { hasSplits: true, recipients: validateRecipients(obj?.recipients) }
   }
   return { hasSplits: false, recipients: [] }
@@ -87,4 +82,66 @@ function validateRecipients(input: unknown): SplitRecipient[] {
     })
   }
   return out
+}
+
+export type ValidateSplitsResult =
+  | { ok: true; splits: SplitRecipient[] }
+  | { ok: false; error: string }
+
+interface ValidateOptions {
+  // Mint flow rejects fractional allocations (inprocess scales them to
+  // SplitMain's 1e6 base); admin backfill accepts fractional precision
+  // since off-chain records may carry sub-percent values.
+  requireIntegerPercents?: boolean
+}
+
+// Returns the normalized recipient array sorted ascending by address
+// (SplitMain's required ordering) or an error on the first violation.
+export function validateSplitsArray(
+  raw: unknown,
+  { requireIntegerPercents = true }: ValidateOptions = {},
+): ValidateSplitsResult {
+  if (!Array.isArray(raw)) return { ok: false, error: 'splits must be an array' }
+  if (raw.length < 2) return { ok: false, error: 'splits require at least 2 recipients' }
+  if (raw.length > MAX_SPLITS) {
+    return { ok: false, error: `splits cannot exceed ${MAX_SPLITS} recipients` }
+  }
+
+  const seen = new Set<string>()
+  const normalized: SplitRecipient[] = []
+  let sum = 0
+
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') {
+      return { ok: false, error: 'invalid splits entry shape' }
+    }
+    const e = entry as { address?: unknown; percentAllocation?: unknown }
+    if (typeof e.address !== 'string' || !isAddress(e.address)) {
+      return { ok: false, error: 'invalid splits address' }
+    }
+    const pct = e.percentAllocation
+    if (typeof pct !== 'number' || !Number.isFinite(pct) || pct <= 0 || pct > 100) {
+      return { ok: false, error: 'splits allocation must be 1–100' }
+    }
+    if (requireIntegerPercents && !Number.isInteger(pct)) {
+      return { ok: false, error: 'splits allocation must be a whole number 1–100' }
+    }
+    const lower = e.address.toLowerCase()
+    if (seen.has(lower)) {
+      return { ok: false, error: `duplicate splits address ${e.address}` }
+    }
+    seen.add(lower)
+    sum += pct
+    normalized.push({ address: e.address, percentAllocation: pct })
+  }
+
+  const sumOk = requireIntegerPercents ? sum === 100 : Math.round(sum) === 100
+  if (!sumOk) {
+    return { ok: false, error: `splits must sum to 100% (got ${sum})` }
+  }
+
+  normalized.sort((a, b) =>
+    a.address.toLowerCase() < b.address.toLowerCase() ? -1 : 1,
+  )
+  return { ok: true, splits: normalized }
 }
