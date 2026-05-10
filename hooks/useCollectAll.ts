@@ -1,18 +1,14 @@
 'use client'
 
 import { useCallback, useRef, useState } from 'react'
-import { useAccount, useConfig, usePublicClient, useSendCalls } from 'wagmi'
+import { useAccount, useConfig, usePublicClient, useSendCalls, useWalletClient } from 'wagmi'
 import { waitForCallsStatus } from '@wagmi/core'
 import { base } from 'wagmi/chains'
 import { toast } from 'sonner'
 import { encodeFunctionData, type Address, type Hex } from 'viem'
 import { useEnsureBase } from '@/lib/useEnsureBase'
-import { toastError } from '@/lib/toast'
-import {
-  fetchEthEligibleTokens,
-  fetchUsdcEligibleTokens,
-  type EligibleToken,
-} from '@/lib/saleConfig'
+import { isUserRejection, toastError } from '@/lib/toast'
+import { fetchEligibleTokens, type EligibleToken } from '@/lib/saleConfig'
 import {
   ERC20_ABI,
   KISMET_REFERRAL,
@@ -68,6 +64,30 @@ interface UseCollectAllReturn {
   status: Status
 }
 
+// wagmi's experimental_fallback only triggers on viem's
+// MethodNotSupportedRpcError. Coinbase Wallet (mobile / WalletConnect path)
+// returns a generic InternalRpcError whose `details` carries "this request
+// method is not supported" — same intent, wrong shape, fallback never fires.
+// Walk the cause chain looking for either the canonical viem error names or
+// the recognizable phrasings (scoped to "method"-related wording so we don't
+// false-positive on unrelated errors like "chain is not supported").
+const UNSUPPORTED_METHOD_RE = /method (?:is )?not supported|method not found|request method is not supported|unsupported (?:rpc )?method/i
+
+function isUnsupportedMethodError(err: unknown, depth = 0): boolean {
+  if (err == null || depth > 5) return false
+  if (typeof err === 'string') return UNSUPPORTED_METHOD_RE.test(err)
+  if (typeof err !== 'object') return false
+  const e = err as { message?: unknown; name?: unknown; details?: unknown; cause?: unknown }
+  if (typeof e.name === 'string' &&
+      /MethodNotSupportedRpcError|UnsupportedNonOptionalCapability|UnsupportedProviderMethodError/i.test(e.name)) {
+    return true
+  }
+  if (typeof e.details === 'string' && UNSUPPORTED_METHOD_RE.test(e.details)) return true
+  if (typeof e.message === 'string' && UNSUPPORTED_METHOD_RE.test(e.message)) return true
+  if (e.cause != null) return isUnsupportedMethodError(e.cause, depth + 1)
+  return false
+}
+
 /**
  * "Collect all" — submits one EIP-5792 wallet_sendCalls bundle covering
  * every ETH- and USDC-eligible token in a collection. Wallets that
@@ -95,6 +115,7 @@ export function useCollectAll(): UseCollectAllReturn {
   const config = useConfig()
   const publicClient = usePublicClient({ chainId: base.id })
   const { sendCallsAsync } = useSendCalls()
+  const { data: walletClient } = useWalletClient({ chainId: base.id })
   const ensureBase = useEnsureBase()
   const [status, setStatus] = useState<Status>('idle')
   // Synchronous re-entrance latch. setStatus is async — between the user's
@@ -132,18 +153,20 @@ export function useCollectAll(): UseCollectAllReturn {
         // bundled call would cascade on atomic wallets.
         const [ethEligible, usdcEligible] = await Promise.all([
           ethCandidateTokenIds.length > 0
-            ? fetchEthEligibleTokens(
+            ? fetchEligibleTokens(
                 publicClient,
                 collectionAddress,
                 ethCandidateTokenIds.map((s) => BigInt(s)),
+                'eth',
                 address as Address,
               )
             : Promise.resolve<EligibleToken[]>([]),
           usdcCandidateTokenIds.length > 0
-            ? fetchUsdcEligibleTokens(
+            ? fetchEligibleTokens(
                 publicClient,
                 collectionAddress,
                 usdcCandidateTokenIds.map((s) => BigInt(s)),
+                'usdc',
                 address as Address,
               )
             : Promise.resolve<EligibleToken[]>([]),
@@ -278,40 +301,101 @@ export function useCollectAll(): UseCollectAllReturn {
           id: TOAST_ID,
         })
 
-        // experimental_fallback lets non-EIP-5792 wallets receive the calls
-        // as sequential eth_sendTransaction prompts, preserving the same
-        // user-facing flow on legacy wallets.
-        const { id } = await sendCallsAsync({
-          calls,
-          chainId: base.id,
-          experimental_fallback: true,
-        })
+        // experimental_fallback lets wagmi-recognized non-EIP-5792 wallets
+        // receive the calls as sequential eth_sendTransaction prompts. It
+        // only triggers on viem's MethodNotSupportedRpcError though — some
+        // wallets (Coinbase Wallet over WalletConnect) raise InternalRpcError
+        // with "this request method is not supported" instead, which slips
+        // past the predicate. Catch that case and dispatch sequentially
+        // ourselves below.
+        type Receipt = { transactionHash: Hex; status: 'success' | 'reverted' | 'failure' }
+        let receipts: Receipt[] = []
+        let bundleStatus: string | undefined
+        try {
+          const { id } = await sendCallsAsync({
+            calls,
+            chainId: base.id,
+            experimental_fallback: true,
+          })
 
-        setStatus('confirming')
-        toast.loading('Confirming on-chain…', { id: TOAST_ID })
+          setStatus('confirming')
+          toast.loading('Confirming on-chain…', { id: TOAST_ID })
 
-        // throwOnFailure: false so we can inspect per-receipt status —
-        // sequential-fallback bundles can have some sub-txs revert while
-        // others succeed, and we want to record the survivors.
-        const result = await waitForCallsStatus(config, {
-          id,
-          throwOnFailure: false,
-          // Bundles with ≥3 sequential txs on slow wallets can exceed the
-          // default 60s. 5 minutes covers worst-case fallback paths.
-          timeout: 300_000,
-        })
+          // throwOnFailure: false so we can inspect per-receipt status —
+          // sequential-fallback bundles can have some sub-txs revert while
+          // others succeed, and we want to record the survivors.
+          const result = await waitForCallsStatus(config, {
+            id,
+            throwOnFailure: false,
+            // Bundles with ≥3 sequential txs on slow wallets can exceed the
+            // default 60s. 5 minutes covers worst-case fallback paths.
+            timeout: 300_000,
+          })
+          receipts = (result.receipts ?? []).map((r) => ({
+            transactionHash: r.transactionHash,
+            status: r.status,
+          }))
+          bundleStatus = result.status
+        } catch (err) {
+          // User cancellations and unrelated errors keep their original
+          // surface so the catch block below can render the right toast.
+          if (isUserRejection(err) || !isUnsupportedMethodError(err)) throw err
+          if (!walletClient) throw err
 
-        // Walk segments[] against result.receipts[] to attribute success
-        // back to specific records. Two shapes to handle:
+          setStatus('confirming')
+          toast.loading(
+            calls.length > 1
+              ? `Confirm ${calls.length} prompts in wallet…`
+              : 'Confirm in wallet…',
+            { id: TOAST_ID },
+          )
+
+          // Sequential dispatch: one eth_sendTransaction per call, in the
+          // order segments were emitted (USDC.approve before USDC mints, so
+          // allowance is in place by the time the minter is invoked). We do
+          // NOT abort on a revert — partial success is the expected shape
+          // for sequential bundles and the existing attribution logic
+          // already handles per-receipt failure.
+          for (const call of calls) {
+            try {
+              const hash = await walletClient.sendTransaction({
+                to: call.to,
+                data: call.data,
+                value: call.value ?? 0n,
+                chain: base,
+              })
+              const r = await publicClient.waitForTransactionReceipt({
+                hash,
+                timeout: 300_000,
+              })
+              receipts.push({
+                transactionHash: hash,
+                status: r.status === 'success' ? 'success' : 'reverted',
+              })
+            } catch (callErr) {
+              // A user rejection mid-bundle ends the run — record nothing
+              // further and bubble up so the toast reflects the cancel.
+              if (isUserRejection(callErr)) throw callErr
+              // Anything else (RPC blip, simulated revert) is treated as a
+              // failed leg; keep going so subsequent legs still get a shot.
+              receipts.push({
+                transactionHash: '0x' as Hex,
+                status: 'failure',
+              })
+            }
+          }
+        }
+
+        // Walk segments[] against receipts[] to attribute success back to
+        // specific records. Two shapes to handle:
         //   • Atomic mode: receipts.length === 1 — that single receipt's
         //     status applies to every record in every segment.
-        //   • Sequential / per-call mode: receipts.length === segments.length
-        //     — each segment gets its own receipt and is recorded only if
-        //     its receipt succeeded.
+        //   • Sequential mode (wagmi fallback or our own): receipts.length
+        //     === segments.length — each segment gets its own receipt and
+        //     is recorded only if its receipt succeeded.
         // If receipts is missing or sized unexpectedly, treat as a total
         // failure rather than guessing — better to under-record than to
         // poison trending with phantom mints.
-        const receipts = result.receipts ?? []
         type Recorded = { entry: RecordEntry; txHash: Hex }
         const recorded: Recorded[] = []
         if (receipts.length === 1 && receipts[0].status === 'success') {
@@ -331,9 +415,11 @@ export function useCollectAll(): UseCollectAllReturn {
 
         if (recorded.length === 0) {
           throw new Error(
-            result.status === 'failure'
+            bundleStatus === 'failure'
               ? 'Bundle reverted on-chain'
-              : `Bundle ${result.status ?? 'failed'}`,
+              : bundleStatus
+                ? `Bundle ${bundleStatus}`
+                : 'No mints landed',
           )
         }
 
@@ -387,7 +473,7 @@ export function useCollectAll(): UseCollectAllReturn {
         inFlightRef.current = false
       }
     },
-    [address, config, publicClient, sendCallsAsync, ensureBase],
+    [address, config, publicClient, sendCallsAsync, walletClient, ensureBase],
   )
 
   return { collectAll, status }
