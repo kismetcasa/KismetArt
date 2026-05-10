@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
 import { useAccount, useReadContract, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'

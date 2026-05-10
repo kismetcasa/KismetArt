@@ -68,27 +68,22 @@ interface UseCollectAllReturn {
 // MethodNotSupportedRpcError. Coinbase Wallet (mobile / WalletConnect path)
 // returns a generic InternalRpcError whose `details` carries "this request
 // method is not supported" — same intent, wrong shape, fallback never fires.
-// Walk the cause chain looking for either the canonical name or the
-// recognizable phrasing so we can route to a manual sequential dispatch.
+// Walk the cause chain looking for either the canonical viem error names or
+// the recognizable phrasings (scoped to "method"-related wording so we don't
+// false-positive on unrelated errors like "chain is not supported").
+const UNSUPPORTED_METHOD_RE = /method (?:is )?not supported|method not found|request method is not supported|unsupported (?:rpc )?method/i
+
 function isUnsupportedMethodError(err: unknown, depth = 0): boolean {
   if (err == null || depth > 5) return false
-  if (typeof err === 'string') {
-    return /method.*(not supported|not found)|not supported/i.test(err)
-  }
+  if (typeof err === 'string') return UNSUPPORTED_METHOD_RE.test(err)
   if (typeof err !== 'object') return false
   const e = err as { message?: unknown; name?: unknown; details?: unknown; cause?: unknown }
   if (typeof e.name === 'string' &&
-      /MethodNotSupported|UnsupportedNonOptionalCapability|UnsupportedProvider/i.test(e.name)) {
+      /MethodNotSupportedRpcError|UnsupportedNonOptionalCapability|UnsupportedProviderMethodError/i.test(e.name)) {
     return true
   }
-  if (typeof e.details === 'string' &&
-      /method.*(not supported|not found)|not supported/i.test(e.details)) {
-    return true
-  }
-  if (typeof e.message === 'string' &&
-      /method.*(not supported|not found)|not supported/i.test(e.message)) {
-    return true
-  }
+  if (typeof e.details === 'string' && UNSUPPORTED_METHOD_RE.test(e.details)) return true
+  if (typeof e.message === 'string' && UNSUPPORTED_METHOD_RE.test(e.message)) return true
   if (e.cause != null) return isUnsupportedMethodError(e.cause, depth + 1)
   return false
 }
