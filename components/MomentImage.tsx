@@ -33,13 +33,38 @@ type NextImageProps = CommonProps & Omit<ImageProps, 'src' | 'onError'>
  * ipfs:// URIs fan out to every gateway in turn — the first 200 wins, and
  * onAllError fires once the pool is exhausted so the parent can show its
  * "no preview" fallback. https://, blob:, and data: URIs are rendered as-is.
+ *
+ * Each gateway is tried first via Vercel's image optimizer (smaller payload,
+ * AVIF/WebP), then re-tried with `unoptimized` if the optimizer rejects the
+ * source — Arweave commonly serves >4 MB artwork that hits Vercel's source
+ * size cap and 413's, but the bytes load fine direct from the gateway.
  */
 export function MomentImage({ src, onAllError, ...rest }: NextImageProps) {
-  const { url, onError } = useFallbackUrl(src, onAllError)
+  const { url, onError: walkGateway } = useFallbackUrl(src, onAllError)
+  // Per-URL bypass latch: false = try the optimizer first, true = optimizer
+  // already failed for this URL, render direct. Reset when we move on to the
+  // next gateway (or to a different URI entirely).
+  const [bypass, setBypass] = useState(false)
+  useEffect(() => { setBypass(false) }, [url])
+
   if (!url) return null
-  // alt comes through ...rest; ImageProps already requires it at the type level.
+
+  const handleError = () => {
+    if (!bypass) {
+      // First failure on this gateway URL — almost always Vercel's optimizer
+      // 413'ing a >4 MB source. Retry the same URL unoptimized before
+      // burning the gateway slot.
+      setBypass(true)
+      return
+    }
+    walkGateway()
+  }
+
+  // alt comes through ...rest; ImageProps already requires it at the type
+  // level. The bypass flag is part of the key so next/image actually remounts
+  // when we flip modes — otherwise the failed optimizer src stays cached.
   // eslint-disable-next-line jsx-a11y/alt-text
-  return <Image key={url} src={url} onError={onError} {...rest} />
+  return <Image key={`${url}::${bypass}`} src={url} unoptimized={bypass} onError={handleError} {...rest} />
 }
 
 type ImgProps = CommonProps & Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src' | 'onError'>

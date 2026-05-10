@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import Image from 'next/image'
 import { useAccount, useReadContract, useSignMessage } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
@@ -14,6 +13,7 @@ import { getCachedDetail, setCachedDetail, getCachedComments, setCachedComments 
 import { ERC1155_ABI } from '@/lib/seaport'
 import { ZORA_1155_MINT_ABI } from '@/lib/zoraMint'
 import { useDirectCollect } from '@/hooks/useDirectCollect'
+import { useFileUpload } from '@/hooks/useFileUpload'
 import { useUploadSession } from '@/hooks/useUploadSession'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { useMomentSplits } from '@/hooks/useMomentSplits'
@@ -121,19 +121,30 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   const [collectionName, setCollectionName] = useState<string | null>(
     initialCollectionMeta?.name ?? null,
   )
+  // Raw URI (ar://, ipfs://, https://) — MomentImage walks the gateway
+  // pool internally so a freshly-uploaded cover doesn't go missing while
+  // ipfs.io catches up.
   const [collectionImage, setCollectionImage] = useState<string | null>(
-    initialCollectionMeta?.image ? resolveUri(initialCollectionMeta.image) : null,
+    initialCollectionMeta?.image ?? null,
   )
+  const [collectionImageFailed, setCollectionImageFailed] = useState(false)
   // Edit-metadata flow: visible only to moment admins. Pre-populated from
   // the loaded MomentDetail so they can fix typos / replace the image
   // without re-typing everything.
   const [editing, setEditing] = useState(false)
   const [editName, setEditName] = useState('')
   const [editDesc, setEditDesc] = useState('')
-  const [editFile, setEditFile] = useState<File | null>(null)
-  const [editPreview, setEditPreview] = useState<string | null>(null)
+  const {
+    file: editFile,
+    preview: editPreview,
+    inputRef: editFileInputRef,
+    onChange: handleEditFile,
+    clear: clearEditFile,
+  } = useFileUpload({
+    maxBytes: 420 * 1024 * 1024,
+    onTooLarge: () => toast.error('File too large', { description: 'Max 420 MB' }),
+  })
   const [savingMeta, setSavingMeta] = useState(false)
-  const editFileInputRef = useRef<HTMLInputElement>(null)
   const { ensureSession } = useUploadSession()
 
   const { data: ownedBalance } = useReadContract({
@@ -289,7 +300,10 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
         const name: string | undefined = d.metadata?.name ?? d.name
         const image: string | undefined = d.metadata?.image
         if (name) setCollectionName(name)
-        if (image) setCollectionImage(resolveUri(image))
+        if (image) {
+          setCollectionImage(image)
+          setCollectionImageFailed(false)
+        }
       })
       .catch(() => {})
   }, [address])
@@ -383,26 +397,13 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     if (!detail) return
     setEditName(detail.metadata.name ?? '')
     setEditDesc(detail.metadata.description ?? '')
-    setEditFile(null)
-    setEditPreview(null)
+    clearEditFile()
     setEditing(true)
   }
 
   function closeEditor() {
-    if (editPreview) URL.revokeObjectURL(editPreview)
-    setEditFile(null)
-    setEditPreview(null)
+    clearEditFile()
     setEditing(false)
-  }
-
-  function handleEditFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const f = e.target.files?.[0]
-    if (!f) return
-    const MAX = 420 * 1024 * 1024
-    if (f.size > MAX) { toast.error('File too large', { description: 'Max 420 MB' }); return }
-    if (editPreview) URL.revokeObjectURL(editPreview)
-    setEditFile(f)
-    setEditPreview(URL.createObjectURL(f))
   }
 
   async function handleSaveMetadata() {
@@ -714,12 +715,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                     {editFile && (
                       <button
                         type="button"
-                        onClick={() => {
-                          if (editPreview) URL.revokeObjectURL(editPreview)
-                          setEditFile(null)
-                          setEditPreview(null)
-                          if (editFileInputRef.current) editFileInputRef.current.value = ''
-                        }}
+                        onClick={clearEditFile}
                         disabled={savingMeta}
                         className="text-[10px] font-mono uppercase tracking-widest text-[#555] hover:text-[#888] disabled:opacity-50"
                       >
@@ -772,14 +768,15 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                 href={`/collection/${address}`}
                 className="flex items-center gap-2 group w-fit"
               >
-                {collectionImage && (
+                {collectionImage && !collectionImageFailed && (
                   <div className="w-[22px] h-[22px] relative flex-shrink-0 bg-[#1a1a1a] overflow-hidden">
-                    <Image
+                    <MomentImage
                       src={collectionImage}
                       alt=""
                       fill
                       className="object-cover"
                       sizes="22px"
+                      onAllError={() => setCollectionImageFailed(true)}
                     />
                   </div>
                 )}
