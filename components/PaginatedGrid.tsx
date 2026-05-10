@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, type ReactElement, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useRef, type ReactElement, type ReactNode } from 'react'
 import { RefreshCw } from 'lucide-react'
 
 interface ItemHelpers {
@@ -42,9 +42,14 @@ export function PaginatedGrid<T>({
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [refreshing, setRefreshing] = useState(false)
+  // Monotonic request id — when apiUrl changes mid-fetch, the older fetch can
+  // resolve after the newer one and stomp `items` with stale data. Drop any
+  // result whose id is no longer the latest.
+  const reqIdRef = useRef(0)
 
   const fetchPage = useCallback(
     async (p = 1, append = false) => {
+      const reqId = ++reqIdRef.current
       try {
         if (p === 1 && !append) setLoading(true)
         else setRefreshing(true)
@@ -52,18 +57,23 @@ export function PaginatedGrid<T>({
         url.searchParams.set('page', String(p))
         url.searchParams.set('limit', String(pageLimit))
         const res = await fetch(url.toString())
+        if (reqId !== reqIdRef.current) return
         if (!res.ok) throw new Error(`Failed (${res.status})`)
         const data = await res.json()
+        if (reqId !== reqIdRef.current) return
         const next: T[] = Array.isArray(data[itemsKey]) ? data[itemsKey] : []
         setItems((prev) => (append ? [...prev, ...next] : next))
         setTotalPages(data.pagination?.total_pages ?? 1)
         setPage(p)
         setError(null)
       } catch (err) {
+        if (reqId !== reqIdRef.current) return
         setError(err instanceof Error ? err.message : 'Failed to load')
       } finally {
-        setLoading(false)
-        setRefreshing(false)
+        if (reqId === reqIdRef.current) {
+          setLoading(false)
+          setRefreshing(false)
+        }
       }
     },
     [apiUrl, itemsKey, pageLimit],
