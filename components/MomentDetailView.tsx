@@ -2,10 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { useAccount, useReadContract, useSignMessage, useWriteContract } from 'wagmi'
+import { useAccount, usePublicClient, useReadContract, useSignMessage, useWriteContract } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
 import { ArrowLeft, Copy, Check, ChevronDown, ChevronUp, Star, X, Pencil, Eye, EyeOff, Send } from 'lucide-react'
+import { isAddress } from 'viem'
 import { resolveUri, formatPrice, shortAddress, formatRelativeTime, inferCollectCurrency, DEFAULT_COLLECT_COMMENT, type MomentDetail, type MomentComment } from '@/lib/inprocess'
 import { fetchCreatorProfile } from '@/lib/profileCache'
 import { useTextContent } from '@/lib/textCache'
@@ -157,34 +158,34 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   const ownedCount = ownedBalance ? Number(ownedBalance) : 0
   const alreadyOwned = ownedCount > 0
 
-  // Send (ERC-1155 safeTransferFrom) — gated by ownership. Hardcoded to
-  // amount=1: covers 1/1 gifting and matches the airdrop pattern (one
-  // copy per recipient). Edition holders who want to send multiples can
-  // use a wallet directly; we'll add a quantity input if there's demand.
+  // Hardcoded amount=1: covers 1/1 gifting and matches the airdrop pattern.
+  // Edition holders sending multiples can use a wallet directly.
   const [sendOpen, setSendOpen] = useState(false)
   const [sendTo, setSendTo] = useState('')
   const { writeContractAsync: writeSend, isPending: sending } = useWriteContract()
-  const sendToValid = /^0x[a-fA-F0-9]{40}$/.test(sendTo.trim())
+  const publicClient = usePublicClient()
+  const trimmedSendTo = sendTo.trim()
+  const sendToValid = isAddress(trimmedSendTo)
+    && trimmedSendTo.toLowerCase() !== connectedAddress?.toLowerCase()
   const handleSend = async () => {
-    if (!connectedAddress || !sendToValid || sending) return
-    const to = sendTo.trim() as `0x${string}`
-    if (to.toLowerCase() === connectedAddress.toLowerCase()) {
-      toast.error('cannot send to yourself')
-      return
-    }
+    if (!connectedAddress || !sendToValid || sending || !publicClient) return
     try {
-      await writeSend({
+      toast.loading('Confirm in wallet…', { id: 'send' })
+      const hash = await writeSend({
         address: address as `0x${string}`,
         abi: ERC1155_ABI,
         functionName: 'safeTransferFrom',
-        args: [connectedAddress, to, BigInt(tokenId), 1n, '0x'],
+        args: [connectedAddress, trimmedSendTo as `0x${string}`, BigInt(tokenId), 1n, '0x'],
       })
-      toast.success('sent')
+      toast.loading('Sending…', { id: 'send' })
+      const receipt = await publicClient.waitForTransactionReceipt({ hash })
+      if (receipt.status !== 'success') throw new Error('Transfer reverted on-chain')
+      toast.success('Sent', { id: 'send' })
       setSendOpen(false)
       setSendTo('')
       refetchOwnedBalance()
     } catch (err) {
-      toastError(err, 'send failed')
+      toastError('Send', err, { id: 'send' })
     }
   }
 
@@ -944,7 +945,6 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
             </button>
           </div>
 
-          {/* Owner — send (ERC-1155 safeTransferFrom from connected wallet) */}
           {alreadyOwned && (
             <div className="px-5 pb-4">
               <button

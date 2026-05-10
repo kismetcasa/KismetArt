@@ -260,6 +260,9 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
   const verifyTargetRef = useRef<string | null>(null)
 
   const splitsTotal = splits.reduce((s, r) => s + r.percentAllocation, 0)
+  // 1/1 has no public sale (the creator's auto-mint exhausts supply), so
+  // the price input is hidden and the salesConfig price is forced to 0.
+  const is11 = maxSupply.trim() === '1'
 
   function switchMode(mode: MintMode) {
     setMintMode(mode)
@@ -408,11 +411,6 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
       return
     }
 
-    // 1/1 has no public sale (auto-mint to creator exhausts supply), so the
-    // price input is hidden in the UI — force the salesConfig price to 0 to
-    // keep on-chain state coherent regardless of any stale `price` state
-    // left over from a prior supply value.
-    const is11 = maxSupply.trim() === '1'
     const rawPrice = is11 ? '0' : price.trim()
     const normalizedPrice = !rawPrice || rawPrice === '.' ? '0' : rawPrice.startsWith('.') ? `0${rawPrice}` : rawPrice
     // ETH: 18 decimals (parseEther). USDC: 6 decimals (parseUnits with 6).
@@ -969,11 +967,9 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
 
       {/* Price + Supply — placed before the Collection picker so the
           submission-shape fields cluster together; the picker (which can
-          be left at "auto-deploy") sits below as a step-down decision.
-          When Supply is 1, Price collapses (no public sale possible — the
-          creator's auto-mint exhausts supply). */}
+          be left at "auto-deploy") sits below as a step-down decision. */}
       <div className="flex gap-3">
-        {maxSupply.trim() !== '1' && (
+        {!is11 && (
           <div className="flex-1">
             <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
               Price
@@ -1013,12 +1009,11 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
             placeholder="unlimited"
             className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
           />
-          {!maxSupply.trim() && (
+          {!maxSupply.trim() ? (
             <p className="text-xs text-[#555] font-mono mt-1">open edition</p>
-          )}
-          {maxSupply.trim() === '1' && (
+          ) : is11 ? (
             <p className="text-xs text-[#555] font-mono mt-1">1/1 — minted to your wallet. send it from the moment page.</p>
-          )}
+          ) : null}
         </div>
       </div>
 
