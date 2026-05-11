@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { decodeEventLog, parseAbi, type Hex } from 'viem'
+import { decodeEventLog, parseAbi, type Address, type Hex } from 'viem'
 import { isAddress } from '@/lib/address'
 import { DEFAULT_COLLECT_COMMENT } from '@/lib/inprocess'
 import { redis } from '@/lib/redis'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
 import { getMomentMeta, writeNotification } from '@/lib/notifications'
 import { serverBaseClient } from '@/lib/rpc'
+import { readSalePricePerToken } from '@/lib/saleConfig'
 
 // All mint paths in this app emit ERC1155 TransferSingle: per-token
 // 1155.mint() (single + collect-all ETH legs) and ERC20Minter.mint()
@@ -183,6 +184,22 @@ export async function POST(req: NextRequest) {
       .catch(() => {}),
   ])
 
+  // Derive price server-side so the notification reflects the on-chain
+  // truth rather than whatever the client claimed. Fall back to the
+  // S-1-validated client value on any RPC failure / unconfigured sale —
+  // the client value is still bounded by the regex check so the worst-
+  // case fallback is bounded misinformation, not unbounded.
+  let derivedPrice: bigint | null = null
+  if (currency) {
+    derivedPrice = await readSalePricePerToken(
+      serverBaseClient(),
+      collectionLower as Address,
+      BigInt(tokenId),
+      currency,
+    )
+  }
+  const finalPrice = derivedPrice !== null ? derivedPrice.toString() : pricePerToken
+
   // Notification is fire-and-forget — never let it gate the response.
   void (async () => {
     try {
@@ -196,7 +213,7 @@ export async function POST(req: NextRequest) {
         tokenId,
         tokenName: meta.name,
         amount: safeAmount,
-        ...(pricePerToken ? { price: pricePerToken } : {}),
+        ...(finalPrice ? { price: finalPrice } : {}),
         ...(currency ? { currency } : {}),
         ...(comment && comment !== DEFAULT_COLLECT_COMMENT ? { comment } : {}),
       })
