@@ -4,10 +4,12 @@ import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { isAddress, isValidTokenId } from '@/lib/address'
 import { INPROCESS_API, resolveUri, type MomentDetail } from '@/lib/inprocess'
-import { getCollectionMeta as getKvCollectionMeta } from '@/lib/kv'
+import { getCollectionMeta as getKvCollectionMeta, getUserCollections } from '@/lib/kv'
 import { getMomentContent } from '@/lib/momentContent'
 import { getMomentMeta as getKvMomentMeta } from '@/lib/notifications'
 import { isMomentHidden } from '@/lib/hiddenMoments'
+import { isCollectionHidden } from '@/lib/hiddenCollections'
+import { PLATFORM_COLLECTION } from '@/lib/config'
 import { SESSION_COOKIE, verifySession } from '@/lib/session'
 import { MomentDetailView } from '@/components/MomentDetailView'
 
@@ -63,10 +65,28 @@ const getFallbackMeta = cache(async (
 // kismet-deployed collections where the data is sitting right next to us
 // in KV. Pulled for every tokenId (the chip is shown regardless of which
 // token in the collection you're viewing).
+//
+// Gated to match /api/collections?address=… exactly — without the gate,
+// auto-deploy wrappers leak as a clickable collection chip even though
+// they're excluded from every other collection-shaped surface (feed,
+// profile collections list, search, mint dropdown). addTrackedCollection
+// writes collection-meta KV for both create-form AND auto-deploy paths,
+// so a bare KV read isn't enough to tell them apart. The client-side
+// fetch on mount returns the gated empty stub for auto-deploys, but it
+// only overwrites state on a truthy name — so without this gate the
+// SSR-hydrated chip persists for the life of the page.
 const getInitialCollectionMeta = cache(async (
   address: string,
 ): Promise<{ name?: string; image?: string } | undefined> => {
-  const kv = await getKvCollectionMeta(address)
+  const lowerAddr = address.toLowerCase()
+  if (lowerAddr === PLATFORM_COLLECTION.toLowerCase()) return undefined
+  const [userCreated, hidden, kv] = await Promise.all([
+    getUserCollections(),
+    isCollectionHidden(address),
+    getKvCollectionMeta(address),
+  ])
+  if (hidden) return undefined
+  if (!userCreated.some((a) => a.toLowerCase() === lowerAddr)) return undefined
   if (!kv?.name && !kv?.image) return undefined
   return { name: kv.name, image: kv.image }
 })
