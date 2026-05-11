@@ -27,6 +27,11 @@ type NotificationInput = Omit<Notification, 'id' | 'timestamp' | 'priority' | 'r
 
 const MAX_PER_USER = 200
 const FOLLOW_DEDUP_WINDOW_SECS = 7 * 24 * 60 * 60
+// A collect-all of 20 moments would otherwise produce 20 identical-shape
+// notifications in the creator's feed within seconds. 60s is short enough
+// to preserve distinct collect events from the same actor over time and
+// long enough to coalesce the entire burst from one click.
+const COLLECT_DEDUP_WINDOW_SECS = 60
 const READ_IDS_TTL_SECS = 30 * 24 * 60 * 60  // 30 days
 const MUTED_TTL_SECS = 365 * 24 * 60 * 60     // 1 year
 
@@ -83,6 +88,34 @@ export async function writeNotification(input: NotificationInput): Promise<void>
         }
       })
       if (dup) return
+    }
+
+    // Collect dedup: a 20-mint collect-all fires Promise.all-style at the
+    // recording endpoint, so a scan-based dedup would race. SET NX is
+    // atomic — first write through the (recipient, actor, collection)
+    // tuple acquires the lock; concurrent and follow-up writes within the
+    // window drop silently. Per-collection scoping preserves notifications
+    // from the same collector across different creators / collections.
+    //
+    // Best-effort: Redis transient → proceed without dedup. The tradeoff
+    // here favors "always notify on Redis down" over "drop silently to
+    // avoid possible duplicates" — a missed notification is worse for
+    // creator trust than an occasional duplicate during an outage.
+    if (input.type === 'collect' && input.actor && input.tokenAddress) {
+      const lockKey = `kismetart:collect-notif-lock:${input.recipient.toLowerCase()}:${input.actor.toLowerCase()}:${input.tokenAddress.toLowerCase()}`
+      let lock: 'OK' | null
+      try {
+        // Upstash's SET-with-NX returns 'OK' | null at runtime; the wider
+        // SDK type includes the value type for the GET option we're not
+        // using.
+        lock = (await redis.set(lockKey, '1', {
+          nx: true,
+          ex: COLLECT_DEDUP_WINDOW_SECS,
+        })) as 'OK' | null
+      } catch {
+        lock = 'OK'
+      }
+      if (lock !== 'OK') return
     }
 
     const id = randomUUID()

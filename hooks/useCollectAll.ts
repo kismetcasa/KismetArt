@@ -2,10 +2,11 @@
 
 import { useCallback, useRef, useState } from 'react'
 import { useAccount, useConfig, usePublicClient, useSendCalls, useWalletClient } from 'wagmi'
-import { waitForCallsStatus } from '@wagmi/core'
+import { getAccount, waitForCallsStatus } from '@wagmi/core'
 import { base } from 'wagmi/chains'
 import { toast } from 'sonner'
-import { encodeFunctionData, type Address, type Hex } from 'viem'
+import { encodeFunctionData, getAddress, type Address, type Hex } from 'viem'
+import { isValidTokenId } from '@/lib/address'
 import { useEnsureBase } from '@/lib/useEnsureBase'
 import { isUserRejection, toastError } from '@/lib/toast'
 import { fetchEligibleTokens, type EligibleToken } from '@/lib/saleConfig'
@@ -18,8 +19,8 @@ import {
   ZORA_ERC20_MINTER,
   ZORA_ERC20_MINTER_ABI,
   ZORA_FIXED_PRICE_STRATEGY,
-  ZORA_MULTICALL_ABI,
   encodeFixedPriceMinterArgs,
+  readMintFeeWithBound,
 } from '@/lib/zoraMint'
 
 type Status =
@@ -52,8 +53,8 @@ interface RecordEntry {
 // Bundle calls and the record entries they're responsible for stay in
 // lockstep so that, after waitForCallsStatus returns, we can attribute
 // each receipt's success/failure back to the exact tokens it covered.
-// USDC.approve has no records (it's a setup call); ETH multicall carries
-// every ETH mint's record; USDC mints carry one record each.
+// USDC.approve has no records (it's a setup call); every mint call —
+// ETH or USDC — carries exactly one record.
 interface CallSegment {
   call: { to: Address; data: Hex; value?: bigint }
   records: RecordEntry[]
@@ -96,14 +97,22 @@ function isUnsupportedMethodError(err: unknown, depth = 0): boolean {
  * back to sequential prompts via experimental_fallback.
  *
  * Bundle layout (in order, only the legs we have eligible tokens for):
- *   1. ETH leg — one 1155.multicall(bytes[]) carrying all ETH mints
+ *   1. ETH mints — one 1155.mint(...) per token. Each segment carries
+ *      its own value = mintFee + pricePerToken, matching the canonical
+ *      `(mintFee + pricePerToken) * quantity` formula used by the Zora
+ *      protocol-sdk's parseMintCosts. We deliberately do NOT wrap these
+ *      in the inherited multicall(bytes[]) entry point: per the Zora
+ *      1155 ABI that function is declared `nonpayable`, so any ETH sent
+ *      through it reverts at dispatch — and even if it were payable,
+ *      its OZ delegatecall pattern would replicate msg.value across
+ *      every sub-call, which FixedPriceSaleStrategy.requestMint rejects
+ *      with WrongValueSent (strict ethValueSent == numTokens * price).
+ *      The EIP-5792 bundle gives us the single-signature UX a multicall
+ *      would have, with the value correctly partitioned per call.
  *   2. USDC.approve(ERC20Minter, exactBatchTotal) — only when current
  *      allowance is below batch total. Bounded to the exact total per
  *      2024+ approval security guidance (no MaxUint256).
- *   3. USDC mints — one ERC20Minter.mint(...) per token (the minter
- *      doesn't expose a verified Multicall(bytes[]) entry point, so
- *      we list each mint as its own call in the bundle and let the
- *      wallet bundle them atomically).
+ *   3. USDC mints — one ERC20Minter.mint(...) per token.
  *
  * Pre-filtering removes tokens that would revert (sale ended, sold
  * out, or the connected account already owns to maxPerAddress) so the
@@ -125,7 +134,7 @@ export function useCollectAll(): UseCollectAllReturn {
 
   const collectAll = useCallback(
     async (args: CollectAllArgs) => {
-      const { collectionAddress, ethCandidateTokenIds, usdcCandidateTokenIds } = args
+      const { ethCandidateTokenIds, usdcCandidateTokenIds } = args
 
       if (!address) {
         toast.error('Connect a wallet to collect')
@@ -135,7 +144,22 @@ export function useCollectAll(): UseCollectAllReturn {
         toast.error('Network unavailable')
         return null
       }
-      if (ethCandidateTokenIds.length === 0 && usdcCandidateTokenIds.length === 0) {
+      // Defense in depth at the trust boundary: normalize and validate the
+      // collection address before any encoding uses it. The interface types
+      // it as Address, but a bad `as Address` cast upstream would otherwise
+      // slip through silently.
+      let collectionAddress: Address
+      try {
+        collectionAddress = getAddress(args.collectionAddress)
+      } catch {
+        toast.error('Invalid collection address')
+        return null
+      }
+      // Drop any non-decimal candidate IDs before BigInt() — a malformed
+      // string from upstream would throw synchronously and abort the hook.
+      const ethIds = ethCandidateTokenIds.filter(isValidTokenId)
+      const usdcIds = usdcCandidateTokenIds.filter(isValidTokenId)
+      if (ethIds.length === 0 && usdcIds.length === 0) {
         toast.info('Nothing to collect in this collection')
         return null
       }
@@ -152,22 +176,22 @@ export function useCollectAll(): UseCollectAllReturn {
         // skip tokens already at the per-account cap. A revert in any single
         // bundled call would cascade on atomic wallets.
         const [ethEligible, usdcEligible] = await Promise.all([
-          ethCandidateTokenIds.length > 0
+          ethIds.length > 0
             ? fetchEligibleTokens(
                 publicClient,
                 collectionAddress,
-                ethCandidateTokenIds.map((s) => BigInt(s)),
+                ethIds.map(BigInt),
                 'eth',
-                address as Address,
+                address,
               )
             : Promise.resolve<EligibleToken[]>([]),
-          usdcCandidateTokenIds.length > 0
+          usdcIds.length > 0
             ? fetchEligibleTokens(
                 publicClient,
                 collectionAddress,
-                usdcCandidateTokenIds.map((s) => BigInt(s)),
+                usdcIds.map(BigInt),
                 'usdc',
-                address as Address,
+                address,
               )
             : Promise.resolve<EligibleToken[]>([]),
         ])
@@ -192,50 +216,38 @@ export function useCollectAll(): UseCollectAllReturn {
 
         // ─── ETH leg ─────────────────────────────────────────────────────
         if (ethBatch.length > 0) {
-          // Mint fee changes occasionally; read once per submit.
-          const mintFee = await publicClient.readContract({
-            address: collectionAddress,
-            abi: ZORA_1155_MINT_ABI,
-            functionName: 'mintFee',
-          })
-          const minterArgs = encodeFixedPriceMinterArgs(address as Address, '')
-          const ethCalls = ethBatch.map(
-            (e) =>
-              encodeFunctionData({
-                abi: ZORA_1155_MINT_ABI,
-                functionName: 'mint',
-                args: [
-                  ZORA_FIXED_PRICE_STRATEGY,
-                  e.tokenId,
-                  1n,
-                  [KISMET_REFERRAL],
-                  minterArgs,
-                ],
-              }) as Hex,
-          )
-          const ethValue = ethBatch.reduce(
-            (sum, e) => sum + mintFee + e.pricePerToken,
-            0n,
-          )
-          segments.push({
-            call: {
-              to: collectionAddress,
-              data: encodeFunctionData({
-                abi: ZORA_MULTICALL_ABI,
-                functionName: 'multicall',
-                args: [ethCalls],
-              }) as Hex,
-              value: ethValue,
-            },
-            // OZ multicall is atomic — either all sub-mints succeed or the
-            // whole call reverts — so the single ETH segment carries every
-            // ETH record. The receipt's status applies to the whole group.
-            records: ethBatch.map((e) => ({
-              tokenId: e.tokenId.toString(),
-              pricePerToken: e.pricePerToken,
-              currency: 'eth' as const,
-            })),
-          })
+          // Mint fee changes occasionally; read once per submit. The helper
+          // also enforces the sanity bound so we abort before encoding any
+          // value-carrying call on a pathological contract.
+          const mintFee = await readMintFeeWithBound(publicClient, collectionAddress)
+          const minterArgs = encodeFixedPriceMinterArgs(address, '')
+          for (const e of ethBatch) {
+            segments.push({
+              call: {
+                to: collectionAddress,
+                data: encodeFunctionData({
+                  abi: ZORA_1155_MINT_ABI,
+                  functionName: 'mint',
+                  args: [
+                    ZORA_FIXED_PRICE_STRATEGY,
+                    e.tokenId,
+                    1n,
+                    [KISMET_REFERRAL],
+                    minterArgs,
+                  ],
+                }) as Hex,
+                // Per-call value: mintFee + price. Partitioned across
+                // segments so each mint sees exactly what the strategy's
+                // ethValueSent equality check expects.
+                value: mintFee + e.pricePerToken,
+              },
+              records: [{
+                tokenId: e.tokenId.toString(),
+                pricePerToken: e.pricePerToken,
+                currency: 'eth' as const,
+              }],
+            })
+          }
         }
 
         // ─── USDC leg ────────────────────────────────────────────────────
@@ -248,7 +260,7 @@ export function useCollectAll(): UseCollectAllReturn {
             address: USDC_BASE,
             abi: ERC20_ABI,
             functionName: 'allowance',
-            args: [address as Address, ZORA_ERC20_MINTER],
+            args: [address, ZORA_ERC20_MINTER],
           })
           if (currentAllowance < usdcTotal) {
             segments.push({
@@ -273,7 +285,7 @@ export function useCollectAll(): UseCollectAllReturn {
                   abi: ZORA_ERC20_MINTER_ABI,
                   functionName: 'mint',
                   args: [
-                    address as Address,
+                    address,
                     1n,
                     collectionAddress,
                     e.tokenId,
@@ -295,6 +307,15 @@ export function useCollectAll(): UseCollectAllReturn {
 
         const calls = segments.map((s) => s.call)
         const totalMints = ethBatch.length + usdcBatch.length
+
+        // Defense in depth: read fresh chain state from the wagmi store
+        // right before send. ensureBase() ran at the top, but the user
+        // could have switched networks during the eligibility re-check
+        // window. Reading via getAccount(config) bypasses any closure
+        // staleness from the hook's render-time useAccount snapshot.
+        if (getAccount(config).chainId !== base.id) {
+          throw new Error('Switched off Base — retry to continue')
+        }
 
         setStatus('minting')
         toast.loading(`Confirm in wallet — collecting ${totalMints}…`, {
@@ -352,11 +373,23 @@ export function useCollectAll(): UseCollectAllReturn {
 
           // Sequential dispatch: one eth_sendTransaction per call, in the
           // order segments were emitted (USDC.approve before USDC mints, so
-          // allowance is in place by the time the minter is invoked). We do
-          // NOT abort on a revert — partial success is the expected shape
-          // for sequential bundles and the existing attribution logic
-          // already handles per-receipt failure.
-          for (const call of calls) {
+          // allowance is in place by the time the minter is invoked). Partial
+          // success is the expected shape for sequential bundles and the
+          // existing attribution logic handles per-receipt failure.
+          //
+          // The one place we DO short-circuit is right after a setup-call
+          // (USDC.approve, records.length === 0) failure: every subsequent
+          // USDC mint reverts on zero allowance, so prompting for them just
+          // wastes user gas and confidence. Mark them all as failed without
+          // dispatching, preserving the segments[]↔receipts[] alignment the
+          // attribution loop relies on.
+          let setupFailureSkipRemaining = false
+          for (let i = 0; i < calls.length; i++) {
+            const call = calls[i]
+            if (setupFailureSkipRemaining) {
+              receipts.push({ transactionHash: '0x' as Hex, status: 'failure' })
+              continue
+            }
             try {
               const hash = await walletClient.sendTransaction({
                 to: call.to,
@@ -372,6 +405,9 @@ export function useCollectAll(): UseCollectAllReturn {
                 transactionHash: hash,
                 status: r.status === 'success' ? 'success' : 'reverted',
               })
+              if (r.status !== 'success' && segments[i].records.length === 0) {
+                setupFailureSkipRemaining = true
+              }
             } catch (callErr) {
               // A user rejection mid-bundle ends the run — record nothing
               // further and bubble up so the toast reflects the cancel.
@@ -382,6 +418,9 @@ export function useCollectAll(): UseCollectAllReturn {
                 transactionHash: '0x' as Hex,
                 status: 'failure',
               })
+              if (segments[i].records.length === 0) {
+                setupFailureSkipRemaining = true
+              }
             }
           }
         }
@@ -414,18 +453,26 @@ export function useCollectAll(): UseCollectAllReturn {
         }
 
         if (recorded.length === 0) {
+          // Only 'failure' is a known wagmi terminal state worth surfacing
+          // verbatim. Anything else (pending, success-without-receipts,
+          // shape mismatch) collapses to a generic message rather than
+          // leaking wagmi internals to the user.
           throw new Error(
             bundleStatus === 'failure'
               ? 'Bundle reverted on-chain'
-              : bundleStatus
-                ? `Bundle ${bundleStatus}`
-                : 'No mints landed',
+              : 'Bundle did not complete on-chain',
           )
         }
 
         // Best-effort post-mint hooks: trending score, collected list,
         // creator notification. Each entry uses ITS OWN tx hash so the
         // recording endpoint can de-dup correctly even in fallback mode.
+        // Failures are logged (not silenced) so support can trace dropped
+        // recordings; the toast still reflects on-chain success because
+        // the mint itself already landed. Both network failures (.catch)
+        // and non-2xx HTTP responses (.then non-ok branch) are surfaced —
+        // fetch only rejects on transport errors, so 429/403/500s would
+        // otherwise be lost.
         setStatus('recording')
         await Promise.all(
           recorded.map(({ entry, txHash }) =>
@@ -445,7 +492,18 @@ export function useCollectAll(): UseCollectAllReturn {
                 currency: entry.currency,
                 txHash,
               }),
-            }).catch(() => {}),
+            })
+              .then((res) => {
+                if (!res.ok) {
+                  console.error('[collect-all] /api/collect non-2xx', {
+                    tokenId: entry.tokenId,
+                    status: res.status,
+                  })
+                }
+              })
+              .catch((err) => {
+                console.error('[collect-all] /api/collect failed', { tokenId: entry.tokenId, err })
+              }),
           ),
         )
 
@@ -457,10 +515,11 @@ export function useCollectAll(): UseCollectAllReturn {
           )
         } else {
           // Partial — common in sequential-fallback mode when a later
-          // sub-tx reverts (sale ended mid-bundle, slippage, etc.). Be
-          // explicit so the user knows their wallet history is correct.
+          // sub-tx reverts (sale ended mid-bundle, etc.). On-chain mints
+          // that reverted aren't charged, so reassure the user explicitly.
+          const failed = totalMints - recorded.length
           toast.warning(
-            `Collected ${recorded.length} of ${totalMints} — see your wallet for the rest`,
+            `Collected ${recorded.length} of ${totalMints} — ${failed} reverted (not charged)`,
             { id: TOAST_ID },
           )
         }

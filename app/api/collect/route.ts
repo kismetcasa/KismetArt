@@ -1,15 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { decodeEventLog, parseAbi, type Hex } from 'viem'
+import { decodeEventLog, parseAbi, type Address, type Hex } from 'viem'
 import { isAddress } from '@/lib/address'
 import { DEFAULT_COLLECT_COMMENT } from '@/lib/inprocess'
 import { redis } from '@/lib/redis'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
 import { getMomentMeta, writeNotification } from '@/lib/notifications'
 import { serverBaseClient } from '@/lib/rpc'
+import { readSalePricePerToken } from '@/lib/saleConfig'
 
-// Both mint paths in this app (1155.multicall(mint) and ERC20Minter.mint)
-// emit TransferSingle; we don't decode TransferBatch since we never produce
-// it. Add it here only when a code path that emits it is introduced.
+// All mint paths in this app emit ERC1155 TransferSingle: per-token
+// 1155.mint() (single + collect-all ETH legs) and ERC20Minter.mint()
+// (single + collect-all USDC legs). We don't decode TransferBatch since
+// nothing in this codebase produces it. Add it here only when a code
+// path that emits it is introduced.
 const ERC1155_TRANSFER_ABI = parseAbi([
   'event TransferSingle(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)',
 ])
@@ -17,6 +20,13 @@ const ERC1155_TRANSFER_ABI = parseAbi([
 // Cache verification verdict so atomic-bundle batches (where N records share
 // one txHash) only hit RPC once per (tx, collection, token, account) tuple.
 const VERIFY_CACHE_TTL_SECONDS = 300
+
+// Idempotency window for (tx, collection, token, account). After a successful
+// record, repeat POSTs return ok-without-side-effects so an attacker (or buggy
+// client) can't inflate trending or flood notifications by replaying the same
+// legitimate mint. 30 days covers the realistic re-submit horizon while
+// keeping the keyspace bounded.
+const IDEMPOTENCY_TTL_SECONDS = 30 * 24 * 60 * 60
 
 // Confirm the on-chain receipt shows `account` minting `tokenId` from
 // `collection`. Fail-closed: any RPC, decode, or no-match path returns false.
@@ -102,20 +112,44 @@ export async function POST(req: NextRequest) {
   if (!body) return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
 
   const collectionAddress = body.moment?.collectionAddress
-  const tokenId = body.moment?.tokenId
+  const rawTokenId = body.moment?.tokenId
   const account = body.account?.toLowerCase()
   const amount = Number(body.amount ?? 1)
-  const comment = body.comment
-  const pricePerToken = body.pricePerToken
+  // Validate comment shape + length before persisting it on the notification.
+  // 1000 chars is far above any plausible human-written collect comment and
+  // bounds the storage cost a malicious client could impose on a creator's
+  // notification feed by replaying garbage long strings.
+  const comment =
+    typeof body.comment === 'string' && body.comment.length <= 1000
+      ? body.comment
+      : undefined
+  // Validate price as a non-negative decimal of plausible size before storing
+  // it on the notification — otherwise a malicious client could record a
+  // fictional "9999 ETH" price to fake "big collect" social proof. 30 digits
+  // comfortably exceeds 2^96 (uint96 pricePerToken max) without imposing a
+  // semantic cap; the strict-equality on-chain check already prevents the
+  // user from actually paying anything other than the real price.
+  const pricePerToken =
+    typeof body.pricePerToken === 'string' && /^\d{1,30}$/.test(body.pricePerToken)
+      ? body.pricePerToken
+      : undefined
   const currency = body.currency === 'usdc' || body.currency === 'eth' ? body.currency : undefined
   const txHash = body.txHash
 
   if (!collectionAddress || !isAddress(collectionAddress)) {
     return NextResponse.json({ error: 'Invalid collectionAddress' }, { status: 400 })
   }
-  if (!tokenId || !/^\d+$/.test(String(tokenId))) {
+  if (!rawTokenId || !/^\d+$/.test(String(rawTokenId))) {
     return NextResponse.json({ error: 'Invalid tokenId' }, { status: 400 })
   }
+  // Canonicalize the tokenId to its base-10 minimal form. The regex accepts
+  // leading zeros ("01", "0000001"), and all such strings are BigInt-equal —
+  // but the Redis keys downstream (idempotency, trending, collected,
+  // notification) use the literal string as part of their member. Without
+  // normalization, an attacker who legitimately minted token 1 could replay
+  // /api/collect with tokenId="01", "001", … and bypass the per-tuple
+  // idempotency lock to inflate trending or flood notifications.
+  const tokenId = BigInt(rawTokenId).toString()
   if (!account || !isAddress(account)) {
     return NextResponse.json({ error: 'Invalid account' }, { status: 400 })
   }
@@ -133,7 +167,40 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const safeAmount = Number.isFinite(amount) && amount > 0 ? amount : 1
+  // Idempotency gate. SET NX returns 'OK' on first claim, null when the key
+  // already exists. Distinguish those two cases from Redis-transient errors:
+  //   - 'OK'  → proceed with the recording side effects.
+  //   - null  → genuine idempotency hit; return 200 so legitimate retries
+  //             from useCollectAll's Promise.all don't surface as errors.
+  //   - throw → Redis is down or partitioned; we CAN'T enforce idempotency,
+  //             so fail closed with a 503. The client logs the non-2xx via
+  //             the new fetch wrapper; a follow-up retry once Redis recovers
+  //             would land cleanly on this same tuple.
+  // Conflating throws with "already recorded" was the prior behavior — that
+  // silently swallowed mint-recording during Redis flakes.
+  const idemKey = `kismetart:collect-idem:${txHash}:${collectionLower}:${tokenId}:${account}`
+  let acquired: 'OK' | null
+  try {
+    // Upstash's SET-with-NX returns 'OK' | null at runtime; the wider type
+    // in the SDK includes the value type for the GET option we're not using.
+    acquired = (await redis.set(idemKey, '1', {
+      nx: true,
+      ex: IDEMPOTENCY_TTL_SECONDS,
+    })) as 'OK' | null
+  } catch (err) {
+    console.error('[collect] idempotency-lock failed', { txHash, err })
+    return NextResponse.json({ error: 'Recording temporarily unavailable' }, { status: 503 })
+  }
+  if (acquired !== 'OK') {
+    return NextResponse.json({ ok: true, idempotent: true })
+  }
+
+  // Bound amount to a sane ceiling — collect-all hardcodes 1, useDirectCollect
+  // accepts user input. 1000 is far above any plausible single-mint quantity
+  // and prevents a malicious client from recording absurd notification counts.
+  const safeAmount = Number.isFinite(amount) && amount > 0
+    ? Math.min(Math.floor(amount), 1000)
+    : 1
 
   await Promise.all([
     redis.zincrby('kismetart:trending', 1, `${collectionLower}:${tokenId}`).catch(() => {}),
@@ -144,6 +211,22 @@ export async function POST(req: NextRequest) {
       })
       .catch(() => {}),
   ])
+
+  // Derive price server-side so the notification reflects the on-chain
+  // truth rather than whatever the client claimed. Fall back to the
+  // S-1-validated client value on any RPC failure / unconfigured sale —
+  // the client value is still bounded by the regex check so the worst-
+  // case fallback is bounded misinformation, not unbounded.
+  let derivedPrice: bigint | null = null
+  if (currency) {
+    derivedPrice = await readSalePricePerToken(
+      serverBaseClient(),
+      collectionLower as Address,
+      BigInt(tokenId),
+      currency,
+    )
+  }
+  const finalPrice = derivedPrice !== null ? derivedPrice.toString() : pricePerToken
 
   // Notification is fire-and-forget — never let it gate the response.
   void (async () => {
@@ -158,7 +241,7 @@ export async function POST(req: NextRequest) {
         tokenId,
         tokenName: meta.name,
         amount: safeAmount,
-        ...(pricePerToken ? { price: pricePerToken } : {}),
+        ...(finalPrice ? { price: finalPrice } : {}),
         ...(currency ? { currency } : {}),
         ...(comment && comment !== DEFAULT_COLLECT_COMMENT ? { comment } : {}),
       })

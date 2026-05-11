@@ -35,20 +35,19 @@ export async function GET() {
 
 // POST /api/featured — admin-only. `type=collection` features the whole
 // collection (member = lowercase address); default features a single mint
-// (member = `<addr>:<tokenId>`).
+// (member = `<addr>:<tokenId>`). Auth is via HttpOnly session cookie set
+// by /api/auth/login.
 export async function POST(req: NextRequest) {
-  const body = (await req.json()) as {
+  const auth = await verifyPrivilegedSession()
+  if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+  const body = (await req.json().catch(() => null)) as {
     type?: 'moment' | 'collection'
     collectionAddress?: string
     tokenId?: string
-    signature?: string
-    timestamp?: number
-    signerAddress?: string
-  }
+  } | null
 
-  const err = await verifyPrivilegedSession(body)
-  if (err) return NextResponse.json({ error: err.error }, { status: err.status })
-
+  if (!body) return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
   const { collectionAddress } = body
   if (!collectionAddress || !isAddress(collectionAddress)) {
     return NextResponse.json({ error: 'collectionAddress required' }, { status: 400 })
@@ -72,18 +71,16 @@ export async function POST(req: NextRequest) {
 
 // DELETE /api/featured — admin-only. Mirrors POST shape.
 export async function DELETE(req: NextRequest) {
-  const body = (await req.json()) as {
+  const auth = await verifyPrivilegedSession()
+  if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
+  const body = (await req.json().catch(() => null)) as {
     type?: 'moment' | 'collection'
     collectionAddress?: string
     tokenId?: string
-    signature?: string
-    timestamp?: number
-    signerAddress?: string
-  }
+  } | null
 
-  const err = await verifyPrivilegedSession(body)
-  if (err) return NextResponse.json({ error: err.error }, { status: err.status })
-
+  if (!body) return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
   const { collectionAddress } = body
   if (!collectionAddress || !isAddress(collectionAddress)) {
     return NextResponse.json({ error: 'collectionAddress required' }, { status: 400 })

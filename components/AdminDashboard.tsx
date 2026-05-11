@@ -4,8 +4,9 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { ArrowLeft, ShieldAlert } from 'lucide-react'
 import { toast } from 'sonner'
-import { useAccount, useSignMessage } from 'wagmi'
+import { useAccount } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
+import { useAdmin } from '@/contexts/AdminContext'
 import { toastError } from '@/lib/toast'
 
 /**
@@ -17,13 +18,14 @@ import { toastError } from '@/lib/toast'
  * Auth model: we hit /api/admin/me with the connected wallet to check
  * the IS_ADMIN bit. That endpoint reads ADMIN_ADDRESS server-side, so
  * we don't duplicate the comparison client-side. Every mutating call
- * re-verifies via signed-message session, so a malicious client that
- * bypasses the gate still can't write.
+ * runs through AdminContext.withSession so a SIWE login + HttpOnly cookie
+ * carries auth — a malicious client that bypasses the visibility gate
+ * still can't write.
  */
 export function AdminDashboard() {
   const { address, isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
-  const { signMessageAsync } = useSignMessage()
+  const { withSession } = useAdmin()
 
   const [adminCheck, setAdminCheck] = useState<{ checked: boolean; isAdmin: boolean }>({
     checked: false,
@@ -102,14 +104,12 @@ export function AdminDashboard() {
       <div>
         <h1 className="text-[#efefef] font-mono text-lg mb-2">Admin</h1>
         <p className="text-[#888] font-mono text-xs leading-relaxed">
-          Admin-only utilities. Every action below requires a fresh signed-message session.
+          Admin-only utilities. The first action this session will prompt
+          for a wallet signature.
         </p>
       </div>
 
-      <HideContentCard
-        adminAddress={address!}
-        signMessage={signMessageAsync}
-      />
+      <HideContentCard withSession={withSession} />
     </div>
   )
 }
@@ -132,11 +132,9 @@ function parseTarget(input: string): ParsedTarget | null {
 }
 
 function HideContentCard({
-  adminAddress,
-  signMessage,
+  withSession,
 }: {
-  adminAddress: string
-  signMessage: (args: { message: string }) => Promise<string>
+  withSession: <T>(fn: () => Promise<T>) => Promise<T | null>
 }) {
   const [link, setLink] = useState('')
   const [submitting, setSubmitting] = useState(false)
@@ -179,23 +177,22 @@ function HideContentCard({
     const next = !currentlyHidden
     setSubmitting(true)
     try {
-      const ts = Date.now()
-      const message = `Kismet Art admin session\nAddress: ${adminAddress.toLowerCase()}\nTimestamp: ${ts}`
-      const signature = await signMessage({ message })
-      const res = await fetch('/api/admin/hide', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          signature,
-          timestamp: ts,
-          type: target.type,
-          address: target.address,
-          ...(target.type === 'moment' ? { tokenId: target.tokenId } : {}),
-          hidden: next,
-        }),
+      const ok = await withSession(async () => {
+        const res = await fetch('/api/admin/hide', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: target.type,
+            address: target.address,
+            ...(target.type === 'moment' ? { tokenId: target.tokenId } : {}),
+            hidden: next,
+          }),
+        })
+        const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
+        if (!res.ok || !json.ok) throw new Error(json.error ?? 'Request failed')
+        return true
       })
-      const json = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string }
-      if (!res.ok || !json.ok) throw new Error(json.error ?? 'Request failed')
+      if (!ok) return // user cancelled signing
       setCurrentlyHidden(next)
       toast.success(
         next

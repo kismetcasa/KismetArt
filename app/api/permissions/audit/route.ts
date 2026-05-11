@@ -1,35 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { type Address, verifyMessage } from 'viem'
+import { type Address } from 'viem'
 import { isAddress } from '@/lib/address'
 import { redis } from '@/lib/redis'
 import { getCollectionMeta, getTrackedCollections } from '@/lib/kv'
-import { ADMIN_ADDRESS, PLATFORM_COLLECTION } from '@/lib/config'
+import { PLATFORM_COLLECTION } from '@/lib/config'
+import { verifyAdminSession } from '@/lib/curator'
 import { hasAdminBit, readPermissions } from '@/lib/permissions'
 import { resolveSmartWallet } from '@/lib/resolveSmartWallet'
 import { serverBaseClient } from '@/lib/rpc'
-
-const SESSION_TTL = 4 * 60 * 60 * 1000
-
-async function verifyAdminSession(body: {
-  signature?: string
-  timestamp?: number
-}): Promise<{ error: string; status: number } | null> {
-  if (!ADMIN_ADDRESS) return { error: 'Admin not configured', status: 403 }
-  if (!body.signature || body.timestamp == null) {
-    return { error: 'signature and timestamp required', status: 400 }
-  }
-  if (Date.now() - body.timestamp > SESSION_TTL) {
-    return { error: 'Session expired — please sign in again', status: 401 }
-  }
-  const message = `Kismet Art admin session\nAddress: ${ADMIN_ADDRESS}\nTimestamp: ${body.timestamp}`
-  const verified = await verifyMessage({
-    address: ADMIN_ADDRESS as `0x${string}`,
-    message,
-    signature: body.signature as `0x${string}`,
-  })
-  if (!verified) return { error: 'Signature verification failed', status: 401 }
-  return null
-}
 
 // Cached at kismetart:collection-perms:<addr>. `perms` is bigint-as-string
 // since JSON.stringify can't serialize bigints natively.
@@ -204,13 +182,9 @@ export async function GET() {
  * OPERATOR_SMART_WALLET, not per-artist). Concurrency capped at 10 to
  * stay within RPC + Upstash burst limits.
  */
-export async function POST(req: NextRequest) {
-  const body = (await req.json().catch(() => ({}))) as {
-    signature?: string
-    timestamp?: number
-  }
-  const err = await verifyAdminSession(body)
-  if (err) return NextResponse.json({ error: err.error }, { status: err.status })
+export async function POST(_req: NextRequest) {
+  const auth = await verifyAdminSession()
+  if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
 
   const tracked = await getTrackedCollections()
   const platformLower = PLATFORM_COLLECTION.toLowerCase()

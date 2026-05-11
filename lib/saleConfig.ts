@@ -1,5 +1,5 @@
 import type { Address, Chain, Client, Transport } from 'viem'
-import { multicall } from 'viem/actions'
+import { getBlock, multicall, readContract } from 'viem/actions'
 import { USDC_BASE, ZORA_ERC20_MINTER, ZORA_FIXED_PRICE_STRATEGY } from './zoraMint'
 
 // FixedPriceSaleStrategy.sale(target, tokenId) — the canonical view returning
@@ -125,13 +125,16 @@ type AnyClient = Client<Transport, Chain | undefined>
  *   - 'usdc' → ERC20Minter, additionally filtering currency === USDC_BASE
  *
  * When `account` is provided, also skips tokens where balance has hit
- * maxPerAddress — those would revert a multicall batch. Returns [] on any
- * read failure so callers stay simple and a USDC RPC blip can't crash the
- * ETH leg in mixed flows.
+ * maxPerAddress — those would revert inside an atomic EIP-5792 bundle and
+ * cascade the whole collect-all. Returns [] on any read failure so callers
+ * stay simple and a USDC RPC blip can't crash the ETH leg in mixed flows.
  *
  * Two RPC round trips: one multicall for sale configs + token info, one
  * for balances. Fail-closed on balance reads so a single revert can't
- * cascade an atomic EIP-5792 bundle.
+ * cascade an atomic EIP-5792 bundle. The "now" used for saleStart/saleEnd
+ * comparison is the chain's latest block.timestamp, not Date.now(): a
+ * desynced client clock would otherwise misclassify just-expired or
+ * just-started sales and feed a bundle that reverts on-chain.
  */
 export async function fetchEligibleTokens(
   client: AnyClient,
@@ -142,7 +145,16 @@ export async function fetchEligibleTokens(
 ): Promise<EligibleToken[]> {
   if (tokenIds.length === 0) return []
 
-  const now = BigInt(Math.floor(Date.now() / 1000))
+  // Read chain time once; fall back to wall-clock only if the RPC denies
+  // us a block read. Wall-clock can drift on misconfigured devices, but
+  // it's still better than refusing to filter at all.
+  let now: bigint
+  try {
+    const block = await getBlock(client, { blockTag: 'latest' })
+    now = block.timestamp
+  } catch {
+    now = BigInt(Math.floor(Date.now() / 1000))
+  }
   const strategy = STRATEGY_BY_CURRENCY[currency]
 
   // First pass: read sale config + token info for every candidate in one
@@ -241,4 +253,37 @@ export async function fetchEligibleTokens(
     const balance = r.result as bigint
     return !(c.maxPerAddress > 0n && balance >= c.maxPerAddress)
   })
+}
+
+/**
+ * Read the current on-chain `pricePerToken` for a (collection, tokenId).
+ * Used by the recording endpoint to derive price server-side rather than
+ * trusting client-supplied display values — otherwise a malicious client
+ * could record a fictional "9999 ETH" price for a free mint to fake
+ * "big collect" social proof.
+ *
+ * Returns null on any failure (RPC error, sale not configured on this
+ * strategy, exotic currency). Callers should fall back to their best-
+ * known client-supplied value rather than dropping the price entirely.
+ */
+export async function readSalePricePerToken(
+  client: AnyClient,
+  collection: Address,
+  tokenId: bigint,
+  currency: SaleCurrency,
+): Promise<bigint | null> {
+  const strategy = STRATEGY_BY_CURRENCY[currency]
+  try {
+    const sale = await readContract(client, {
+      address: strategy.address,
+      abi: strategy.abi,
+      functionName: 'sale',
+      args: [collection, tokenId],
+    })
+    // Tuple shape differs per strategy but pricePerToken is the canonical
+    // field on both; cast through the discriminated read to surface it.
+    return (sale as { pricePerToken: bigint }).pricePerToken
+  } catch {
+    return null
+  }
 }
