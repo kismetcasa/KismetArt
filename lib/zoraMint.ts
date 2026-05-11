@@ -1,4 +1,11 @@
-import { encodeAbiParameters, parseAbi, parseAbiParameters, type Address } from 'viem'
+import {
+  encodeAbiParameters,
+  parseAbi,
+  parseAbiParameters,
+  parseEther,
+  type Address,
+  type PublicClient,
+} from 'viem'
 
 // Zora 1155 protocol — Base mainnet (chainId 8453).
 //
@@ -27,6 +34,11 @@ export const USDC_BASE: Address = '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913'
 // Single recipient for ALL Kismet platform rewards: Zora's mint-referral split,
 // createReferral on collection deploy, etc. Hardcoded so we can't typo it
 // across files. Keep this in sync with createReferral set during deploy.
+//
+// TREASURY-CRITICAL: this address receives every dollar of platform mint fees.
+// A PR that silently changes this constant rotates ALL future revenue to the
+// new address. Any change must be reviewed by a treasury signer and verified
+// against the on-chain createReferral configuration on existing collections.
 export const KISMET_REFERRAL: Address = '0xc6021D9F09e145a6297f64551aa2eCA6d66F8f75'
 
 // Zora 1155 mint() (post-v2.0.0 contracts). All inprocess and Kismet deploys
@@ -76,3 +88,32 @@ export const ZORA_CREATOR_REWARD_RECIPIENT_ABI = parseAbi([
 // well under the wallet-preview-readable limit (~5M for 20 × ~250k each on
 // Base) so users see the full impact before signing.
 export const MAX_COLLECT_ALL_BATCH = 20
+
+// Defense-in-depth sanity bound on mintFee(). Zora's protocol-wide mint fee
+// has historically been 0.000111 ETH (~$0.30); 0.01 ETH is ~90× headroom but
+// catches a misbehaving / mis-upgraded / non-canonical 1155 contract that
+// returns a pathological value before the user signs it. Applies to every
+// ETH-priced mint path (collect-all, direct-collect) so a single source of
+// truth governs the bound.
+export const MAX_REASONABLE_MINT_FEE_WEI = parseEther('0.01')
+
+/**
+ * Read mintFee() from a Zora 1155 collection and assert it's within the
+ * sanity bound before returning. Throwing here aborts the caller's try
+ * before any value-carrying call is built, so the user never signs a
+ * runaway value on a pathological contract.
+ */
+export async function readMintFeeWithBound(
+  client: PublicClient,
+  collection: Address,
+): Promise<bigint> {
+  const mintFee = await client.readContract({
+    address: collection,
+    abi: ZORA_1155_MINT_ABI,
+    functionName: 'mintFee',
+  })
+  if (mintFee > MAX_REASONABLE_MINT_FEE_WEI) {
+    throw new Error('Refusing to mint: protocol mint fee exceeds safety bound')
+  }
+  return mintFee
+}

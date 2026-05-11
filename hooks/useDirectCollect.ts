@@ -4,18 +4,20 @@ import { useCallback, useState } from 'react'
 import { useAccount, usePublicClient, useWriteContract } from 'wagmi'
 import { base } from 'wagmi/chains'
 import { toast } from 'sonner'
-import type { Address, Hash } from 'viem'
+import { getAddress, type Address, type Hash } from 'viem'
+import { isValidTokenId } from '@/lib/address'
 import { useEnsureBase } from '@/lib/useEnsureBase'
 import { toastError } from '@/lib/toast'
 import {
   ERC20_ABI,
   KISMET_REFERRAL,
   USDC_BASE,
-  ZORA_1155_MINT_ABI,
   ZORA_ERC20_MINTER,
   ZORA_ERC20_MINTER_ABI,
+  ZORA_1155_MINT_ABI,
   ZORA_FIXED_PRICE_STRATEGY,
   encodeFixedPriceMinterArgs,
+  readMintFeeWithBound,
 } from '@/lib/zoraMint'
 
 type CollectStatus =
@@ -60,6 +62,14 @@ const TOAST_ID = 'direct-collect'
  * Kismet's referral address is passed on every mint so we earn the Zora
  * mint-referral split. After the mint receipt, posts to /api/collect to
  * record the collect for trending + collected-list + creator notification.
+ *
+ * REGRESSION WARNING — do NOT "optimize" batched single-mints by wrapping
+ * multiple 1155.mint() calls in the inherited multicall(bytes[]) entry
+ * point. Per Zora's canonical ABI, multicall is declared `nonpayable` so
+ * any value sent reverts at dispatch — and even if it were payable, OZ's
+ * delegatecall pattern replicates msg.value across sub-calls, which the
+ * FixedPriceSaleStrategy strict-equality check rejects with WrongValueSent.
+ * See useCollectAll for the EIP-5792-based batching pattern instead.
  */
 export function useDirectCollect(): UseDirectCollectReturn {
   const { address } = useAccount()
@@ -71,7 +81,6 @@ export function useDirectCollect(): UseDirectCollectReturn {
   const collect = useCallback(
     async (args: CollectArgs): Promise<{ hash: Hash } | null> => {
       const {
-        collectionAddress,
         tokenId,
         pricePerToken,
         currency,
@@ -85,6 +94,21 @@ export function useDirectCollect(): UseDirectCollectReturn {
       }
       if (!publicClient) {
         toast.error('Network unavailable')
+        return null
+      }
+      // Trust-boundary validation: normalize + check the collection address
+      // and tokenId before any encoding touches them. The interface types
+      // collectionAddress as Address, but a bad `as Address` upstream would
+      // otherwise slip through silently.
+      let collectionAddress: Address
+      try {
+        collectionAddress = getAddress(args.collectionAddress)
+      } catch {
+        toast.error('Invalid collection address')
+        return null
+      }
+      if (!isValidTokenId(tokenId)) {
+        toast.error('Invalid token id')
         return null
       }
 
@@ -102,11 +126,9 @@ export function useDirectCollect(): UseDirectCollectReturn {
 
         if (currency === 'eth') {
           // Read Zora's protocol fee dynamically — it changes occasionally.
-          const mintFee = await publicClient.readContract({
-            address: collectionAddress,
-            abi: ZORA_1155_MINT_ABI,
-            functionName: 'mintFee',
-          })
+          // readMintFeeWithBound also asserts the value is within sanity
+          // limits before the caller signs anything.
+          const mintFee = await readMintFeeWithBound(publicClient, collectionAddress)
 
           const value = (mintFee + pricePerToken) * quantity
           const minterArgs = encodeFixedPriceMinterArgs(address, comment)

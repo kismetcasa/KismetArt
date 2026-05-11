@@ -5,7 +5,7 @@ import { useAccount, useConfig, usePublicClient, useSendCalls, useWalletClient }
 import { getAccount, waitForCallsStatus } from '@wagmi/core'
 import { base } from 'wagmi/chains'
 import { toast } from 'sonner'
-import { encodeFunctionData, getAddress, parseEther, type Address, type Hex } from 'viem'
+import { encodeFunctionData, getAddress, type Address, type Hex } from 'viem'
 import { isValidTokenId } from '@/lib/address'
 import { useEnsureBase } from '@/lib/useEnsureBase'
 import { isUserRejection, toastError } from '@/lib/toast'
@@ -20,6 +20,7 @@ import {
   ZORA_ERC20_MINTER_ABI,
   ZORA_FIXED_PRICE_STRATEGY,
   encodeFixedPriceMinterArgs,
+  readMintFeeWithBound,
 } from '@/lib/zoraMint'
 
 type Status =
@@ -32,13 +33,6 @@ type Status =
   | 'error'
 
 const TOAST_ID = 'collect-all'
-
-// Defense-in-depth sanity bound on mintFee(). Zora's protocol-wide mint fee
-// has historically been 0.000111 ETH (~$0.30); 0.01 ETH is ~90× headroom but
-// catches a misbehaving / mis-upgraded / non-canonical 1155 contract that
-// returns a pathological value before the user signs it. Above this, we
-// refuse to build the bundle rather than expose the user to a runaway value.
-const MAX_REASONABLE_MINT_FEE_WEI = parseEther('0.01')
 
 export interface CollectAllArgs {
   collectionAddress: Address
@@ -222,15 +216,10 @@ export function useCollectAll(): UseCollectAllReturn {
 
         // ─── ETH leg ─────────────────────────────────────────────────────
         if (ethBatch.length > 0) {
-          // Mint fee changes occasionally; read once per submit.
-          const mintFee = await publicClient.readContract({
-            address: collectionAddress,
-            abi: ZORA_1155_MINT_ABI,
-            functionName: 'mintFee',
-          })
-          if (mintFee > MAX_REASONABLE_MINT_FEE_WEI) {
-            throw new Error('Refusing to mint: protocol mint fee exceeds safety bound')
-          }
+          // Mint fee changes occasionally; read once per submit. The helper
+          // also enforces the sanity bound so we abort before encoding any
+          // value-carrying call on a pathological contract.
+          const mintFee = await readMintFeeWithBound(publicClient, collectionAddress)
           const minterArgs = encodeFixedPriceMinterArgs(address, '')
           for (const e of ethBatch) {
             segments.push({
@@ -478,6 +467,9 @@ export function useCollectAll(): UseCollectAllReturn {
         // Best-effort post-mint hooks: trending score, collected list,
         // creator notification. Each entry uses ITS OWN tx hash so the
         // recording endpoint can de-dup correctly even in fallback mode.
+        // Failures are logged (not silenced) so support can trace dropped
+        // recordings; the toast still reflects on-chain success because
+        // the mint itself already landed.
         setStatus('recording')
         await Promise.all(
           recorded.map(({ entry, txHash }) =>
@@ -497,7 +489,9 @@ export function useCollectAll(): UseCollectAllReturn {
                 currency: entry.currency,
                 txHash,
               }),
-            }).catch(() => {}),
+            }).catch((err) => {
+              console.error('[collect-all] /api/collect failed', { tokenId: entry.tokenId, err })
+            }),
           ),
         )
 
