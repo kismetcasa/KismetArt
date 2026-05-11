@@ -120,3 +120,84 @@ export async function readMintFeeWithBound(
   }
   return mintFee
 }
+
+/**
+ * Build the (abi, functionName, args, value) tuple for a Zora 1155
+ * ETH-priced mint. The same tuple ends up on-chain whether the caller
+ * dispatches via useWriteContract (useDirectCollect's single-mint path)
+ * or via encodeFunctionData + EIP-5792 wallet_sendCalls (useCollectAll's
+ * bundled path).
+ *
+ * TREASURY-CRITICAL: this function is the single source of truth for the
+ * referral recipient (KISMET_REFERRAL), the strategy address
+ * (ZORA_FIXED_PRICE_STRATEGY), and the minterArguments encoding on every
+ * ETH-priced mint the platform issues. Inlining the args at a callsite
+ * instead of going through this helper is a divergence vector that could
+ * silently route one of the two collect flows' mint-referral rewards
+ * elsewhere — exactly the bug class the comment on KISMET_REFERRAL above
+ * warns about, just from a different attack surface.
+ *
+ * value = (mintFee + pricePerToken) * quantity, matching Zora protocol-sdk's
+ * parseMintCosts.totalCostEth. The strategy's strict equality check rejects
+ * any mismatch with WrongValueSent, so a wrong value here can never become
+ * an overpay — it would just revert.
+ */
+export function buildEthMintCall(params: {
+  tokenId: bigint
+  mintTo: Address
+  quantity: bigint
+  mintFee: bigint
+  pricePerToken: bigint
+  comment: string
+}) {
+  return {
+    abi: ZORA_1155_MINT_ABI,
+    functionName: 'mint',
+    args: [
+      ZORA_FIXED_PRICE_STRATEGY,
+      params.tokenId,
+      params.quantity,
+      [KISMET_REFERRAL],
+      encodeFixedPriceMinterArgs(params.mintTo, params.comment),
+    ],
+    value: (params.mintFee + params.pricePerToken) * params.quantity,
+  } as const
+}
+
+/**
+ * Build the (abi, functionName, args) tuple for a USDC-priced mint via
+ * the ERC20Minter strategy. Same single-source-of-truth purpose as
+ * buildEthMintCall, for the ERC20 leg.
+ *
+ * Returns no value field — USDC is pulled via transferFrom by the
+ * ERC20Minter, so the caller must hold a sufficient USDC allowance on
+ * ZORA_ERC20_MINTER before invoking. The strategy itself enforces
+ * totalValue === quantity * sale.pricePerToken on-chain.
+ *
+ * TREASURY-CRITICAL: same warning as buildEthMintCall — this is the only
+ * sanctioned way to construct the args, including the hardcoded
+ * KISMET_REFERRAL recipient and the USDC_BASE currency.
+ */
+export function buildUsdcMintCall(params: {
+  collection: Address
+  tokenId: bigint
+  mintTo: Address
+  quantity: bigint
+  pricePerToken: bigint
+  comment: string
+}) {
+  return {
+    abi: ZORA_ERC20_MINTER_ABI,
+    functionName: 'mint',
+    args: [
+      params.mintTo,
+      params.quantity,
+      params.collection,
+      params.tokenId,
+      params.pricePerToken * params.quantity,
+      USDC_BASE,
+      KISMET_REFERRAL,
+      params.comment,
+    ],
+  } as const
+}
