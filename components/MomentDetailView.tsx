@@ -55,6 +55,7 @@ interface Props {
     description?: string
     animation_url?: string
     content?: { mime?: string; uri?: string }
+    kismet_thumbhash?: string
   }
   // Server-side hydration for the collection chip below the title. Without
   // this the chip pops in once the client-side /api/collections fetch lands;
@@ -623,6 +624,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                   sizes="(max-width: 768px) 100vw, 50vw"
                   priority
                   mime={meta.content?.mime}
+                  thumbhash={meta.kismet_thumbhash}
                   onAllError={() => setImgError(true)}
                 />
               ) : !detail ? (

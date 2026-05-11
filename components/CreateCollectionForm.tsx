@@ -11,6 +11,8 @@ import { Upload, X, Plus, Trash2, Check } from 'lucide-react'
 import { FACTORY_ADDRESS, FACTORY_ABI, encodeMinterPermission, encodeAdminPermission, buildCoverTokenSetupActions } from '@/lib/collections'
 import { CREATE_REFERRAL, OPERATOR_SMART_WALLET } from '@/lib/config'
 import uploadToArweave from '@/lib/arweave/uploadToArweave'
+import { generateThumbhash } from '@/lib/media/thumbhash'
+import { canTranscode, extractGifPoster } from '@/lib/media/transcodeGif'
 import { uploadJson } from '@/lib/arweave/uploadJson'
 import { verifyArweaveAvailable } from '@/lib/arweave/verifyAvailable'
 import { useUploadSession } from '@/hooks/useUploadSession'
@@ -54,11 +56,15 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
   const [mintCover, setMintCover] = useState(false)
   const [coverPrice, setCoverPrice] = useState('0')
   const [coverSupply, setCoverSupply] = useState('')
-  const [step, setStep] = useState<'idle' | 'uploading-image' | 'uploading-metadata' | 'deploying' | 'done'>('idle')
+  const [step, setStep] = useState<'idle' | 'preparing-image' | 'uploading-image' | 'uploading-metadata' | 'deploying' | 'done'>('idle')
   const [uploadProgress, setUploadProgress] = useState(0)
   const [collectionAddress, setCollectionAddress] = useState<string | null>(null)
   const [txHash, setTxHash] = useState<`0x${string}` | undefined>(undefined)
   const [deployedImageUri, setDeployedImageUri] = useState<string | undefined>(undefined)
+  // Set during the upload step so the KV write below (which races the deploy
+  // tx) can include the thumbhash on the collection's first KV entry — gives
+  // the collection page a blurDataURL placeholder on first paint.
+  const [coverThumbhash, setCoverThumbhash] = useState<string | undefined>(undefined)
 
   const { writeContractAsync } = useWriteContract()
   const ensureBase = useEnsureBase()
@@ -341,6 +347,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
         // lands at tokenId 1 deterministically. Marking it keeps the cover
         // out of every Mints feed (it lives on the collection card instead).
         coverTokenId: mintCover ? '1' : undefined,
+        kismet_thumbhash: coverThumbhash,
       })
       onDeployed?.(deployedAddress, name)
 
@@ -409,10 +416,24 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
       // Ensure session once — httpOnly cookie set, no re-prompt for 7 days
       await ensureSession()
 
+      // Animated GIF covers → first-frame JPEG. Covers never render as
+      // animation, so the GIF bytes were wasted bandwidth. Best-effort.
+      let imageFile: File = coverFile
+      if (canTranscode(coverFile)) {
+        setStep('preparing-image')
+        toast.loading('Optimizing cover for fast loading…', { id: 'create-collection' })
+        try {
+          imageFile = await extractGifPoster(coverFile)
+        } catch (err) {
+          console.warn('[CreateCollectionForm] GIF poster extraction failed; uploading original', err)
+        }
+      }
+
       setStep('uploading-image')
       setUploadProgress(0)
       toast.loading('Uploading cover image…', { id: 'create-collection' })
-      const imageUri = await uploadToArweave(coverFile, (pct) => {
+      const thumbhashPromise = generateThumbhash(imageFile)
+      const imageUri = await uploadToArweave(imageFile, (pct) => {
         setUploadProgress(pct)
         toast.loading(`Uploading image… ${pct}%`, { id: 'create-collection' })
       })
@@ -438,10 +459,13 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
 
       setStep('uploading-metadata')
       toast.loading('Uploading collection metadata…', { id: 'create-collection' })
+      const thumbhash = await thumbhashPromise
+      if (thumbhash) setCoverThumbhash(thumbhash)
       const metadata: Record<string, unknown> = {
         name: name.trim(),
         description: description.trim(),
         image: imageUri,
+        ...(thumbhash ? { kismet_thumbhash: thumbhash } : {}),
         createReferral: CREATE_REFERRAL,
       }
       const contractURI = await uploadJson(metadata)
@@ -901,6 +925,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
 
 function stepLabel(step: string, progress: number): string {
   switch (step) {
+    case 'preparing-image': return 'optimizing cover…'
     case 'uploading-image': return progress > 0 ? `uploading image… ${progress}%` : 'uploading image…'
     case 'uploading-metadata': return 'uploading metadata…'
     case 'deploying': return 'deploying…'

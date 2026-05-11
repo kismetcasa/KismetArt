@@ -14,7 +14,7 @@ import { CollectAllAction } from './CollectAllAction'
 export interface FeaturedCollectionRow {
   contractAddress: string
   name?: string
-  metadata?: { name?: string; image?: string; description?: string }
+  metadata?: { name?: string; image?: string; description?: string; kismet_thumbhash?: string }
   default_admin?: { address?: string; username?: string }
   moments: Moment[]
   ethEligibleTokenIds: string[]
@@ -93,6 +93,7 @@ export function CollectionRow({ collection, primaryAction, priority }: Collectio
               onAllError={() => setImgFailed(true)}
               priority={priority}
               preferProxy
+              thumbhash={c.metadata.kismet_thumbhash}
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
