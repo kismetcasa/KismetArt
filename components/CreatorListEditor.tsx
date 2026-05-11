@@ -27,7 +27,9 @@ interface Props {
  * Inline editor for one creator list. Addresses are entered one per line
  * and parsed on save — keeps the curator UI dense and pasteable. Save
  * goes through AdminContext.withSession so the curator only signs once
- * per 4-hour session, even when juggling multiple lists.
+ * per 4-hour session, even when juggling multiple lists. The HttpOnly
+ * session cookie carries auth on subsequent requests; the request body
+ * doesn't need to inject signature/timestamp params anymore.
  */
 export function CreatorListEditor({ list, onClose, onSaved, onDeleted }: Props) {
   const { withSession } = useAdmin()
@@ -51,7 +53,7 @@ export function CreatorListEditor({ list, onClose, onSaved, onDeleted }: Props) 
     }
     setBusy(true)
     try {
-      const result = await withSession(async (auth) => {
+      const result = await withSession(async () => {
         const res = await fetch('/api/creator-lists', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -59,7 +61,6 @@ export function CreatorListEditor({ list, onClose, onSaved, onDeleted }: Props) 
             slug: list?.slug,
             name: name.trim(),
             addresses: parsed,
-            ...auth,
           }),
         })
         const data = (await res.json().catch(() => ({}))) as { list?: CreatorListShape; error?: string }
@@ -83,14 +84,10 @@ export function CreatorListEditor({ list, onClose, onSaved, onDeleted }: Props) 
     if (!confirm(`Delete list "${list.name}"?`)) return
     setBusy(true)
     try {
-      const ok = await withSession(async (auth) => {
+      const ok = await withSession(async () => {
         const res = await fetch(
           `/api/creator-lists?slug=${encodeURIComponent(list.slug)}`,
-          {
-            method: 'DELETE',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(auth),
-          },
+          { method: 'DELETE' },
         )
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as { error?: string }

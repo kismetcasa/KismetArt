@@ -257,7 +257,7 @@ function MainFeed() {
 // ─── discover page ────────────────────────────────────────────────────────────
 
 export default function DiscoverPage() {
-  const { isAdmin, session, startSession, featuredKeys, featuredCollectionAddrs } = useAdmin()
+  const { isAdmin, hasSession, startSession, featuredKeys, featuredCollectionAddrs } = useAdmin()
   const [order, setOrder] = useState<TabId[]>(DRAGGABLE)
   const [active, setActive] = useState<TabId>(DRAGGABLE[0])
 
@@ -280,7 +280,7 @@ export default function DiscoverPage() {
       <div className="mt-2">
         {active === 'featured' && (
           <>
-            {isAdmin && !session && (
+            {isAdmin && !hasSession && (
               <div className="flex items-center justify-between py-4 border-b border-[#2a2a2a] mb-2">
                 <p className="text-xs font-mono text-[#555]">
                   admin — sign to start curating

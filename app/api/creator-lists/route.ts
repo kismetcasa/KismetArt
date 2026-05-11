@@ -20,19 +20,17 @@ export async function GET() {
 //   - body.slug omitted: derive from body.name. Returns 409 if the derived
 //     slug already exists, so the curator has to rename the collision
 //     explicitly rather than accidentally overwriting another list.
+// Auth is via HttpOnly session cookie set by /api/auth/login.
 export async function POST(req: NextRequest) {
+  const auth = await verifyPrivilegedSession()
+  if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
   const body = (await req.json().catch(() => null)) as {
     slug?: string
     name?: string
     addresses?: unknown[]
-    signature?: string
-    timestamp?: number
-    signerAddress?: string
   } | null
   if (!body) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
-
-  const err = await verifyPrivilegedSession(body)
-  if (err) return NextResponse.json({ error: err.error }, { status: err.status })
 
   if (!body.name || typeof body.name !== 'string' || !body.name.trim()) {
     return NextResponse.json({ error: 'name required' }, { status: 400 })
@@ -68,22 +66,14 @@ export async function POST(req: NextRequest) {
   return NextResponse.json({ list: saved })
 }
 
-// Curator-gated. Auth in the body since DELETE bodies are valid HTTP
-// (and our /api/featured DELETE follows the same shape). slug in the
-// query string keeps the URL self-describing in server logs.
+// Curator-gated. slug in the query string keeps the URL self-describing
+// in server logs. Auth via HttpOnly session cookie.
 export async function DELETE(req: NextRequest) {
+  const auth = await verifyPrivilegedSession()
+  if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
   const slug = new URL(req.url).searchParams.get('slug')
   if (!slug) return NextResponse.json({ error: 'slug required' }, { status: 400 })
-
-  const body = (await req.json().catch(() => null)) as {
-    signature?: string
-    timestamp?: number
-    signerAddress?: string
-  } | null
-  if (!body) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
-
-  const err = await verifyPrivilegedSession(body)
-  if (err) return NextResponse.json({ error: err.error }, { status: err.status })
 
   const removed = await deleteCreatorList(slug)
   return NextResponse.json({ removed })

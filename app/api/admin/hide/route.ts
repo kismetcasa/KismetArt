@@ -5,8 +5,6 @@ import { hideCollection, unhideCollection } from '@/lib/hiddenCollections'
 import { hideMoment, unhideMoment } from '@/lib/hiddenMoments'
 
 interface HideBody {
-  signature?: string
-  timestamp?: number
   type?: 'moment' | 'collection'
   address?: string
   tokenId?: string
@@ -19,13 +17,14 @@ interface HideBody {
  * on-chain admin respectively; this route bypasses both for platform
  * moderation. Writes to the same Redis sets (hiddenMoments / hiddenCollections),
  * so feed filtering picks up the change immediately with no extra wiring.
+ * Auth via HttpOnly session cookie set by /api/auth/login.
  */
 export async function POST(req: NextRequest) {
+  const auth = await verifyAdminSession()
+  if ('error' in auth) return NextResponse.json({ error: auth.error }, { status: auth.status })
+
   const body = (await req.json().catch(() => null)) as HideBody | null
   if (!body) return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
-
-  const authErr = await verifyAdminSession(body)
-  if (authErr) return NextResponse.json({ error: authErr.error }, { status: authErr.status })
 
   const { type, address, tokenId, hidden } = body
   if (type !== 'moment' && type !== 'collection') {

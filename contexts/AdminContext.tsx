@@ -2,21 +2,19 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { useAccount, useSignMessage } from 'wagmi'
+import { base } from 'wagmi/chains'
+import { createSiweMessage } from 'viem/siwe'
 import { toastError } from '@/lib/toast'
 
 const SESSION_KEY = 'kismetart:admin-session'
-const SESSION_TTL = 4 * 60 * 60 * 1000 // 4 hours
+const SESSION_TTL_MS = 4 * 60 * 60 * 1000
 
 interface AdminSession {
-  signature: string
-  timestamp: number
-}
-
-/** Auth fields a curator/admin call to a privileged endpoint must include. */
-export interface PrivilegedAuth {
-  signature: string
-  timestamp: number
-  signerAddress: string
+  // Local expiry marker only. The actual authentication is the HttpOnly
+  // cookie set by POST /api/auth/login, which we can't read from JS. We
+  // track expiresAt so UI surfaces can ask "do I have a session?" without
+  // waiting for a 401 round-trip on the first request.
+  expiresAt: number
 }
 
 interface AdminContextValue {
@@ -26,25 +24,27 @@ interface AdminContextValue {
   // instead of the per-card star button. The two roles can co-exist: an
   // address that is both admin and curator sees both surfaces.
   isCurator: boolean
-  session: AdminSession | null
+  hasSession: boolean
   startSession: () => Promise<void>
+  endSession: () => Promise<void>
   featuredKeys: Set<string>
   featuredCollectionAddrs: Set<string>
   toggleFeatured: (collectionAddress: string, tokenId: string) => Promise<void>
   toggleFeaturedCollection: (collectionAddress: string) => Promise<void>
-  // Run `fn` with a valid privileged session, auto-prompting a one-time
-  // signature if none is cached. Returns whatever `fn` returns, or null
-  // when the caller isn't privileged or cancels the signature prompt.
-  // Used by curator surfaces (creator-list editor) so they don't have
-  // to re-implement the session dance that toggleFeatured does.
-  withSession: <T>(fn: (auth: PrivilegedAuth) => Promise<T>) => Promise<T | null>
+  // Run `fn` with a valid privileged session in scope. Auto-prompts a
+  // one-time SIWE signature + login round-trip if no session is active.
+  // Returns whatever `fn` returns, or null if unprivileged / cancelled.
+  // The HttpOnly cookie is auto-attached to fetches inside `fn`, so the
+  // callback doesn't need to inject any auth params into request bodies.
+  withSession: <T>(fn: () => Promise<T>) => Promise<T | null>
 }
 
 const AdminContext = createContext<AdminContextValue>({
   isAdmin: false,
   isCurator: false,
-  session: null,
+  hasSession: false,
   startSession: async () => {},
+  endSession: async () => {},
   featuredKeys: new Set(),
   featuredCollectionAddrs: new Set(),
   toggleFeatured: async () => {},
@@ -85,10 +85,10 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       .catch(() => { setIsAdmin(false); setIsCurator(false) })
   }, [address])
 
-  // Restore from sessionStorage once a privileged role is confirmed; clear
-  // otherwise. Combined into one effect so the restore never races with
-  // the clear. Both admins and curators use the same session key — the
-  // server verifies signerAddress, so cross-role mixups are impossible.
+  // Restore session marker from sessionStorage once a privileged role is
+  // confirmed; clear otherwise. The marker is just a local expiry hint —
+  // the source of truth is the HttpOnly cookie, so if a request 401s the
+  // caller can re-trigger startSession() to refresh both.
   useEffect(() => {
     if (!isAdmin && !isCurator) {
       applySession(null)
@@ -98,7 +98,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       const raw = sessionStorage.getItem(SESSION_KEY)
       if (!raw) return
       const parsed = JSON.parse(raw) as AdminSession
-      if (Date.now() - parsed.timestamp < SESSION_TTL) {
+      if (parsed.expiresAt > Date.now()) {
         applySession(parsed)
       } else {
         sessionStorage.removeItem(SESSION_KEY)
@@ -134,13 +134,51 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       .catch(() => {})
   }, [])
 
+  // SIWE login dance. Each session begins by:
+  //  1. Fetching a server-issued single-use nonce.
+  //  2. Constructing an EIP-4361 SIWE message bound to (domain, address,
+  //     chainId, nonce, expirationTime).
+  //  3. Signing the message with the connected wallet.
+  //  4. POSTing { message, signature } to /api/auth/login, which verifies
+  //     the signature + nonce + domain and returns an HttpOnly cookie
+  //     carrying an opaque session token (server-stored in Redis with the
+  //     same 4h TTL we track locally below).
+  // The signature itself never persists client-side; only the opaque cookie
+  // and a local expiry marker remain.
   const startSession = useCallback(async () => {
     if (!address || (!isAdmin && !isCurator)) return
-    const timestamp = Date.now()
-    const message = `Kismet Art admin session\nAddress: ${address.toLowerCase()}\nTimestamp: ${timestamp}`
     try {
+      const nonceRes = await fetch('/api/auth/nonce', { method: 'POST' })
+      if (!nonceRes.ok) throw new Error('Failed to issue auth nonce')
+      const { nonce } = (await nonceRes.json()) as { nonce: string }
+
+      const issuedAt = new Date()
+      const expirationTime = new Date(Date.now() + SESSION_TTL_MS)
+      const message = createSiweMessage({
+        domain: window.location.host,
+        address: address as `0x${string}`,
+        statement: 'Sign in to Kismet Art admin.',
+        uri: window.location.origin,
+        version: '1',
+        chainId: base.id,
+        nonce,
+        issuedAt,
+        expirationTime,
+      })
+
       const signature = await signMessageAsync({ message })
-      const s: AdminSession = { signature, timestamp }
+
+      const loginRes = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, signature }),
+      })
+      if (!loginRes.ok) {
+        const data = (await loginRes.json().catch(() => ({}))) as { error?: string }
+        throw new Error(data.error ?? 'Login failed')
+      }
+
+      const s: AdminSession = { expiresAt: expirationTime.getTime() }
       applySession(s)
       sessionStorage.setItem(SESSION_KEY, JSON.stringify(s))
     } catch (err) {
@@ -148,17 +186,34 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
     }
   }, [address, isAdmin, isCurator, signMessageAsync])
 
+  const endSession = useCallback(async () => {
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' })
+    } catch {
+      // Logout endpoint failure shouldn't block local-state cleanup.
+    }
+    applySession(null)
+    try {
+      sessionStorage.removeItem(SESSION_KEY)
+    } catch {}
+  }, [])
+
+  // Shared "ensure session, then call" wrapper used by every privileged
+  // operation. Re-reads via ref after the async sign so a fresh login
+  // settles in before the caller's fetch.
+  const ensureSession = useCallback(async (): Promise<AdminSession | null> => {
+    let s = sessionRef.current
+    if (s && s.expiresAt > Date.now()) return s
+    await startSession()
+    s = sessionRef.current
+    return s && s.expiresAt > Date.now() ? s : null
+  }, [startSession])
+
   const toggleFeatured = useCallback(
     async (collectionAddress: string, tokenId: string) => {
       if (!address || (!isAdmin && !isCurator)) return
-
-      // Auto-start session if needed; re-read via ref after async sign
-      let s = sessionRef.current
-      if (!s) {
-        await startSession()
-        s = sessionRef.current
-        if (!s) return // user cancelled signing
-      }
+      const s = await ensureSession()
+      if (!s) return // user cancelled signing
 
       const key = `${collectionAddress.toLowerCase()}:${tokenId}`
       const isFeatured = featuredKeys.has(key)
@@ -167,13 +222,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         const res = await fetch('/api/featured', {
           method: isFeatured ? 'DELETE' : 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            collectionAddress,
-            tokenId,
-            signature: s.signature,
-            timestamp: s.timestamp,
-            signerAddress: address,
-          }),
+          body: JSON.stringify({ collectionAddress, tokenId }),
         })
         if (!res.ok) {
           const d = await res.json()
@@ -189,33 +238,24 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         toastError('Featured update', err)
       }
     },
-    [address, isAdmin, isCurator, startSession, featuredKeys],
+    [address, isAdmin, isCurator, ensureSession, featuredKeys],
   )
 
   const withSession = useCallback(
-    async <T,>(fn: (auth: PrivilegedAuth) => Promise<T>): Promise<T | null> => {
+    async <T,>(fn: () => Promise<T>): Promise<T | null> => {
       if (!address || (!isAdmin && !isCurator)) return null
-      let s = sessionRef.current
-      if (!s) {
-        await startSession()
-        s = sessionRef.current
-        if (!s) return null
-      }
-      return fn({ signature: s.signature, timestamp: s.timestamp, signerAddress: address })
+      const s = await ensureSession()
+      if (!s) return null
+      return fn()
     },
-    [address, isAdmin, isCurator, startSession],
+    [address, isAdmin, isCurator, ensureSession],
   )
 
   const toggleFeaturedCollection = useCallback(
     async (collectionAddress: string) => {
       if (!address || (!isAdmin && !isCurator)) return
-
-      let s = sessionRef.current
-      if (!s) {
-        await startSession()
-        s = sessionRef.current
-        if (!s) return
-      }
+      const s = await ensureSession()
+      if (!s) return
 
       const key = collectionAddress.toLowerCase()
       const isFeatured = featuredCollectionAddrs.has(key)
@@ -224,13 +264,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         const res = await fetch('/api/featured', {
           method: isFeatured ? 'DELETE' : 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'collection',
-            collectionAddress,
-            signature: s.signature,
-            timestamp: s.timestamp,
-            signerAddress: address,
-          }),
+          body: JSON.stringify({ type: 'collection', collectionAddress }),
         })
         if (!res.ok) {
           const d = await res.json()
@@ -246,7 +280,7 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
         toastError('Featured update', err)
       }
     },
-    [address, isAdmin, isCurator, startSession, featuredCollectionAddrs],
+    [address, isAdmin, isCurator, ensureSession, featuredCollectionAddrs],
   )
 
   return (
@@ -254,8 +288,9 @@ export function AdminProvider({ children }: { children: React.ReactNode }) {
       value={{
         isAdmin,
         isCurator,
-        session,
+        hasSession: session !== null && session.expiresAt > Date.now(),
         startSession,
+        endSession,
         featuredKeys,
         featuredCollectionAddrs,
         toggleFeatured,
