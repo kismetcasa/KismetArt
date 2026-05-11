@@ -1,10 +1,10 @@
 import type { Metadata } from 'next'
 import { cookies } from 'next/headers'
-import { notFound } from 'next/navigation'
+import { notFound, redirect } from 'next/navigation'
 import { isAddress } from '@/lib/address'
 import { INPROCESS_API, resolveUri, shortAddress } from '@/lib/inprocess'
 import { CollectionView } from '@/components/CollectionView'
-import { getCollectionMeta as getKvCollectionMeta } from '@/lib/kv'
+import { getCollectionMeta as getKvCollectionMeta, getUserCollections } from '@/lib/kv'
 import { isCollectionHidden } from '@/lib/hiddenCollections'
 import { SESSION_COOKIE, verifySession } from '@/lib/session'
 
@@ -86,6 +86,28 @@ async function loadKvFallback(
   return { name: kv.name, image: kv.image, description: kv.description }
 }
 
+// Resolve a single moment in a non-curated contract so we can redirect to
+// it. limit=1 keeps the upstream fetch cheap. Returns null on indexer lag
+// or empty contracts — caller falls through to the existing render rather
+// than 404, so the user never hits a dead URL on a brand-new wrapper.
+async function findFirstMomentTokenId(address: string): Promise<string | null> {
+  try {
+    const url = new URL(`${INPROCESS_API}/timeline`)
+    url.searchParams.set('collection', address)
+    url.searchParams.set('limit', '1')
+    url.searchParams.set('chain_id', '8453')
+    const res = await fetch(url.toString(), {
+      headers: { Accept: 'application/json' },
+      next: { revalidate: 60 },
+    })
+    if (!res.ok) return null
+    const data = (await res.json()) as { moments?: { token_id?: string }[] }
+    return data.moments?.[0]?.token_id ?? null
+  } catch {
+    return null
+  }
+}
+
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { address } = await params
   // KV is written at deploy time and is always fast; only fall back to
@@ -108,6 +130,29 @@ export default async function CollectionPage({ params }: Props) {
   const { address } = await params
 
   if (!isAddress(address)) notFound()
+
+  // Non-curated contracts shouldn't render as a curated-collection page.
+  // The two cases this catches:
+  //   1. Auto-deploy wrappers from MintForm — single-token contracts the
+  //      protocol creates per first-mint when no collection is picked.
+  //      Tracked for moment fan-out but excluded from every collection-
+  //      shaped surface (see lib/kv.addTrackedCollection).
+  //   2. Untracked ERC1155 contracts someone pastes the URL of.
+  // Either way, the canonical surface is the moment inside. Redirect to
+  // it when we can resolve one; if the indexer hasn't picked it up yet
+  // (brand-new wrapper), fall through to the existing render rather than
+  // 404 so the URL never goes dead.
+  //
+  // The next/navigation `redirect` throws — must not be wrapped in a
+  // try/catch (it isn't here; the helper has its own scoped catch that
+  // can't see this call).
+  const lowerAddr = address.toLowerCase()
+  const userCreated = await getUserCollections()
+  const isCurated = userCreated.some((a) => a.toLowerCase() === lowerAddr)
+  if (!isCurated) {
+    const tokenId = await findFirstMomentTokenId(address)
+    if (tokenId) redirect(`/moment/${address}/${tokenId}`)
+  }
 
   // Resolve the viewer so we can decide whether a hidden collection should
   // render as a placeholder. Server-component cookie reads don't have a
