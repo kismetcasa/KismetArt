@@ -7,32 +7,40 @@ import { gatewayUrls } from '@/lib/arweave/gateways'
 interface CommonProps {
   /** Raw URI: ar://, ipfs://, https://, blob:, or data: */
   src: string
-  /** Fired once every gateway has errored, so the parent can swap in a placeholder. */
+  /** Fired once every fallback has errored, so the parent can swap in a placeholder. */
   onAllError?: () => void
   /**
    * Optional content-type hint from the moment metadata (`content.mime`).
-   * When set to image/gif we bypass Vercel's image optimizer on the first try
-   * — GIFs would lose animation if transcoded to AVIF/WebP, and Arweave bundles
-   * often exceed the optimizer's 4MB source cap and 413 anyway.
+   * When set to image/gif we skip the optimizer attempt and route straight
+   * to the proxy: GIFs lose animation through next/image's AVIF/WebP
+   * transcode, and Arweave bundles routinely exceed the optimizer's 4MB
+   * source cap and 413 anyway.
    */
   mime?: string
 }
 
-// Animated GIFs can't survive next/image's AVIF/WebP transcode without losing
-// animation, and the optimizer 413's on >4MB sources (common on Arweave). Both
-// paths end up in `unoptimized` mode — detect upfront so we skip the doomed
-// optimizer round-trip on the first paint.
+// Animated GIFs can't survive the optimizer's transcode without losing
+// animation, and >4MB Arweave bundles 413 on the source-size cap. Both end
+// up needing `unoptimized` — detect upfront so we skip the doomed
+// optimizer round-trip on first paint. URI-based detection rarely fires for
+// raw `ar://` content (no extension), so the `mime` hint from metadata
+// carries most of the weight here.
 function isGifUri(url: string): boolean {
   if (!url) return false
-  // Strip query/hash so `?foo=bar` doesn't hide the extension; lower-case so
-  // `.GIF` matches. Arweave URIs typically have no extension, so this only
-  // catches the cases where the gateway/URL exposes one.
   const path = url.split(/[?#]/, 1)[0].toLowerCase()
   return path.endsWith('.gif')
 }
 
 function isGifMime(mime?: string): boolean {
   return mime === 'image/gif'
+}
+
+function isProxiable(uri: string): boolean {
+  return uri.startsWith('ar://') || uri.startsWith('ipfs://')
+}
+
+function proxyUrl(uri: string): string {
+  return `/api/img?u=${encodeURIComponent(uri)}`
 }
 
 function useFallbackUrl(uri: string, onAllError?: () => void) {
@@ -50,60 +58,90 @@ function useFallbackUrl(uri: string, onAllError?: () => void) {
   }
 }
 
+type DeliveryMode = 'optimized' | 'proxy' | 'direct'
+
 type NextImageProps = CommonProps & Omit<ImageProps, 'src' | 'onError'>
 
 /**
- * next/image wrapper that walks the public gateway pool on error. ar:// and
- * ipfs:// URIs fan out to every gateway in turn — the first 200 wins, and
- * onAllError fires once the pool is exhausted so the parent can show its
- * "no preview" fallback. https://, blob:, and data: URIs are rendered as-is.
+ * next/image wrapper with a three-stage delivery path:
  *
- * Each gateway is tried first via Vercel's image optimizer (smaller payload,
- * AVIF/WebP), then re-tried with `unoptimized` if the optimizer rejects the
- * source — Arweave commonly serves >4 MB artwork that hits Vercel's source
- * size cap and 413's, but the bytes load fine direct from the gateway.
+ *   1. 'optimized' — next/image's optimizer. Cheapest payload (AVIF/WebP
+ *      transcode, 31-day Vercel edge cache). Default for `ar://`/`ipfs://`
+ *      content the optimizer can handle (small static images).
  *
- * GIFs (detected via URL extension or the `mime` prop) skip the optimizer
- * entirely on the first try: the AVIF/WebP transcode loses animation, and the
- * 413 retry is wasted RTT.
+ *   2. 'proxy' — `/api/img?u=<src>` streams bytes from our gateway pool
+ *      with `Cache-Control: public, max-age=1y, immutable`. Used when the
+ *      optimizer can't help: animated GIFs (transcode would kill animation)
+ *      and any source the optimizer 413's on (>4MB). The proxy edge-caches
+ *      the response globally, so repeat viewers in any region pay only the
+ *      first round-trip rather than re-fetching from Arweave each time.
  *
- * Phase 2 hooks:
- *  - Parallel gateway race: `useFallbackUrl` walks gateways serially on
- *    error. To race them in parallel on cold loads, call
- *    `probeFirstGateway()` from `@/lib/arweave/probe` and render the
- *    winning URL instead of `urls[0]`. Tradeoff: a 1-RTT HEAD probe before
- *    paint, in exchange for skipping the bad-gateway timeout on cold loads.
- *  - Edge image proxy: replace the per-gateway URL with `/api/img?u=<encoded>`
- *    where the route fetches the bytes from the gateway pool and serves them
- *    behind a long-cache header. Lets us put GIFs (which we mark `unoptimized`
- *    today) behind a CDN edge cache without losing animation.
+ *   3. 'direct' — raw gateway URL, `unoptimized`. Defense-in-depth fallback
+ *      when the proxy itself fails (deploy in flight, function cold-start
+ *      hiccup, infra blip). Walks the gateway pool as before.
+ *
+ * Transitions:
+ *   optimized --[error]--> proxy (if ar://ipfs://)  |  direct (else)
+ *   proxy     --[error]--> direct
+ *   direct    --[error]--> walk next gateway URL    |  onAllError when exhausted
  */
 export function MomentImage({ src, onAllError, mime, priority, ...rest }: NextImageProps) {
   const { url, onError: walkGateway } = useFallbackUrl(src, onAllError)
-  const skipOptimizer = isGifMime(mime) || isGifUri(src) || (url ? isGifUri(url) : false)
-  // Per-URL bypass latch: false = try the optimizer first, true = optimizer
-  // already failed for this URL (or we know upfront it'll fail — GIFs, etc.),
-  // render direct. Reset when we move on to the next gateway (or to a
-  // different URI entirely).
-  const [bypass, setBypass] = useState(skipOptimizer)
-  useEffect(() => { setBypass(skipOptimizer) }, [url, skipOptimizer])
+  const proxiable = isProxiable(src)
+  // URI- and mime-based detection of content the optimizer can't help with.
+  // Reads `src` (not `url`) so the decision is stable across gateway walks
+  // — the state machine below would reset if this flipped mid-walk.
+  // Arweave/IPFS URIs are content-addressed without extensions, so mime
+  // carries the weight here; URL-extension catches the rare `*.gif` https.
+  const skipOptimizer = isGifMime(mime) || isGifUri(src)
 
-  // Track first-byte paint so we can fade out a skeleton overlay. Resets on
-  // every gateway/bypass change so the skeleton reappears if we fall back to
-  // a different URL mid-render.
+  // Initial delivery mode. If we already know the optimizer won't help, jump
+  // straight to proxy (when proxiable) or direct. Otherwise try the
+  // optimizer first — its AVIF/WebP transcode beats the proxy for small
+  // static images that fit under the 4MB cap.
+  const initialMode: DeliveryMode = skipOptimizer
+    ? (proxiable ? 'proxy' : 'direct')
+    : 'optimized'
+  const [mode, setMode] = useState<DeliveryMode>(initialMode)
+  // Reset the state machine when the source URI changes (different moment,
+  // edited image, etc.). `url` is intentionally NOT in the deps — walking
+  // to the next gateway must stay in 'direct' mode rather than restarting.
+  useEffect(() => { setMode(initialMode) }, [src, initialMode])
+
+  // The actual URL we feed <Image>:
+  //   'proxy'     -> /api/img?u=<src> — single stable URL; the proxy fans
+  //                  out to gateways itself, so we don't walk here.
+  //   'optimized' -> current direct gateway URL with optimizer on.
+  //   'direct'    -> current direct gateway URL with optimizer off.
+  const renderUrl = mode === 'proxy' ? proxyUrl(src) : url
+  const unoptimized = mode !== 'optimized'
+
+  // Skeleton placeholder visible until the rendered <Image> fires onLoad.
+  // Reset whenever the URL or optimization mode flips so the placeholder
+  // reappears for each new fetch attempt.
   const [loaded, setLoaded] = useState(false)
-  useEffect(() => { setLoaded(false) }, [url, bypass])
+  useEffect(() => { setLoaded(false) }, [renderUrl, unoptimized])
 
-  if (!url) return null
+  if (!renderUrl) return null
 
   const handleError = () => {
-    if (!bypass) {
-      // First failure on this gateway URL — almost always Vercel's optimizer
-      // 413'ing a >4 MB source. Retry the same URL unoptimized before
-      // burning the gateway slot.
-      setBypass(true)
+    if (mode === 'optimized') {
+      // Optimizer rejected the source — almost always a 413 on >4MB Arweave
+      // bundles, occasionally an unsupported format. Prefer the proxy when
+      // we can (it edge-caches the bytes); fall back to direct unoptimized
+      // on the same URL for non-proxiable sources (https://).
+      setMode(proxiable ? 'proxy' : 'direct')
       return
     }
+    if (mode === 'proxy') {
+      // Proxy returned non-2xx (502 from all-gateways-failed, deploy mid-
+      // flight, etc.). The proxy already raced every gateway server-side
+      // so direct walk is mostly defensive — but it gives us a chance if
+      // the proxy itself is the only thing broken.
+      setMode('direct')
+      return
+    }
+    // mode === 'direct' — walk to the next gateway URL in the pool.
     walkGateway()
   }
 
@@ -116,13 +154,14 @@ export function MomentImage({ src, onAllError, mime, priority, ...rest }: NextIm
         />
       )}
       {/* alt is required by ImageProps at the type level and comes through ...rest;
-          bypass is part of the key so next/image actually remounts when we flip
-          modes — otherwise the failed optimizer src stays cached. */}
+          (renderUrl + unoptimized) is the key so next/image actually remounts
+          when we change modes — otherwise the failed src stays cached
+          internally and onError won't refire on the new attempt. */}
       {/* eslint-disable-next-line jsx-a11y/alt-text */}
       <Image
-        key={`${url}::${bypass}`}
-        src={url}
-        unoptimized={bypass}
+        key={`${renderUrl}::${unoptimized}`}
+        src={renderUrl}
+        unoptimized={unoptimized}
         onError={handleError}
         onLoad={() => setLoaded(true)}
         decoding="async"
@@ -136,15 +175,34 @@ export function MomentImage({ src, onAllError, mime, priority, ...rest }: NextIm
 type ImgProps = CommonProps & Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src' | 'onError'>
 
 /**
- * Plain <img> with the same fallback behaviour as MomentImage. Use when raw
- * <img> semantics are needed — the lightbox shows a full-res unoptimized
- * image, and the edit-preview thumbnail can hold a blob URL from the file
+ * Plain <img> with the same proxy + gateway fallback as MomentImage. Used
+ * for raw <img> semantics: the lightbox needs a full-res unoptimized
+ * image, and the edit-preview thumbnail holds blob: URLs from the file
  * picker (which next/image's optimizer doesn't accept).
+ *
+ * Two-stage delivery, simpler than MomentImage's three-stage because there's
+ * no optimizer to attempt:
+ *   1. 'proxy'  — `/api/img?u=<src>` for ar://ipfs:// (edge-cached). Shares
+ *                 the same cache key with MomentImage so the lightbox doesn't
+ *                 re-fetch what the hero already populated.
+ *   2. 'direct' — raw gateway URL fallback if the proxy errors, walking the
+ *                 pool the same way as before. https:// / blob: / data:
+ *                 URIs skip the proxy entirely (no benefit).
  */
 export function MomentImg({ src, onAllError, mime: _mime, ...rest }: ImgProps) {
-  const { url, onError } = useFallbackUrl(src, onAllError)
-  if (!url) return null
+  const { url: walkedUrl, onError: walkGateway } = useFallbackUrl(src, onAllError)
+  const proxiable = isProxiable(src)
+  const [proxyFailed, setProxyFailed] = useState(false)
+  // Reset on src change so a new image gets a fresh proxy attempt.
+  useEffect(() => { setProxyFailed(false) }, [src])
+
+  const useProxy = proxiable && !proxyFailed
+  const renderUrl = useProxy ? proxyUrl(src) : walkedUrl
+  if (!renderUrl) return null
+
+  const handleError = useProxy ? () => setProxyFailed(true) : walkGateway
+
   // alt comes through ...rest; the lightbox/edit-preview call sites pass it.
   // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
-  return <img key={url} src={url} onError={onError} decoding="async" {...rest} />
+  return <img key={renderUrl} src={renderUrl} onError={handleError} decoding="async" {...rest} />
 }
