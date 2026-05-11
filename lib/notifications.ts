@@ -96,11 +96,25 @@ export async function writeNotification(input: NotificationInput): Promise<void>
     // tuple acquires the lock; concurrent and follow-up writes within the
     // window drop silently. Per-collection scoping preserves notifications
     // from the same collector across different creators / collections.
+    //
+    // Best-effort: Redis transient → proceed without dedup. The tradeoff
+    // here favors "always notify on Redis down" over "drop silently to
+    // avoid possible duplicates" — a missed notification is worse for
+    // creator trust than an occasional duplicate during an outage.
     if (input.type === 'collect' && input.actor && input.tokenAddress) {
       const lockKey = `kismetart:collect-notif-lock:${input.recipient.toLowerCase()}:${input.actor.toLowerCase()}:${input.tokenAddress.toLowerCase()}`
-      const lock = await redis
-        .set(lockKey, '1', { nx: true, ex: COLLECT_DEDUP_WINDOW_SECS })
-        .catch(() => null)
+      let lock: 'OK' | null
+      try {
+        // Upstash's SET-with-NX returns 'OK' | null at runtime; the wider
+        // SDK type includes the value type for the GET option we're not
+        // using.
+        lock = (await redis.set(lockKey, '1', {
+          nx: true,
+          ex: COLLECT_DEDUP_WINDOW_SECS,
+        })) as 'OK' | null
+      } catch {
+        lock = 'OK'
+      }
       if (lock !== 'OK') return
     }
 

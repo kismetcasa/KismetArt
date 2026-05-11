@@ -209,9 +209,12 @@ export function useDirectCollect(): UseDirectCollectReturn {
 
         // Best-effort post-mint hooks: trending score, collected list, creator
         // notification. Failure here doesn't undo the mint — log and move on.
+        // Surface both network errors (catch) and non-2xx HTTP responses so
+        // support can trace dropped recordings; fetch only rejects on
+        // transport errors, so 429/403/500s would otherwise be silenced.
         setStatus('recording')
         try {
-          await fetch('/api/collect', {
+          const res = await fetch('/api/collect', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -224,8 +227,14 @@ export function useDirectCollect(): UseDirectCollectReturn {
               txHash: hash,
             }),
           })
-        } catch {
-          // non-critical
+          if (!res.ok) {
+            console.error('[direct-collect] /api/collect non-2xx', {
+              tokenId,
+              status: res.status,
+            })
+          }
+        } catch (err) {
+          console.error('[direct-collect] /api/collect failed', { tokenId, err })
         }
 
         setStatus('done')

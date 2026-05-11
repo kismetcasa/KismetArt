@@ -112,10 +112,17 @@ export async function POST(req: NextRequest) {
   if (!body) return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
 
   const collectionAddress = body.moment?.collectionAddress
-  const tokenId = body.moment?.tokenId
+  const rawTokenId = body.moment?.tokenId
   const account = body.account?.toLowerCase()
   const amount = Number(body.amount ?? 1)
-  const comment = body.comment
+  // Validate comment shape + length before persisting it on the notification.
+  // 1000 chars is far above any plausible human-written collect comment and
+  // bounds the storage cost a malicious client could impose on a creator's
+  // notification feed by replaying garbage long strings.
+  const comment =
+    typeof body.comment === 'string' && body.comment.length <= 1000
+      ? body.comment
+      : undefined
   // Validate price as a non-negative decimal of plausible size before storing
   // it on the notification — otherwise a malicious client could record a
   // fictional "9999 ETH" price to fake "big collect" social proof. 30 digits
@@ -132,9 +139,17 @@ export async function POST(req: NextRequest) {
   if (!collectionAddress || !isAddress(collectionAddress)) {
     return NextResponse.json({ error: 'Invalid collectionAddress' }, { status: 400 })
   }
-  if (!tokenId || !/^\d+$/.test(String(tokenId))) {
+  if (!rawTokenId || !/^\d+$/.test(String(rawTokenId))) {
     return NextResponse.json({ error: 'Invalid tokenId' }, { status: 400 })
   }
+  // Canonicalize the tokenId to its base-10 minimal form. The regex accepts
+  // leading zeros ("01", "0000001"), and all such strings are BigInt-equal —
+  // but the Redis keys downstream (idempotency, trending, collected,
+  // notification) use the literal string as part of their member. Without
+  // normalization, an attacker who legitimately minted token 1 could replay
+  // /api/collect with tokenId="01", "001", … and bypass the per-tuple
+  // idempotency lock to inflate trending or flood notifications.
+  const tokenId = BigInt(rawTokenId).toString()
   if (!account || !isAddress(account)) {
     return NextResponse.json({ error: 'Invalid account' }, { status: 400 })
   }
@@ -152,17 +167,30 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // Idempotency gate. SET NX returns null/false when the key already exists,
-  // meaning this (tx, collection, token, account) tuple has already been
-  // recorded — short-circuit so trending isn't double-incremented and the
-  // creator isn't double-notified. Failure to acquire the lock here is
-  // treated as "already recorded" rather than retried; the response stays a
-  // 200 so clients (including legitimate retry paths in useCollectAll) don't
-  // see this as an error worth surfacing.
+  // Idempotency gate. SET NX returns 'OK' on first claim, null when the key
+  // already exists. Distinguish those two cases from Redis-transient errors:
+  //   - 'OK'  → proceed with the recording side effects.
+  //   - null  → genuine idempotency hit; return 200 so legitimate retries
+  //             from useCollectAll's Promise.all don't surface as errors.
+  //   - throw → Redis is down or partitioned; we CAN'T enforce idempotency,
+  //             so fail closed with a 503. The client logs the non-2xx via
+  //             the new fetch wrapper; a follow-up retry once Redis recovers
+  //             would land cleanly on this same tuple.
+  // Conflating throws with "already recorded" was the prior behavior — that
+  // silently swallowed mint-recording during Redis flakes.
   const idemKey = `kismetart:collect-idem:${txHash}:${collectionLower}:${tokenId}:${account}`
-  const acquired = await redis
-    .set(idemKey, '1', { nx: true, ex: IDEMPOTENCY_TTL_SECONDS })
-    .catch(() => null)
+  let acquired: 'OK' | null
+  try {
+    // Upstash's SET-with-NX returns 'OK' | null at runtime; the wider type
+    // in the SDK includes the value type for the GET option we're not using.
+    acquired = (await redis.set(idemKey, '1', {
+      nx: true,
+      ex: IDEMPOTENCY_TTL_SECONDS,
+    })) as 'OK' | null
+  } catch (err) {
+    console.error('[collect] idempotency-lock failed', { txHash, err })
+    return NextResponse.json({ error: 'Recording temporarily unavailable' }, { status: 503 })
+  }
   if (acquired !== 'OK') {
     return NextResponse.json({ ok: true, idempotent: true })
   }

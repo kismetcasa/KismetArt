@@ -469,7 +469,10 @@ export function useCollectAll(): UseCollectAllReturn {
         // recording endpoint can de-dup correctly even in fallback mode.
         // Failures are logged (not silenced) so support can trace dropped
         // recordings; the toast still reflects on-chain success because
-        // the mint itself already landed.
+        // the mint itself already landed. Both network failures (.catch)
+        // and non-2xx HTTP responses (.then non-ok branch) are surfaced —
+        // fetch only rejects on transport errors, so 429/403/500s would
+        // otherwise be lost.
         setStatus('recording')
         await Promise.all(
           recorded.map(({ entry, txHash }) =>
@@ -489,9 +492,18 @@ export function useCollectAll(): UseCollectAllReturn {
                 currency: entry.currency,
                 txHash,
               }),
-            }).catch((err) => {
-              console.error('[collect-all] /api/collect failed', { tokenId: entry.tokenId, err })
-            }),
+            })
+              .then((res) => {
+                if (!res.ok) {
+                  console.error('[collect-all] /api/collect non-2xx', {
+                    tokenId: entry.tokenId,
+                    status: res.status,
+                  })
+                }
+              })
+              .catch((err) => {
+                console.error('[collect-all] /api/collect failed', { tokenId: entry.tokenId, err })
+              }),
           ),
         )
 
