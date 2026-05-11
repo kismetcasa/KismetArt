@@ -20,6 +20,13 @@ const ERC1155_TRANSFER_ABI = parseAbi([
 // one txHash) only hit RPC once per (tx, collection, token, account) tuple.
 const VERIFY_CACHE_TTL_SECONDS = 300
 
+// Idempotency window for (tx, collection, token, account). After a successful
+// record, repeat POSTs return ok-without-side-effects so an attacker (or buggy
+// client) can't inflate trending or flood notifications by replaying the same
+// legitimate mint. 30 days covers the realistic re-submit horizon while
+// keeping the keyspace bounded.
+const IDEMPOTENCY_TTL_SECONDS = 30 * 24 * 60 * 60
+
 // Confirm the on-chain receipt shows `account` minting `tokenId` from
 // `collection`. Fail-closed: any RPC, decode, or no-match path returns false.
 async function verifyMintOnChain(
@@ -133,6 +140,21 @@ export async function POST(req: NextRequest) {
       { error: 'Mint not verified on-chain' },
       { status: 403 },
     )
+  }
+
+  // Idempotency gate. SET NX returns null/false when the key already exists,
+  // meaning this (tx, collection, token, account) tuple has already been
+  // recorded — short-circuit so trending isn't double-incremented and the
+  // creator isn't double-notified. Failure to acquire the lock here is
+  // treated as "already recorded" rather than retried; the response stays a
+  // 200 so clients (including legitimate retry paths in useCollectAll) don't
+  // see this as an error worth surfacing.
+  const idemKey = `kismetart:collect-idem:${txHash}:${collectionLower}:${tokenId}:${account}`
+  const acquired = await redis
+    .set(idemKey, '1', { nx: true, ex: IDEMPOTENCY_TTL_SECONDS })
+    .catch(() => null)
+  if (acquired !== 'OK') {
+    return NextResponse.json({ ok: true, idempotent: true })
   }
 
   const safeAmount = Number.isFinite(amount) && amount > 0 ? amount : 1

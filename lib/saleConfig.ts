@@ -1,5 +1,5 @@
 import type { Address, Chain, Client, Transport } from 'viem'
-import { multicall } from 'viem/actions'
+import { getBlock, multicall } from 'viem/actions'
 import { USDC_BASE, ZORA_ERC20_MINTER, ZORA_FIXED_PRICE_STRATEGY } from './zoraMint'
 
 // FixedPriceSaleStrategy.sale(target, tokenId) — the canonical view returning
@@ -131,7 +131,10 @@ type AnyClient = Client<Transport, Chain | undefined>
  *
  * Two RPC round trips: one multicall for sale configs + token info, one
  * for balances. Fail-closed on balance reads so a single revert can't
- * cascade an atomic EIP-5792 bundle.
+ * cascade an atomic EIP-5792 bundle. The "now" used for saleStart/saleEnd
+ * comparison is the chain's latest block.timestamp, not Date.now(): a
+ * desynced client clock would otherwise misclassify just-expired or
+ * just-started sales and feed a bundle that reverts on-chain.
  */
 export async function fetchEligibleTokens(
   client: AnyClient,
@@ -142,7 +145,16 @@ export async function fetchEligibleTokens(
 ): Promise<EligibleToken[]> {
   if (tokenIds.length === 0) return []
 
-  const now = BigInt(Math.floor(Date.now() / 1000))
+  // Read chain time once; fall back to wall-clock only if the RPC denies
+  // us a block read. Wall-clock can drift on misconfigured devices, but
+  // it's still better than refusing to filter at all.
+  let now: bigint
+  try {
+    const block = await getBlock(client, { blockTag: 'latest' })
+    now = block.timestamp
+  } catch {
+    now = BigInt(Math.floor(Date.now() / 1000))
+  }
   const strategy = STRATEGY_BY_CURRENCY[currency]
 
   // First pass: read sale config + token info for every candidate in one

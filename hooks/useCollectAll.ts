@@ -5,7 +5,7 @@ import { useAccount, useConfig, usePublicClient, useSendCalls, useWalletClient }
 import { waitForCallsStatus } from '@wagmi/core'
 import { base } from 'wagmi/chains'
 import { toast } from 'sonner'
-import { encodeFunctionData, type Address, type Hex } from 'viem'
+import { encodeFunctionData, parseEther, type Address, type Hex } from 'viem'
 import { useEnsureBase } from '@/lib/useEnsureBase'
 import { isUserRejection, toastError } from '@/lib/toast'
 import { fetchEligibleTokens, type EligibleToken } from '@/lib/saleConfig'
@@ -31,6 +31,13 @@ type Status =
   | 'error'
 
 const TOAST_ID = 'collect-all'
+
+// Defense-in-depth sanity bound on mintFee(). Zora's protocol-wide mint fee
+// has historically been 0.000111 ETH (~$0.30); 0.01 ETH is ~90× headroom but
+// catches a misbehaving / mis-upgraded / non-canonical 1155 contract that
+// returns a pathological value before the user signs it. Above this, we
+// refuse to build the bundle rather than expose the user to a runaway value.
+const MAX_REASONABLE_MINT_FEE_WEI = parseEther('0.01')
 
 export interface CollectAllArgs {
   collectionAddress: Address
@@ -205,6 +212,9 @@ export function useCollectAll(): UseCollectAllReturn {
             abi: ZORA_1155_MINT_ABI,
             functionName: 'mintFee',
           })
+          if (mintFee > MAX_REASONABLE_MINT_FEE_WEI) {
+            throw new Error('Refusing to mint: protocol mint fee exceeds safety bound')
+          }
           const minterArgs = encodeFixedPriceMinterArgs(address as Address, '')
           for (const e of ethBatch) {
             segments.push({
@@ -349,11 +359,23 @@ export function useCollectAll(): UseCollectAllReturn {
 
           // Sequential dispatch: one eth_sendTransaction per call, in the
           // order segments were emitted (USDC.approve before USDC mints, so
-          // allowance is in place by the time the minter is invoked). We do
-          // NOT abort on a revert — partial success is the expected shape
-          // for sequential bundles and the existing attribution logic
-          // already handles per-receipt failure.
-          for (const call of calls) {
+          // allowance is in place by the time the minter is invoked). Partial
+          // success is the expected shape for sequential bundles and the
+          // existing attribution logic handles per-receipt failure.
+          //
+          // The one place we DO short-circuit is right after a setup-call
+          // (USDC.approve, records.length === 0) failure: every subsequent
+          // USDC mint reverts on zero allowance, so prompting for them just
+          // wastes user gas and confidence. Mark them all as failed without
+          // dispatching, preserving the segments[]↔receipts[] alignment the
+          // attribution loop relies on.
+          let setupFailureSkipRemaining = false
+          for (let i = 0; i < calls.length; i++) {
+            const call = calls[i]
+            if (setupFailureSkipRemaining) {
+              receipts.push({ transactionHash: '0x' as Hex, status: 'failure' })
+              continue
+            }
             try {
               const hash = await walletClient.sendTransaction({
                 to: call.to,
@@ -369,6 +391,9 @@ export function useCollectAll(): UseCollectAllReturn {
                 transactionHash: hash,
                 status: r.status === 'success' ? 'success' : 'reverted',
               })
+              if (r.status !== 'success' && segments[i].records.length === 0) {
+                setupFailureSkipRemaining = true
+              }
             } catch (callErr) {
               // A user rejection mid-bundle ends the run — record nothing
               // further and bubble up so the toast reflects the cancel.
@@ -379,6 +404,9 @@ export function useCollectAll(): UseCollectAllReturn {
                 transactionHash: '0x' as Hex,
                 status: 'failure',
               })
+              if (segments[i].records.length === 0) {
+                setupFailureSkipRemaining = true
+              }
             }
           }
         }
