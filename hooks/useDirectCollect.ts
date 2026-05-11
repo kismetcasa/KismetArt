@@ -10,13 +10,10 @@ import { useEnsureBase } from '@/lib/useEnsureBase'
 import { toastError } from '@/lib/toast'
 import {
   ERC20_ABI,
-  KISMET_REFERRAL,
   USDC_BASE,
   ZORA_ERC20_MINTER,
-  ZORA_ERC20_MINTER_ABI,
-  ZORA_1155_MINT_ABI,
-  ZORA_FIXED_PRICE_STRATEGY,
-  encodeFixedPriceMinterArgs,
+  buildEthMintCall,
+  buildUsdcMintCall,
   readMintFeeWithBound,
 } from '@/lib/zoraMint'
 
@@ -130,25 +127,20 @@ export function useDirectCollect(): UseDirectCollectReturn {
           // limits before the caller signs anything.
           const mintFee = await readMintFeeWithBound(publicClient, collectionAddress)
 
-          const value = (mintFee + pricePerToken) * quantity
-          const minterArgs = encodeFixedPriceMinterArgs(address, comment)
-
           setStatus('minting')
           toast.loading('Confirm mint in wallet…', { id: TOAST_ID })
 
           hash = await writeContractAsync({
             chainId: base.id,
             address: collectionAddress,
-            abi: ZORA_1155_MINT_ABI,
-            functionName: 'mint',
-            args: [
-              ZORA_FIXED_PRICE_STRATEGY,
-              tokenIdBn,
+            ...buildEthMintCall({
+              tokenId: tokenIdBn,
+              mintTo: address,
               quantity,
-              [KISMET_REFERRAL],
-              minterArgs,
-            ],
-            value,
+              mintFee,
+              pricePerToken,
+              comment,
+            }),
           })
         } else {
           // ERC20 (USDC) path: check allowance, approve if short, then mint.
@@ -184,18 +176,14 @@ export function useDirectCollect(): UseDirectCollectReturn {
           hash = await writeContractAsync({
             chainId: base.id,
             address: ZORA_ERC20_MINTER,
-            abi: ZORA_ERC20_MINTER_ABI,
-            functionName: 'mint',
-            args: [
-              address,
+            ...buildUsdcMintCall({
+              collection: collectionAddress,
+              tokenId: tokenIdBn,
+              mintTo: address,
               quantity,
-              collectionAddress,
-              tokenIdBn,
-              totalPrice,
-              USDC_BASE,
-              KISMET_REFERRAL,
+              pricePerToken,
               comment,
-            ],
+            }),
           })
         }
 

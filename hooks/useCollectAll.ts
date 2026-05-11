@@ -12,14 +12,11 @@ import { isUserRejection, toastError } from '@/lib/toast'
 import { fetchEligibleTokens, type EligibleToken } from '@/lib/saleConfig'
 import {
   ERC20_ABI,
-  KISMET_REFERRAL,
   MAX_COLLECT_ALL_BATCH,
   USDC_BASE,
-  ZORA_1155_MINT_ABI,
   ZORA_ERC20_MINTER,
-  ZORA_ERC20_MINTER_ABI,
-  ZORA_FIXED_PRICE_STRATEGY,
-  encodeFixedPriceMinterArgs,
+  buildEthMintCall,
+  buildUsdcMintCall,
   readMintFeeWithBound,
 } from '@/lib/zoraMint'
 
@@ -220,26 +217,23 @@ export function useCollectAll(): UseCollectAllReturn {
           // also enforces the sanity bound so we abort before encoding any
           // value-carrying call on a pathological contract.
           const mintFee = await readMintFeeWithBound(publicClient, collectionAddress)
-          const minterArgs = encodeFixedPriceMinterArgs(address, '')
           for (const e of ethBatch) {
+            const { abi, functionName, args, value } = buildEthMintCall({
+              tokenId: e.tokenId,
+              mintTo: address,
+              quantity: 1n,
+              mintFee,
+              pricePerToken: e.pricePerToken,
+              comment: '',
+            })
             segments.push({
               call: {
                 to: collectionAddress,
-                data: encodeFunctionData({
-                  abi: ZORA_1155_MINT_ABI,
-                  functionName: 'mint',
-                  args: [
-                    ZORA_FIXED_PRICE_STRATEGY,
-                    e.tokenId,
-                    1n,
-                    [KISMET_REFERRAL],
-                    minterArgs,
-                  ],
-                }) as Hex,
+                data: encodeFunctionData({ abi, functionName, args }) as Hex,
                 // Per-call value: mintFee + price. Partitioned across
                 // segments so each mint sees exactly what the strategy's
                 // ethValueSent equality check expects.
-                value: mintFee + e.pricePerToken,
+                value,
               },
               records: [{
                 tokenId: e.tokenId.toString(),
@@ -278,23 +272,18 @@ export function useCollectAll(): UseCollectAllReturn {
           }
 
           for (const e of usdcBatch) {
+            const { abi, functionName, args } = buildUsdcMintCall({
+              collection: collectionAddress,
+              tokenId: e.tokenId,
+              mintTo: address,
+              quantity: 1n,
+              pricePerToken: e.pricePerToken,
+              comment: '',
+            })
             segments.push({
               call: {
                 to: ZORA_ERC20_MINTER,
-                data: encodeFunctionData({
-                  abi: ZORA_ERC20_MINTER_ABI,
-                  functionName: 'mint',
-                  args: [
-                    address,
-                    1n,
-                    collectionAddress,
-                    e.tokenId,
-                    e.pricePerToken,
-                    USDC_BASE,
-                    KISMET_REFERRAL,
-                    '',
-                  ],
-                }) as Hex,
+                data: encodeFunctionData({ abi, functionName, args }) as Hex,
               },
               records: [{
                 tokenId: e.tokenId.toString(),
