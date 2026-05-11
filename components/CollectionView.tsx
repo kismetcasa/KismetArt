@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
-import Image from 'next/image'
+import { MomentImage } from './MomentImage'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useAccount, usePublicClient, useReadContract } from 'wagmi'
@@ -9,7 +9,7 @@ import { mainnet } from 'wagmi/chains'
 import { toast } from 'sonner'
 import { isAddress } from 'viem'
 import { ArrowLeft, Star, Eye, EyeOff, ShieldCheck, Trash2 } from 'lucide-react'
-import { resolveUri, shortAddress, type Moment } from '@/lib/inprocess'
+import { shortAddress, type Moment } from '@/lib/inprocess'
 import { fetchCreatorProfile } from '@/lib/profileCache'
 import { toastError } from '@/lib/toast'
 import { useAdmin } from '@/contexts/AdminContext'
@@ -604,8 +604,15 @@ export function CollectionView({
   const loadedMoments = moments ?? []
   const displayName = collectionName || shortAddress(address)
   const firstMoment = loadedMoments[0]
+  // Raw URI (ar://, ipfs://, or https://) — MomentImage handles gateway
+  // fan-out and the GIF/optimizer bypass. We used to render with a raw
+  // <Image> against `resolveUri(rawImgUrl)`, which pinned the cover to a
+  // single gateway and broke whenever its edge cache held a stale 404.
   const rawImgUrl = collectionImage || firstMoment?.metadata?.image
-  const imgUrl = rawImgUrl ? resolveUri(rawImgUrl) : null
+  // Surface the source mime if available so MomentImage can short-circuit
+  // the optimizer for GIFs. Only the first-moment fallback has a content
+  // shape; the collection-level image has no mime attached.
+  const coverMime = collectionImage ? undefined : firstMoment?.metadata?.content?.mime
   const description = collectionDescription
 
   // Unique creator addresses across all loaded moments — surfaces
@@ -641,13 +648,15 @@ export function CollectionView({
       {/* Collection header */}
       <div className="flex gap-5 mb-10">
         <div className="relative w-24 h-24 sm:w-32 sm:h-32 flex-shrink-0 bg-[#111] border border-[#2a2a2a] overflow-hidden">
-          {imgUrl ? (
-            <Image
-              src={imgUrl}
+          {rawImgUrl ? (
+            <MomentImage
+              src={rawImgUrl}
               alt={displayName}
               fill
               className="object-cover"
               sizes="(max-width: 640px) 96px, 128px"
+              mime={coverMime}
+              priority
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
