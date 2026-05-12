@@ -11,6 +11,7 @@ import {
   type Moment, type MomentDetail, type MomentComment,
 } from '@/lib/inprocess'
 import { fetchCreatorProfile } from '@/lib/profileCache'
+import { fetchCollectionChip } from '@/lib/collectionCache'
 import { useTextContent } from '@/lib/textCache'
 import { getCachedDetail, setCachedDetail, getCachedComments, setCachedComments } from '@/lib/momentCache'
 import { ERC1155_ABI } from '@/lib/seaport'
@@ -36,6 +37,8 @@ interface MomentModalProps {
   initialMaxSupply?: number | null
   initialCreatorName?: string
   initialCreatorAvatar?: string
+  initialCollectionName?: string | null
+  initialCollectionImage?: string | null
   initialOwnedBalance?: number
 }
 
@@ -48,6 +51,8 @@ export function MomentModal({
   initialMaxSupply,
   initialCreatorName,
   initialCreatorAvatar,
+  initialCollectionName,
+  initialCollectionImage,
   initialOwnedBalance,
 }: MomentModalProps) {
   const [detail, setDetail] = useState<MomentDetail | null>(null)
@@ -58,6 +63,13 @@ export function MomentModal({
     () => initialCreatorName ?? shortAddress(moment.creator.address),
   )
   const [creatorAvatar, setCreatorAvatar] = useState<string | undefined>(initialCreatorAvatar)
+  const [collectionName, setCollectionName] = useState<string | null>(
+    initialCollectionName ?? null,
+  )
+  const [collectionImage, setCollectionImage] = useState<string | null>(
+    initialCollectionImage ?? null,
+  )
+  const [collectionImageFailed, setCollectionImageFailed] = useState(false)
   const [comments, setComments] = useState<MomentComment[]>(
     () => getCachedComments(moment.address, moment.token_id) ?? []
   )
@@ -161,6 +173,15 @@ export function MomentModal({
       setCreatorAvatar(avatarUrl)
     })
   }, [creatorAddress])
+
+  // Cache-backed — hits when MomentCard already resolved it, fires a fetch
+  // only when the modal is opened before the card's resolve landed.
+  useEffect(() => {
+    fetchCollectionChip(moment.address).then(({ name, image }) => {
+      setCollectionName(name)
+      setCollectionImage(image)
+    })
+  }, [moment.address])
 
   // Fetch comments with shared cache — survives modal close/reopen and seeds detail page
   const fetchComments = useCallback(async () => {
@@ -333,6 +354,30 @@ export function MomentModal({
                 {creatorName}
               </span>
             </Link>
+
+            {collectionName && (
+              <Link
+                href={`/collection/${moment.address}`}
+                onClick={onClose}
+                className="flex items-center gap-2 group w-fit"
+              >
+                {collectionImage && !collectionImageFailed && (
+                  <div className="w-5 h-5 relative flex-shrink-0 bg-[#1a1a1a] overflow-hidden">
+                    <MomentImage
+                      src={collectionImage}
+                      alt=""
+                      fill
+                      className="object-cover"
+                      sizes="20px"
+                      onAllError={() => setCollectionImageFailed(true)}
+                    />
+                  </div>
+                )}
+                <span className="text-xs font-mono text-[#555] group-hover:text-[#888] transition-colors">
+                  {collectionName}
+                </span>
+              </Link>
+            )}
 
             {/* Description */}
             {meta.description && (

@@ -16,6 +16,7 @@ import {
   type MomentDetail,
 } from '@/lib/inprocess'
 import { fetchCreatorProfile } from '@/lib/profileCache'
+import { fetchCollectionChip } from '@/lib/collectionCache'
 import { useTextContent, fetchTextContent } from '@/lib/textCache'
 import { getCachedComments, setCachedComments } from '@/lib/momentCache'
 import { useAdmin } from '@/contexts/AdminContext'
@@ -53,6 +54,11 @@ export function MomentCard({ moment, hidePriceSupply, directLink, priority }: Mo
     () => moment.creator.username || shortAddress(moment.creator.address),
   )
   const [creatorAvatar, setCreatorAvatar] = useState<string | undefined>(undefined)
+  // Stays null for non-platform addresses (auto-deploy wrappers, unknown
+  // contracts) — keeps the chip hidden for individual mints.
+  const [collectionName, setCollectionName] = useState<string | null>(null)
+  const [collectionImage, setCollectionImage] = useState<string | null>(null)
+  const [collectionImageFailed, setCollectionImageFailed] = useState(false)
   const [modalOpen, setModalOpen] = useState(false)
   const [collected, setCollected] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
@@ -72,6 +78,13 @@ export function MomentCard({ moment, hidePriceSupply, directLink, priority }: Mo
       setCreatorAvatar(avatarUrl)
     })
   }, [moment.creator.address])
+
+  useEffect(() => {
+    fetchCollectionChip(moment.address).then(({ name, image }) => {
+      setCollectionName(name)
+      setCollectionImage(image)
+    })
+  }, [moment.address])
 
   const { data: ownedBalance } = useReadContract({
     address: moment.address as `0x${string}`,
@@ -262,6 +275,30 @@ export function MomentCard({ moment, hidePriceSupply, directLink, priority }: Mo
             <ProfileAvatar address={moment.creator.address} avatarUrl={creatorAvatar} size={16} />
             <span className="text-xs text-[#555] font-mono group-hover/creator:text-[#888] transition-colors">{creatorName}</span>
           </Link>
+          {collectionName && (
+            <Link
+              href={`/collection/${moment.address}`}
+              onClick={(e) => e.stopPropagation()}
+              className="flex items-center gap-1.5 group/collection w-fit"
+              title={collectionName}
+            >
+              {collectionImage && !collectionImageFailed && (
+                <div className="w-4 h-4 relative flex-shrink-0 bg-[#1a1a1a] overflow-hidden">
+                  <MomentImage
+                    src={collectionImage}
+                    alt=""
+                    fill
+                    className="object-cover"
+                    sizes="16px"
+                    onAllError={() => setCollectionImageFailed(true)}
+                  />
+                </div>
+              )}
+              <span className="text-xs text-[#555] font-mono group-hover/collection:text-[#888] transition-colors">
+                {collectionName}
+              </span>
+            </Link>
+          )}
         </div>
 
         {/* Actions row: [price|supply] [list] [collect] */}
@@ -316,6 +353,8 @@ export function MomentCard({ moment, hidePriceSupply, directLink, priority }: Mo
           initialMaxSupply={maxSupply !== undefined ? maxSupply : undefined}
           initialCreatorName={creatorName}
           initialCreatorAvatar={creatorAvatar}
+          initialCollectionName={collectionName}
+          initialCollectionImage={collectionImage}
           initialOwnedBalance={ownedBalance !== undefined ? Number(ownedBalance) : undefined}
         />
       )}
