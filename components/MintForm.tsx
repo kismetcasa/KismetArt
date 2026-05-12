@@ -789,24 +789,14 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
         >
           Moment details →
         </button>
-        <div className="flex flex-col gap-2">
-          <a
-            href={`https://inprocess.world/collect/base:${result.contractAddress}/${result.tokenId}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs font-mono accent-grad hover:underline"
-          >
-            View on in•process →
-          </a>
-          <a
-            href={`https://basescan.org/tx/${result.hash}`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-xs font-mono text-[#555] hover:text-[#888]"
-          >
-            {result.hash.slice(0, 10)}…{result.hash.slice(-8)}
-          </a>
-        </div>
+        <a
+          href={`https://basescan.org/tx/${result.hash}`}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-xs font-mono text-[#555] hover:text-[#888]"
+        >
+          {result.hash.slice(0, 10)}…{result.hash.slice(-8)}
+        </a>
         {/* Persistent warning when an auto-deploy left the smart
             wallet without ADMIN on the new contract — without it the
             user would only see the transient post-mint toast. Routes
