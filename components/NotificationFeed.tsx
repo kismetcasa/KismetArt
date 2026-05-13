@@ -13,18 +13,55 @@ type TypeFilter = 'all' | NotificationType
 
 const PAGE_LIMIT = 20
 
-const TYPE_FILTERS: { value: TypeFilter; label: string }[] = [
-  { value: 'all', label: 'all' },
-  { value: 'collect', label: 'collects' },
-  { value: 'sale', label: 'sales' },
-  { value: 'follow', label: 'follows' },
-  { value: 'mint', label: 'mints' },
-  { value: 'airdrop', label: 'airdrops' },
-  { value: 'listing_created', label: 'listings' },
-  { value: 'listing_expired', label: 'expired' },
-  { value: 'payout', label: 'payouts' },
-  { value: 'authorized', label: 'authorized' },
+// 'all' is pinned leftmost and not draggable; the rest of the filters are
+// reorderable so users can put the types they care about up front.
+const DRAGGABLE_FILTERS: NotificationType[] = [
+  'collect',
+  'sale',
+  'follow',
+  'mint',
+  'airdrop',
+  'listing_created',
+  'listing_expired',
+  'payout',
+  'authorized',
 ]
+
+const FILTER_LABEL: Record<TypeFilter, string> = {
+  all: 'all',
+  collect: 'collects',
+  sale: 'sales',
+  follow: 'follows',
+  mint: 'mints',
+  airdrop: 'airdrops',
+  listing_created: 'listings',
+  listing_expired: 'expired',
+  payout: 'payouts',
+  authorized: 'authorized',
+}
+
+const ORDER_KEY = 'kismetart:notif-tab-order'
+
+// Reconcile a stored order against the current DRAGGABLE_FILTERS list: keep
+// recognized entries in their saved positions, drop unknowns, append any
+// newly-added filters at the end. Mirrors loadOrder() on the discover page.
+function loadOrder(): NotificationType[] {
+  if (typeof window === 'undefined') return DRAGGABLE_FILTERS
+  try {
+    const raw = localStorage.getItem(ORDER_KEY)
+    if (!raw) return DRAGGABLE_FILTERS
+    const parsed = JSON.parse(raw)
+    if (!Array.isArray(parsed)) return DRAGGABLE_FILTERS
+    const valid = parsed.filter(
+      (t): t is NotificationType =>
+        typeof t === 'string' && (DRAGGABLE_FILTERS as readonly string[]).includes(t),
+    )
+    const missing = DRAGGABLE_FILTERS.filter((t) => !valid.includes(t))
+    return [...valid, ...missing]
+  } catch {
+    return DRAGGABLE_FILTERS
+  }
+}
 
 // Mirror of NON_MUTEABLE_TYPES in lib/notifications.ts — money-bearing
 // types bypass actor-mute server-side, so the client must keep them in
@@ -36,6 +73,9 @@ const POLL_INTERVAL_MS = 30_000
 export function NotificationFeed() {
   const { ensureSession } = useUploadSession()
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
+  const [filterOrder, setFilterOrder] = useState<NotificationType[]>(() => loadOrder())
+  const [draggingIdx, setDraggingIdx] = useState<number | null>(null)
+  const dragIdx = useRef<number | null>(null)
   const [page, setPage] = useState(1)
   const [items, setItems] = useState<Notification[]>([])
   const [total, setTotal] = useState(0)
@@ -48,6 +88,32 @@ export function NotificationFeed() {
   // can render @username instead of 0x123…abc without N HTTP requests.
   const [actorNames, setActorNames] = useState<Record<string, string>>({})
   const sentinelRef = useRef<HTMLDivElement>(null)
+
+  function handleReorder(next: NotificationType[]) {
+    setFilterOrder(next)
+    try { localStorage.setItem(ORDER_KEY, JSON.stringify(next)) } catch {}
+  }
+
+  function onDragStart(idx: number) {
+    dragIdx.current = idx
+    setDraggingIdx(idx)
+  }
+
+  function onDragOver(e: React.DragEvent, idx: number) {
+    e.preventDefault()
+    if (dragIdx.current === null || dragIdx.current === idx) return
+    const next = [...filterOrder]
+    const [moved] = next.splice(dragIdx.current, 1)
+    next.splice(idx, 0, moved)
+    dragIdx.current = idx
+    setDraggingIdx(idx)
+    handleReorder(next)
+  }
+
+  function onDragEnd() {
+    dragIdx.current = null
+    setDraggingIdx(null)
+  }
 
   const hasMore = items.length < total
 
@@ -221,21 +287,28 @@ export function NotificationFeed() {
 
   return (
     <div className="flex flex-col">
-      {/* Type filters + mark-all-read */}
+      {/* Type filters (drag to reorder) + mark-all-read */}
       <div className="flex items-center gap-2 px-1 py-2 border-b border-[#2a2a2a] overflow-x-auto">
         <div className="flex gap-1 flex-1">
-          {TYPE_FILTERS.map((f) => (
-            <button
-              key={f.value}
-              onClick={() => setTypeFilter(f.value)}
-              className={`text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 border transition-colors flex-shrink-0 ${
-                typeFilter === f.value
-                  ? 'border-[#8B5CF6] text-[#8B5CF6]'
-                  : 'border-[#2a2a2a] text-[#555] hover:border-[#444] hover:text-[#888]'
-              }`}
-            >
-              {f.label}
-            </button>
+          <FilterChip
+            value="all"
+            label={FILTER_LABEL.all}
+            active={typeFilter === 'all'}
+            onSelect={setTypeFilter}
+          />
+          {filterOrder.map((value, idx) => (
+            <FilterChip
+              key={value}
+              value={value}
+              label={FILTER_LABEL[value]}
+              active={typeFilter === value}
+              onSelect={setTypeFilter}
+              draggable
+              dragging={draggingIdx === idx}
+              onDragStart={() => onDragStart(idx)}
+              onDragOver={(e) => onDragOver(e, idx)}
+              onDragEnd={onDragEnd}
+            />
           ))}
         </div>
         <button
@@ -284,5 +357,48 @@ export function NotificationFeed() {
         {loadingMore && <Loader2 size={14} className="animate-spin text-[#555]" />}
       </div>
     </div>
+  )
+}
+
+interface FilterChipProps {
+  value: TypeFilter
+  label: string
+  active: boolean
+  onSelect: (v: TypeFilter) => void
+  draggable?: boolean
+  dragging?: boolean
+  onDragStart?: () => void
+  onDragOver?: (e: React.DragEvent) => void
+  onDragEnd?: () => void
+}
+
+function FilterChip({
+  value,
+  label,
+  active,
+  onSelect,
+  draggable,
+  dragging,
+  onDragStart,
+  onDragOver,
+  onDragEnd,
+}: FilterChipProps) {
+  return (
+    <button
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onDragOver={onDragOver}
+      onDragEnd={onDragEnd}
+      onClick={() => onSelect(value)}
+      className={`text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 border flex-shrink-0 select-none transition-all duration-150 ${
+        active
+          ? 'border-[#8B5CF6] text-[#8B5CF6]'
+          : 'border-[#2a2a2a] text-[#555] hover:border-[#444] hover:text-[#888]'
+      } ${draggable ? 'cursor-grab active:cursor-grabbing' : ''} ${
+        dragging ? 'opacity-40' : 'opacity-100'
+      }`}
+    >
+      {label}
+    </button>
   )
 }
