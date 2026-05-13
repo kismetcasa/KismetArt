@@ -74,6 +74,9 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ actor, unmute: true }),
       })
+      // Actor-mute filters at read time, so unmuting can resurface
+      // priority rows — tell the bell to re-verify its count.
+      window.dispatchEvent(new CustomEvent('kismetart:notif-refetch'))
     } catch (err) {
       setMuted(previous)
       const description = humanError(err)

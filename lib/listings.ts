@@ -1,8 +1,7 @@
 import { redis } from './redis'
 import { randomUUID } from 'crypto'
 import type { SerializedOrderComponents } from './seaport'
-import { writeNotification } from './notifications'
-import { getFollowers } from './follows'
+import { fanoutToFollowers, writeNotification } from './notifications'
 
 export interface Listing {
   id: string
@@ -73,33 +72,16 @@ export async function createListing(
     redis.sadd(keyBySeller(listing.seller), listing.id),
   ])
 
-  // Fan-out to seller's followers — burst dedup handled inside writeNotification.
-  void (async () => {
-    try {
-      const followers = await getFollowers(listing.seller)
-      const sellerLower = listing.seller.toLowerCase()
-      await Promise.all(
-        followers
-          .filter((f) => f.toLowerCase() !== sellerLower)
-          .map((follower) =>
-            writeNotification({
-              type: 'listing_created',
-              recipient: follower,
-              actor: listing.seller,
-              tokenAddress: listing.collectionAddress,
-              tokenId: listing.tokenId,
-              tokenName: listing.name,
-              tokenImage: listing.image,
-              price: listing.price,
-              currency: listing.currency,
-              listingId: listing.id,
-            }),
-          ),
-      )
-    } catch {
-      // notifications are non-critical
-    }
-  })()
+  fanoutToFollowers(listing.seller, {
+    type: 'listing_created',
+    tokenAddress: listing.collectionAddress,
+    tokenId: listing.tokenId,
+    tokenName: listing.name,
+    tokenImage: listing.image,
+    price: listing.price,
+    currency: listing.currency,
+    listingId: listing.id,
+  })
 
   return listing
 }

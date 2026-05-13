@@ -20,8 +20,16 @@ const TYPE_FILTERS: { value: TypeFilter; label: string }[] = [
   { value: 'follow', label: 'follows' },
   { value: 'mint', label: 'mints' },
   { value: 'airdrop', label: 'airdrops' },
+  { value: 'listing_created', label: 'listings' },
   { value: 'listing_expired', label: 'expired' },
+  { value: 'payout', label: 'payouts' },
+  { value: 'authorized', label: 'authorized' },
 ]
+
+// Mirror of NON_MUTEABLE_TYPES in lib/notifications.ts — money-bearing
+// types bypass actor-mute server-side, so the client must keep them in
+// the feed when optimistically applying a mute.
+const FINANCIAL_TYPES = new Set<NotificationType>(['sale', 'airdrop', 'payout'])
 
 const POLL_INTERVAL_MS = 30_000
 
@@ -183,9 +191,15 @@ export function NotificationFeed() {
   async function handleMute(actor: string) {
     const lower = actor.toLowerCase()
     setItems((prev) => {
-      const removed = prev.filter((n) => n.actor?.toLowerCase() === lower).length
+      // Only remove rows the server will actually hide — financial types
+      // bypass actor-mute, so leaving them in avoids a refetch flicker.
+      const removed = prev.filter(
+        (n) => n.actor?.toLowerCase() === lower && !FINANCIAL_TYPES.has(n.type),
+      ).length
       if (removed > 0) setTotal((t) => Math.max(0, t - removed))
-      return prev.filter((n) => n.actor?.toLowerCase() !== lower)
+      return prev.filter(
+        (n) => n.actor?.toLowerCase() !== lower || FINANCIAL_TYPES.has(n.type),
+      )
     })
     try {
       await ensureSession()

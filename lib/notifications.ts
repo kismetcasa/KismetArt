@@ -1,5 +1,5 @@
 import { redis } from './redis'
-import { isFollowing } from './follows'
+import { getFollowers, isFollowing } from './follows'
 import { randomUUID } from 'crypto'
 
 export const ALL_NOTIFICATION_TYPES = [
@@ -248,6 +248,30 @@ export async function unmuteActor(address: string, actor: string): Promise<void>
 
 export async function getMutedActors(address: string): Promise<string[]> {
   return (await redis.smembers(keyMuted(address))) as string[]
+}
+
+// Fire-and-forget: write a notification to every follower of `source`,
+// with actor=source. Self-rows are filtered. Burst dedup runs inside
+// writeNotification, so callers don't need their own lock keys.
+export function fanoutToFollowers(
+  source: string,
+  payload: Omit<NotificationInput, 'recipient' | 'actor'>,
+): void {
+  void (async () => {
+    try {
+      const followers = await getFollowers(source)
+      const sourceLower = source.toLowerCase()
+      await Promise.all(
+        followers
+          .filter((f) => f.toLowerCase() !== sourceLower)
+          .map((follower) =>
+            writeNotification({ ...payload, recipient: follower, actor: source }),
+          ),
+      )
+    } catch {
+      // notifications are non-critical
+    }
+  })()
 }
 
 export async function muteType(address: string, type: NotificationType): Promise<void> {
