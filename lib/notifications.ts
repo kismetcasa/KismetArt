@@ -2,7 +2,24 @@ import { redis } from './redis'
 import { isFollowing } from './follows'
 import { randomUUID } from 'crypto'
 
-export type NotificationType = 'collect' | 'sale' | 'follow' | 'mint' | 'listing_expired' | 'airdrop'
+export type NotificationType =
+  | 'collect'
+  | 'sale'
+  | 'follow'
+  | 'mint'
+  | 'listing_expired'
+  | 'listing_created'
+  | 'airdrop'
+  | 'payout'
+  | 'authorized'
+
+// Money-bearing types bypass actor-mute at read time and per-type mute at
+// write time. Muting "your splits payouts" is a footgun, not a preference.
+export const NON_MUTEABLE_TYPES: ReadonlySet<NotificationType> = new Set([
+  'sale',
+  'airdrop',
+  'payout',
+])
 
 export interface Notification {
   id: string
@@ -39,6 +56,7 @@ const keyNotif = (a: string) => `kismetart:notif:${a.toLowerCase()}`
 const keyLastRead = (a: string) => `kismetart:notif-last-read:${a.toLowerCase()}`
 const keyReadIds = (a: string) => `kismetart:notif-read-ids:${a.toLowerCase()}`
 const keyMuted = (a: string) => `kismetart:notif-muted:${a.toLowerCase()}`
+const keyMutedTypes = (a: string) => `kismetart:notif-muted-types:${a.toLowerCase()}`
 const KEY_PROFILES = 'kismetart:profiles'
 
 const keyMomentMeta = (addr: string, tokenId: string) =>
@@ -59,8 +77,12 @@ async function isPriority(
   if (type === 'mint') return true
   if (type === 'listing_expired') return true
   if (type === 'airdrop') return true
+  if (type === 'payout') return true
+  if (type === 'authorized') return true
   if (type === 'follow') return true
   if (type === 'collect' && price && price !== '0') return true
+  // listing_created stays non-priority — active sellers shouldn't dominate
+  // the priority bell. The "all" tab still surfaces it for engaged followers.
   if (!actor) return false
 
   const [following, isKnown] = await Promise.all([
@@ -73,6 +95,19 @@ async function isPriority(
 export async function writeNotification(input: NotificationInput): Promise<void> {
   try {
     if (input.actor && input.actor.toLowerCase() === input.recipient.toLowerCase()) return
+
+    // Per-type mute. Financial events bypass — recipients can't opt out of
+    // money signals (defense in depth; the mute-type endpoint also rejects
+    // these). Best-effort on Redis transient: proceed without short-circuit
+    // rather than drop notifications silently.
+    if (!NON_MUTEABLE_TYPES.has(input.type)) {
+      try {
+        const muted = (await redis.smembers(keyMutedTypes(input.recipient))) as string[]
+        if (muted.includes(input.type)) return
+      } catch {
+        // proceed
+      }
+    }
 
     if (input.type === 'follow' && input.actor) {
       const cutoff = Math.floor(Date.now() / 1000) - FOLLOW_DEDUP_WINDOW_SECS
@@ -171,7 +206,9 @@ async function loadAndAnnotate(address: string): Promise<Notification[]> {
   for (const raw of raws) {
     try {
       const n = typeof raw === 'string' ? (JSON.parse(raw) as Notification) : (raw as Notification)
-      if (n.actor && muted.has(n.actor.toLowerCase())) continue
+      // Actor-mute bypasses for money-bearing types — muting a friend should
+      // never hide that they paid you out or bought your listing.
+      if (n.actor && muted.has(n.actor.toLowerCase()) && !NON_MUTEABLE_TYPES.has(n.type)) continue
       const read = n.timestamp <= lastReadTs || readIds.has(n.id)
       all.push({ ...n, read })
     } catch {
@@ -223,6 +260,19 @@ export async function unmuteActor(address: string, actor: string): Promise<void>
 
 export async function getMutedActors(address: string): Promise<string[]> {
   return (await redis.smembers(keyMuted(address))) as string[]
+}
+
+export async function muteType(address: string, type: NotificationType): Promise<void> {
+  await redis.sadd(keyMutedTypes(address), type)
+  void redis.expire(keyMutedTypes(address), MUTED_TTL_SECS).catch(() => {})
+}
+
+export async function unmuteType(address: string, type: NotificationType): Promise<void> {
+  await redis.srem(keyMutedTypes(address), type)
+}
+
+export async function getMutedTypes(address: string): Promise<NotificationType[]> {
+  return (await redis.smembers(keyMutedTypes(address))) as NotificationType[]
 }
 
 export async function getMomentMeta(

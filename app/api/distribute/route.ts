@@ -4,8 +4,9 @@ import { isAddress, isValidTokenId } from '@/lib/address'
 import { INPROCESS_API } from '@/lib/inprocess'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
 import { consumeNonce } from '@/lib/profile'
-import { hasRegisteredSplits } from '@/lib/splits'
+import { getStoredSplits, hasRegisteredSplits } from '@/lib/splits'
 import { USDC_BASE } from '@/lib/zoraMint'
+import { getMomentMeta, writeNotification } from '@/lib/notifications'
 
 /**
  * Triggers the inprocess split distribution for a token's accumulated proceeds.
@@ -144,5 +145,38 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: 'upstream error', detail: text.slice(0, 200) }, { status: 502 })
   }
+
+  // Fan out a payout notification to every recorded split recipient. Fire on
+  // inprocess 2xx (matches the mint-proxy pre-confirmation pattern — the
+  // platform smart wallet is trusted and the hash is already in mempool).
+  // Best-effort: notification failures never block the response.
+  if (res.ok) {
+    void (async () => {
+      try {
+        const stored = await getStoredSplits(collectionAddress, tokenId!)
+        if (!stored.recipients.length) return
+        const meta = await getMomentMeta(collectionAddress, tokenId!)
+        const callerLower = callerAddress.toLowerCase()
+        await Promise.all(
+          stored.recipients
+            .filter((r) => r.address.toLowerCase() !== callerLower)
+            .map((r) =>
+              writeNotification({
+                type: 'payout',
+                recipient: r.address,
+                actor: callerAddress,
+                tokenAddress: collectionAddress,
+                tokenId: tokenId!,
+                tokenName: meta?.name,
+                currency,
+              }),
+            ),
+        )
+      } catch {
+        // notifications are non-critical
+      }
+    })()
+  }
+
   return NextResponse.json(data, { status: res.status })
 }

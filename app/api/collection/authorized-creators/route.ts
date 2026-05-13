@@ -9,8 +9,10 @@ import {
   addAuthorizedCreator,
   removeAuthorizedCreator,
   getAuthorizedCreators,
+  getCollectionMeta,
   type AuthorizedCreator,
 } from '@/lib/kv'
+import { writeNotification } from '@/lib/notifications'
 
 // GET /api/collection/authorized-creators?collection=0x… — returns the
 // EOA → smart-wallet mappings recorded by our panel at grant time. KV
@@ -117,6 +119,27 @@ export async function POST(req: NextRequest) {
       { status: 502 },
     )
   }
+
+  // Notify the newly authorized EOA so they discover the grant in-app.
+  // Click-through links to the collection page (no tokenId — this is
+  // collection-level). The on-chain `addPermission` is a separate admin
+  // tx; copy below reads as a record of intent, which is accurate even
+  // before the chain settles.
+  void (async () => {
+    try {
+      const meta = await getCollectionMeta(collection)
+      await writeNotification({
+        type: 'authorized',
+        recipient: eoa,
+        actor: viewer,
+        tokenAddress: collection,
+        tokenName: meta?.name,
+      })
+    } catch {
+      // notifications are non-critical
+    }
+  })()
+
   return NextResponse.json({ ok: true, creator: entry })
 }
 

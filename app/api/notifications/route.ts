@@ -3,7 +3,17 @@ import { getNotifications, type NotificationType } from '@/lib/notifications'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
 import { getSessionContext, slideSession } from '@/lib/session'
 
-const VALID_TYPES: NotificationType[] = ['collect', 'sale', 'follow', 'mint', 'listing_expired', 'airdrop']
+const VALID_TYPES: NotificationType[] = [
+  'collect',
+  'sale',
+  'follow',
+  'mint',
+  'listing_expired',
+  'listing_created',
+  'airdrop',
+  'payout',
+  'authorized',
+]
 
 export async function GET(req: NextRequest) {
   const ip = getClientIp(req)
