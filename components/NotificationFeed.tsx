@@ -74,7 +74,8 @@ export function NotificationFeed() {
   const { ensureSession } = useUploadSession()
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [filterOrder, setFilterOrder] = useState<NotificationType[]>(() => loadOrder())
-  const [draggingIdx, setDraggingIdx] = useState<number | null>(null)
+  // Tracked by value (not index) so we don't need to bump state every swap.
+  const [dragging, setDragging] = useState<NotificationType | null>(null)
   const dragIdx = useRef<number | null>(null)
   const [page, setPage] = useState(1)
   const [items, setItems] = useState<Notification[]>([])
@@ -94,9 +95,9 @@ export function NotificationFeed() {
     try { localStorage.setItem(ORDER_KEY, JSON.stringify(next)) } catch {}
   }
 
-  function onDragStart(idx: number) {
+  function onDragStart(value: NotificationType, idx: number) {
     dragIdx.current = idx
-    setDraggingIdx(idx)
+    setDragging(value)
   }
 
   function onDragOver(e: React.DragEvent, idx: number) {
@@ -106,13 +107,12 @@ export function NotificationFeed() {
     const [moved] = next.splice(dragIdx.current, 1)
     next.splice(idx, 0, moved)
     dragIdx.current = idx
-    setDraggingIdx(idx)
     handleReorder(next)
   }
 
   function onDragEnd() {
     dragIdx.current = null
-    setDraggingIdx(null)
+    setDragging(null)
   }
 
   const hasMore = items.length < total
@@ -283,33 +283,39 @@ export function NotificationFeed() {
     }
   }
 
-  const displayItems = items
+  // 'all' is pinned at index 0; subsequent entries are draggable.
+  const tabs: TypeFilter[] = ['all', ...filterOrder]
 
   return (
     <div className="flex flex-col">
       {/* Type filters (drag to reorder) + mark-all-read */}
       <div className="flex items-center gap-2 px-1 py-2 border-b border-[#2a2a2a] overflow-x-auto">
         <div className="flex gap-1 flex-1">
-          <FilterChip
-            value="all"
-            label={FILTER_LABEL.all}
-            active={typeFilter === 'all'}
-            onSelect={setTypeFilter}
-          />
-          {filterOrder.map((value, idx) => (
-            <FilterChip
-              key={value}
-              value={value}
-              label={FILTER_LABEL[value]}
-              active={typeFilter === value}
-              onSelect={setTypeFilter}
-              draggable
-              dragging={draggingIdx === idx}
-              onDragStart={() => onDragStart(idx)}
-              onDragOver={(e) => onDragOver(e, idx)}
-              onDragEnd={onDragEnd}
-            />
-          ))}
+          {tabs.map((tab, i) => {
+            const draggable = i > 0
+            const orderIdx = i - 1
+            const isActive = typeFilter === tab
+            const isDragging = draggable && dragging === tab
+            return (
+              <button
+                key={tab}
+                draggable={draggable}
+                onDragStart={draggable ? () => onDragStart(tab as NotificationType, orderIdx) : undefined}
+                onDragOver={draggable ? (e) => onDragOver(e, orderIdx) : undefined}
+                onDragEnd={draggable ? onDragEnd : undefined}
+                onClick={() => setTypeFilter(tab)}
+                className={`text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 border flex-shrink-0 select-none transition-all duration-150 ${
+                  isActive
+                    ? 'border-[#8B5CF6] text-[#8B5CF6]'
+                    : 'border-[#2a2a2a] text-[#555] hover:border-[#444] hover:text-[#888]'
+                } ${draggable ? 'cursor-grab active:cursor-grabbing' : ''} ${
+                  isDragging ? 'opacity-40' : ''
+                }`}
+              >
+                {FILTER_LABEL[tab]}
+              </button>
+            )
+          })}
         </div>
         <button
           onClick={handleMarkAllRead}
@@ -336,12 +342,12 @@ export function NotificationFeed() {
             <Loader2 size={16} className="animate-spin text-[#555]" />
           </div>
         )}
-        {!authRequired && !fetchError && !loading && displayItems.length === 0 && (
+        {!authRequired && !fetchError && !loading && items.length === 0 && (
           <p className="text-xs font-mono text-[#555] text-center py-12">
             no notifications yet
           </p>
         )}
-        {displayItems.map((n) => (
+        {items.map((n) => (
           <NotificationRow
             key={n.id}
             notification={n}
@@ -357,48 +363,5 @@ export function NotificationFeed() {
         {loadingMore && <Loader2 size={14} className="animate-spin text-[#555]" />}
       </div>
     </div>
-  )
-}
-
-interface FilterChipProps {
-  value: TypeFilter
-  label: string
-  active: boolean
-  onSelect: (v: TypeFilter) => void
-  draggable?: boolean
-  dragging?: boolean
-  onDragStart?: () => void
-  onDragOver?: (e: React.DragEvent) => void
-  onDragEnd?: () => void
-}
-
-function FilterChip({
-  value,
-  label,
-  active,
-  onSelect,
-  draggable,
-  dragging,
-  onDragStart,
-  onDragOver,
-  onDragEnd,
-}: FilterChipProps) {
-  return (
-    <button
-      draggable={draggable}
-      onDragStart={onDragStart}
-      onDragOver={onDragOver}
-      onDragEnd={onDragEnd}
-      onClick={() => onSelect(value)}
-      className={`text-[10px] font-mono uppercase tracking-widest px-2.5 py-1 border flex-shrink-0 select-none transition-all duration-150 ${
-        active
-          ? 'border-[#8B5CF6] text-[#8B5CF6]'
-          : 'border-[#2a2a2a] text-[#555] hover:border-[#444] hover:text-[#888]'
-      } ${draggable ? 'cursor-grab active:cursor-grabbing' : ''} ${
-        dragging ? 'opacity-40' : 'opacity-100'
-      }`}
-    >
-      {label}
-    </button>
   )
 }
