@@ -129,19 +129,27 @@ export function MomentVideo({
     ? undefined
     : poster && isProxiable(poster) ? proxyUrl(poster) : poster
 
-  // Browsers paint the <video> element as an opaque (often black) box
-  // while it's loading, which would cover the MomentImage poster layer
-  // underneath. Keep the video invisible until the first frame is decoded
-  // so the poster shows through, then fade it in.
-  const fadeIn = showPosterLayer
-    ? ` transition-opacity duration-200 ${loaded ? 'opacity-100' : 'opacity-0'}`
+  // Decide what to render behind the video. Priority: MomentImage poster
+  // layer (when both opt-in and a poster URI are available) > thumbhash
+  // blur (when we have one) > nothing.
+  const showImageLayer = showPosterLayer && !!poster
+  const showThumbhashLayer = !showImageLayer && !loaded && !!blurDataURL
+
+  // Only hide the video while a placeholder is actually rendered behind
+  // it. If there's nothing to fall back to (no poster, no thumbhash),
+  // the video stays visible from the start so the slot doesn't go dark.
+  // No transition — the snap from poster to first frame is invisible
+  // because they're the same image, and any fade compounds with gateway
+  // walks into a perceived flicker.
+  const hideUntilLoaded = (showImageLayer || showThumbhashLayer) && !loaded
+    ? ' opacity-0'
     : ''
 
   return (
     <>
-      {showPosterLayer && poster ? (
+      {showImageLayer && (
         <MomentImage
-          src={poster}
+          src={poster!}
           alt=""
           fill
           // Skip next/image's optimizer and go straight to /api/img — the
@@ -155,14 +163,13 @@ export function MomentVideo({
           thumbhash={thumbhash}
           priority={priority}
         />
-      ) : (
-        !loaded && blurDataURL && (
-          <span
-            aria-hidden
-            className="absolute inset-0 bg-cover bg-center pointer-events-none"
-            style={{ backgroundImage: `url(${blurDataURL})` }}
-          />
-        )
+      )}
+      {showThumbhashLayer && (
+        <span
+          aria-hidden
+          className="absolute inset-0 bg-cover bg-center pointer-events-none"
+          style={{ backgroundImage: `url(${blurDataURL})` }}
+        />
       )}
       <video
         ref={videoRef}
@@ -173,7 +180,7 @@ export function MomentVideo({
         playsInline
         preload="metadata"
         {...rest}
-        className={`${rest.className ?? ''}${fadeIn}`.trim()}
+        className={`${rest.className ?? ''}${hideUntilLoaded}`.trim()}
         poster={nativePoster}
         src={shouldLoad ? url : undefined}
         onError={onError}
