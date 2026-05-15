@@ -640,8 +640,8 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
             </div>
           ) : (
             <div
-              className={`relative aspect-square bg-[#111] ${hasMedia ? 'cursor-zoom-in' : ''}`}
-              onClick={() => { if (hasMedia) setLightboxOpen(true) }}
+              className={`relative aspect-square bg-[#111] ${hasMedia && !isVideo ? 'cursor-zoom-in' : ''}`}
+              onClick={() => { if (hasMedia && !isVideo) setLightboxOpen(true) }}
             >
               {isVideo && meta.animation_url ? (
                 <MomentVideo
@@ -649,6 +649,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                   poster={meta.image}
                   thumbhash={meta.kismet_thumbhash}
                   showPosterLayer
+                  controls
                   preload="auto"
                   className="w-full h-full object-contain"
                 />
