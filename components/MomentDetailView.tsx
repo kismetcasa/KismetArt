@@ -212,9 +212,13 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
       return
     }
     if (!mainnetClient) {
+      // Wagmi mounts the mainnet client async; treat the gap as
+      // "still resolving" rather than a hard error so the brief
+      // hydration window doesn't flash a misleading message. The
+      // effect re-runs when mainnetClient becomes defined.
       setResolvedSendTo(null)
-      setResolvingSendTo(false)
-      setSendToError('ENS unavailable')
+      setResolvingSendTo(true)
+      setSendToError(null)
       return
     }
     let cancelled = false
