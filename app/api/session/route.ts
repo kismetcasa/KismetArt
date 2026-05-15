@@ -15,9 +15,12 @@ import {
 
 /** Returns the address bound to the current session cookie, or 401. */
 export async function GET(req: NextRequest) {
+  const headers = { 'Cache-Control': 'private, no-store' }
   const address = await getSessionAddress(req)
-  if (!address) return NextResponse.json({ error: 'No session' }, { status: 401 })
-  return NextResponse.json({ address, ttl: SESSION_TTL_SECONDS })
+  if (!address) {
+    return NextResponse.json({ error: 'No session' }, { status: 401, headers })
+  }
+  return NextResponse.json({ address, ttl: SESSION_TTL_SECONDS }, { headers })
 }
 
 export async function POST(req: NextRequest) {
