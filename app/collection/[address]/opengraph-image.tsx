@@ -27,7 +27,10 @@ async function fetchCollection(address: string): Promise<CollectionRow | null> {
     const url = new URL(`${INPROCESS_API}/collection`)
     url.searchParams.set('collectionAddress', address)
     url.searchParams.set('chainId', '8453')
-    const res = await fetch(url.toString(), { next: { revalidate: 300 } })
+    // 24h cache — see opengraph-image.tsx in moment route for rationale.
+    // Collection metadata is similarly long-lived; the extra freshness of
+    // a 5min TTL isn't worth the edge-function invocation cost.
+    const res = await fetch(url.toString(), { next: { revalidate: 86400 } })
     if (!res.ok) return null
     return (await res.json()) as CollectionRow
   } catch {

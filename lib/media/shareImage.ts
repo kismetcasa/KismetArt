@@ -11,9 +11,12 @@
  *      them. Text-mint auto-deploy generates SVG data URIs for
  *      collection covers; those work in-app but not for share cards.
  *
- * For ar:// and ipfs:// URIs the result routes through /api/img so the
- * crawler hits the proxy's multi-gateway race + Vercel edge cache. https://
- * is passed through unchanged.
+ * Resolves ar:// / ipfs:// to the canonical gateway URL so crawlers
+ * fetch directly from arweave.net / ipfs.io. Used to route through
+ * /api/img for multi-gateway resilience, but share-card crawler hits
+ * burn Fast Origin Transfer on every cache-miss per region, and the
+ * resilience matters less for low-frequency crawler traffic than for
+ * in-app rendering. Direct URL puts the bytes outside Vercel entirely.
  */
 export function shareImageUrl(
   imageUri: string | undefined,
@@ -22,8 +25,11 @@ export function shareImageUrl(
   if (!imageUri) return undefined
   if (guardAgainst && imageUri === guardAgainst) return undefined
   if (imageUri.startsWith('data:')) return undefined
-  if (imageUri.startsWith('ar://') || imageUri.startsWith('ipfs://')) {
-    return `/api/img?u=${encodeURIComponent(imageUri)}`
+  if (imageUri.startsWith('ar://')) {
+    return `https://arweave.net/${imageUri.slice(5)}`
+  }
+  if (imageUri.startsWith('ipfs://')) {
+    return `https://ipfs.io/ipfs/${imageUri.slice(7)}`
   }
   return imageUri
 }

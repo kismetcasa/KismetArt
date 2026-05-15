@@ -28,9 +28,13 @@ async function fetchDetail(
     url.searchParams.set('collectionAddress', address)
     url.searchParams.set('tokenId', tokenId)
     url.searchParams.set('chainId', '8453')
-    // 5min cache — share-card fetches are bursty around new posts; longer
-    // values would lag fresh mints while crawlers come back to revalidate.
-    const res = await fetch(url.toString(), { next: { revalidate: 300 } })
+    // 24h cache — moment metadata is effectively immutable post-mint, so
+    // there's no point revalidating frequently. Longer TTL keeps the
+    // edge-function invocation count bounded (each unique URL fires the
+    // generator at most once per day per region), trading "name edit
+    // shows up in share cards within 5 minutes" for "share-card
+    // generation doesn't burn through edge-runtime quota."
+    const res = await fetch(url.toString(), { next: { revalidate: 86400 } })
     if (!res.ok) return null
     return (await res.json()) as MomentDetail
   } catch {
