@@ -211,7 +211,12 @@ export function MomentVideo({
         playsInline
         preload="metadata"
         {...rest}
-        className={`${rest.className ?? ''}${hideUntilLoaded}`.trim()}
+        // `relative z-10` puts the <video> above the absolute-positioned
+        // poster/thumbhash layers in the same stacking context. Without
+        // it, positioned-auto siblings (the placeholder MomentImg) paint
+        // above non-positioned ones (the <video>), so the poster covers
+        // the video forever even once it's playing.
+        className={`${rest.className ?? ''} relative z-10${hideUntilLoaded}`.trim()}
         poster={nativePoster}
         src={shouldLoad ? url : undefined}
         onError={onError}
