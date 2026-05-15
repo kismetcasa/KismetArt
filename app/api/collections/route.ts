@@ -275,7 +275,10 @@ export async function GET(req: NextRequest) {
           },
         })
       }
-      return NextResponse.json(data, { status: res.status })
+      return NextResponse.json(data, {
+        status: res.status,
+        headers: { 'Cache-Control': 'private, no-store' },
+      })
     } catch {
       // Inprocess down — fall back to local KV only.
       const [kvOwned, hiddenSet, viewer] = await Promise.all([
@@ -284,19 +287,22 @@ export async function GET(req: NextRequest) {
         getSessionAddress(req),
       ])
       const isOwnProfile = viewer?.toLowerCase() === artist.toLowerCase()
-      return NextResponse.json({
-        collections: kvOwned
-          .filter((meta) => isOwnProfile || !hiddenSet.has(meta.address.toLowerCase()))
-          .map((meta) => ({
-            contractAddress: meta.address,
-            name: meta.name,
-            metadata: {
+      return NextResponse.json(
+        {
+          collections: kvOwned
+            .filter((meta) => isOwnProfile || !hiddenSet.has(meta.address.toLowerCase()))
+            .map((meta) => ({
+              contractAddress: meta.address,
               name: meta.name,
-              image: meta.image,
-              description: meta.description,
-            },
-          })),
-      })
+              metadata: {
+                name: meta.name,
+                image: meta.image,
+                description: meta.description,
+              },
+            })),
+        },
+        { headers: { 'Cache-Control': 'private, no-store' } },
+      )
     }
   }
 

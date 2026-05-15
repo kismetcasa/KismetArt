@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { verifyMessage, type Address } from 'viem'
 import { isAddress } from '@/lib/address'
 import { INPROCESS_API } from '@/lib/inprocess'
@@ -184,13 +184,15 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  // On success: refresh moment-meta KV with the new display name so
-  // notifications and card overlays stop showing the stale title.
+  // Refresh moment-meta KV with the new display name so notifications and
+  // card overlays stop showing the stale title.
   if (res.ok && body.displayName) {
-    void setMomentMeta(collectionAddress.toLowerCase(), tokenId, {
-      creator: callerAddress.toLowerCase(),
-      name: body.displayName,
-    }).catch(() => {})
+    after(() =>
+      setMomentMeta(collectionAddress.toLowerCase(), tokenId, {
+        creator: callerAddress.toLowerCase(),
+        name: body.displayName,
+      }).catch(() => {}),
+    )
   }
 
   return NextResponse.json(data, { status: res.status })

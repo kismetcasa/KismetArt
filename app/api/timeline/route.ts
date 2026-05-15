@@ -329,9 +329,8 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  return NextResponse.json({
-    status: 'success',
-    moments,
-    pagination: { page, limit, total_pages },
-  })
+  return NextResponse.json(
+    { status: 'success', moments, pagination: { page, limit, total_pages } },
+    { headers: { 'Cache-Control': 'private, no-store' } },
+  )
 }
