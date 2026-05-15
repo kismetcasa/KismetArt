@@ -13,6 +13,7 @@ import { shortAddress, type CreateMomentPayload, type Split } from '@/lib/inproc
 import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { generateThumbhash } from '@/lib/media/thumbhash'
 import { canTranscode, transcodeGifToMp4 } from '@/lib/media/transcodeGif'
+import { extractVideoPoster } from '@/lib/media/extractPoster'
 import { uploadJson } from '@/lib/arweave/uploadJson'
 import { verifyArweaveAvailable } from '@/lib/arweave/verifyAvailable'
 import { useUploadSession } from '@/hooks/useUploadSession'
@@ -606,6 +607,13 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
         // GIFs get transcoded to MP4 + JPEG poster (10-50× smaller; plays
         // through the existing <video> branch). Best-effort: any failure
         // falls back to uploading the original GIF unchanged.
+        //
+        // Artist-uploaded videos (mp4/webm/mov/etc) skip the transcode but
+        // still need a poster — without one, `meta.image` would either be
+        // undefined (no preview anywhere) or, with the legacy fallback,
+        // the video URL itself (renders broken as an <img> src). Extract
+        // the first frame natively so every video moment has a real
+        // still-frame for cards, modals, og:image, and the detail page.
         let mediaFile: File = file!
         let posterFile: File | null = null
         if (canTranscode(file!)) {
@@ -621,6 +629,14 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
             posterFile = poster
           } catch (err) {
             console.warn('[MintForm] GIF transcode failed; uploading original', err)
+          }
+        } else if (file!.type.startsWith('video/')) {
+          setStep('preparing-media')
+          toast.loading('Extracting poster from video…', { id: 'mint' })
+          try {
+            posterFile = await extractVideoPoster(file!)
+          } catch (err) {
+            console.warn('[MintForm] video poster extraction failed', err)
           }
         }
 
@@ -655,13 +671,18 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
         toast.loading('Uploading metadata…', { id: 'mint' })
         const [thumbhash, posterUri] = await Promise.all([thumbhashPromise, posterUriPromise])
         const posterVerify = posterUri ? verifyArweaveAvailable(posterUri) : Promise.resolve(true)
-        // Poster (when transcoded) wins as `image` so feeds render the
-        // static frame; the moving asset goes to animation_url.
+        // Poster (when extracted) wins as `image` so feeds render the
+        // static frame; the moving asset goes to animation_url. For video
+        // media, never fall back to the MP4 URL as the image — the
+        // renderer would try to load it as an <img> src and fail, leaving
+        // a black card. Better to leave image undefined and let the
+        // thumbhash + icon placeholder cover the slot.
         const isVideoMedia = mediaFile.type.startsWith('video/')
+        const imageUri = isVideoMedia ? posterUri : (posterUri ?? mediaUri)
         const metadata = {
           name: name.trim(),
           description: description.trim(),
-          image: posterUri ?? mediaUri,
+          ...(imageUri ? { image: imageUri } : {}),
           ...(isVideoMedia ? { animation_url: mediaUri } : {}),
           ...(thumbhash ? { kismet_thumbhash: thumbhash } : {}),
         }
@@ -670,16 +691,17 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
 
         // Auto-deploy: the moment's media doubles as the collection cover.
         // Covers don't surface animation_url, so the poster (when present)
-        // is what feed cards actually render.
+        // is what feed cards actually render. Same constraint as `image`
+        // above — for video media, never fall back to the MP4 URL.
         let collectionUri: string | null = null
         let collectionVerify: Promise<boolean> = Promise.resolve(true)
-        const coverImageUri = posterUri ?? mediaUri
+        const coverImageUri = isVideoMedia ? posterUri : (posterUri ?? mediaUri)
         if (isAutoDeploy) {
           toast.loading('Uploading collection metadata…', { id: 'mint' })
           const collectionMetadata = {
             name: resolvedCollectionName,
             description: description.trim(),
-            image: coverImageUri,
+            ...(coverImageUri ? { image: coverImageUri } : {}),
             ...(thumbhash ? { kismet_thumbhash: thumbhash } : {}),
             createReferral: CREATE_REFERRAL,
           }
@@ -758,7 +780,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
           // mediaUri otherwise) so the KV registration can store it and
           // the collection card has a non-blank image immediately.
           // thumbhash piggybacks for the cover placeholder.
-          void trackAndVerifyAutoDeploy(data.contractAddress, coverImageUri, thumbhash ?? undefined)
+          void trackAndVerifyAutoDeploy(data.contractAddress, coverImageUri ?? undefined, thumbhash ?? undefined)
         }
         setStep('done')
         toast.success('Minted!', { id: 'mint', description: `Token #${data.tokenId}` })
