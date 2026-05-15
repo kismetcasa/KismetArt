@@ -216,14 +216,18 @@ export function MomentVideo({
         src={shouldLoad ? url : undefined}
         onError={onError}
         onLoadedMetadata={(e) => {
-          // Resume from the last saved position for any video — card,
-          // modal preview, detail page main view, lightbox. Seek happens
-          // on loadedmetadata (before the first frame decodes) so the
-          // browser jumps straight to the resume point rather than
-          // flashing frame 0.
-          const saved = loadVideoPlaybackState(src)
-          if (saved && saved.currentTime > 1) {
-            try { e.currentTarget.currentTime = saved.currentTime } catch {}
+          // Resume from the last saved position — but only on controlled
+          // surfaces (detail page, lightbox). Cards always start fresh
+          // from the beginning of the loop; otherwise re-visiting the
+          // feed after watching the detail page would have cards plop
+          // into the middle of long videos. Threshold dropped to >0 so
+          // short looping videos (~3s, where any in-loop position is
+          // legitimately the resume point) actually get the seek.
+          if (rest.controls) {
+            const saved = loadVideoPlaybackState(src)
+            if (saved && saved.currentTime > 0) {
+              try { e.currentTarget.currentTime = saved.currentTime } catch {}
+            }
           }
           rest.onLoadedMetadata?.(e)
         }}

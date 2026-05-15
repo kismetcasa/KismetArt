@@ -12,10 +12,6 @@ type State = { currentTime: number }
 
 const STORAGE_KEY = 'kismet:videoPlaybackState'
 
-// Below 1s is "video just mounted, hasn't really played" — saving that
-// would clobber an existing N-second resume point with effectively zero.
-const MIN_SAVEABLE_SECONDS = 1
-
 const playbackState = new Map<string, State>()
 
 // Hydrate the in-memory Map from sessionStorage on first import (browser
@@ -52,7 +48,14 @@ function persist(): void {
 export function saveVideoPlaybackState(src: string, video: HTMLVideoElement): void {
   if (!src) return
   const t = video.currentTime
-  if (!Number.isFinite(t) || t < MIN_SAVEABLE_SECONDS) return
+  if (!Number.isFinite(t) || t < 0) return
+  // Don't clobber an active-watch position (>1s, looks like real
+  // engagement) with a near-zero from an autoplay-loop wraparound or a
+  // brief mount-then-unmount. But do save small positive values when
+  // there's no existing meaningful save — that's how short looping
+  // videos (~2-3s) get any resume point at all.
+  const existing = playbackState.get(src)
+  if (existing && existing.currentTime > 1 && t < 0.25) return
   playbackState.set(src, { currentTime: t })
   persist()
 }
@@ -60,3 +63,4 @@ export function saveVideoPlaybackState(src: string, video: HTMLVideoElement): vo
 export function loadVideoPlaybackState(src: string): State | undefined {
   return src ? playbackState.get(src) : undefined
 }
+
