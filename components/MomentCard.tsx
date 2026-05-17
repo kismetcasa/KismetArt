@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Star, Copy, Check, ExternalLink, EyeOff } from 'lucide-react'
+import { Star, Copy, Check, EyeOff } from 'lucide-react'
 import { useAccount, useReadContract } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import {
@@ -31,7 +31,6 @@ import { ProfileAvatar } from './ProfileAvatar'
 interface MomentCardProps {
   moment: Moment
   hidePriceSupply?: boolean
-  directLink?: boolean
   /**
    * Above-the-fold hint. Forwards next/image priority + fetchpriority=high
    * so the first row of a feed isn't lazy-loaded behind hydration.
@@ -39,7 +38,7 @@ interface MomentCardProps {
   priority?: boolean
 }
 
-export function MomentCard({ moment, hidePriceSupply, directLink, priority }: MomentCardProps) {
+export function MomentCard({ moment, hidePriceSupply, priority }: MomentCardProps) {
   const router = useRouter()
   const [imgError, setImgError] = useState(false)
   const [price, setPrice] = useState<string | null>(null)
@@ -252,30 +251,15 @@ export function MomentCard({ moment, hidePriceSupply, directLink, priority }: Mo
             <h3 className="text-sm text-[#efefef] font-mono truncate flex-1 min-w-0">
               {meta.name ?? `#${moment.token_id}`}
             </h3>
-            {/* Share + external link */}
-            <div className="flex items-center gap-1.5 flex-shrink-0 mt-0.5">
-              <button
-                onClick={handleCopyLink}
-                title="copy link"
-                className="text-[#444] hover:text-[#888] transition-colors"
-              >
-                {linkCopied
-                  ? <Check size={11} className="text-[#6ee7b7]" />
-                  : <Copy size={11} />}
-              </button>
-              {!directLink && (
-                <a
-                  href={`/moment/${moment.address}/${moment.token_id}`}
-                  target="_blank"
-                  rel="noopener"
-                  title="open in new tab"
-                  className="text-[#444] hover:text-[#888] transition-colors"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <ExternalLink size={11} />
-                </a>
-              )}
-            </div>
+            <button
+              onClick={handleCopyLink}
+              title="copy link"
+              className="flex-shrink-0 mt-0.5 text-[#444] hover:text-[#888] transition-colors"
+            >
+              {linkCopied
+                ? <Check size={11} className="text-[#6ee7b7]" />
+                : <Copy size={11} />}
+            </button>
           </div>
           <Link
             href={`/profile/${moment.creator.address}`}
