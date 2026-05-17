@@ -105,10 +105,14 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   // Seed from the inprocess-provided username (or short address) up front so
   // we don't flash a raw address before fetchCreatorProfile resolves —
   // matches the seeding MomentCard already does on the discover grid.
+  // Same EOA-preferring resolution as creatorAddress below: KV first so
+  // Kismet-minted moments display the real EOA short-address (and the
+  // profile lookup hits a real Kismet profile) instead of the platform
+  // smart wallet that inprocess returns as creator.address.
   const [creatorName, setCreatorName] = useState(() => {
     const seedAddr =
-      initialDetail?.creator?.address
-      ?? kvCreatorAddress
+      kvCreatorAddress
+      ?? initialDetail?.creator?.address
       ?? pickFirstNonOperatorAdmin(initialDetail?.momentAdmins)
       ?? ''
     return initialDetail?.creator?.username || (seedAddr ? shortAddress(seedAddr) : '')
@@ -286,20 +290,22 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
 
   const isFeatured = featuredKeys.has(`${address.toLowerCase()}:${tokenId}`)
   // Resolution order for the moment's creator EOA:
-  //   1. detail.creator.address — inprocess timeline's dedicated creator
-  //      field (preferred when indexed).
-  //   2. kvCreatorAddress — the EOA mint-proxy wrote to KV moment-meta
-  //      at mint time. Available immediately for Kismet-minted moments,
-  //      so we don't degrade to (3) during the brief window before
-  //      inprocess catches up.
+  //   1. kvCreatorAddress — the EOA mint-proxy wrote to KV moment-meta
+  //      at mint time. For Kismet-minted moments inprocess often
+  //      reports the platform smart wallet as creator.address (the
+  //      on-chain msg.sender of the mint), which has no Kismet
+  //      profile and breaks the display-name / avatar / profile-link
+  //      chain. KV is authoritative for who actually minted.
+  //   2. detail.creator.address — inprocess timeline's dedicated
+  //      creator field. Used for moments not minted through Kismet's
+  //      proxy (no KV entry) — there inprocess is the only signal.
   //   3. first non-operator entry in detail.momentAdmins — last-resort
   //      fallback. The list is unordered and may contain the operator
-  //      smart wallet (filtered out here) or a 0xSplits contract; kept
-  //      for moments minted outside the Kismet flow where neither (1)
-  //      nor (2) is populated.
+  //      smart wallet (filtered out here) or a 0xSplits contract;
+  //      kept for moments where neither (1) nor (2) is populated.
   const creatorAddress =
-    detail?.creator?.address
-    ?? kvCreatorAddress
+    kvCreatorAddress
+    ?? detail?.creator?.address
     ?? pickFirstNonOperatorAdmin(detail?.momentAdmins)
     ?? ''
   const isHidden = detail?.hidden === true
