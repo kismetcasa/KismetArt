@@ -10,6 +10,9 @@ import { ADMIN_ADDRESS, CURATOR_ADDRESSES } from './config'
  */
 export const ADMIN_SESSION_COOKIE = 'kismetart-admin'
 
+export const adminSessionKey = (token: string) => `kismetart:auth-session:${token}`
+export const adminNonceKey = (nonce: string) => `kismetart:auth-nonce:${nonce}`
+
 interface SessionResult {
   signer: string
 }
@@ -39,7 +42,7 @@ export async function verifyPrivilegedSession(): Promise<SessionResult | Session
   const token = cookieStore.get(ADMIN_SESSION_COOKIE)?.value
   if (!token) return { error: 'Not authenticated', status: 401 }
 
-  const signer = await redis.get<string>(`kismetart:auth-session:${token}`).catch(() => null)
+  const signer = await redis.get<string>(adminSessionKey(token)).catch(() => null)
   if (!signer) return { error: 'Session expired — please sign in again', status: 401 }
 
   const allowed = signer === ADMIN_ADDRESS || CURATOR_ADDRESSES.includes(signer)

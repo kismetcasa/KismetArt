@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAddress } from '@/lib/address'
-import { INPROCESS_API } from '@/lib/inprocess'
+import { inprocessUrl } from '@/lib/inprocess'
 import { errorResponse } from '@/lib/apiResponse'
 
 /**
@@ -20,12 +20,10 @@ export async function GET(req: NextRequest) {
     return errorResponse(400, 'Invalid collectionAddress')
   }
 
-  const url = new URL(`${INPROCESS_API}/collection`)
-  url.searchParams.set('collectionAddress', collectionAddress)
-  url.searchParams.set('chainId', chainId)
+  const url = inprocessUrl('/collection', { collectionAddress, chainId })
 
   try {
-    const res = await fetch(url.toString(), {
+    const res = await fetch(url, {
       headers: { Accept: 'application/json' },
       next: { revalidate: 60 },
     })

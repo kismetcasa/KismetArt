@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { type Address } from 'viem'
 import { isAddress } from '@/lib/address'
-import { INPROCESS_API } from '@/lib/inprocess'
+import { inprocessUrl } from '@/lib/inprocess'
 import { hasAdminBit, readPermissions } from '@/lib/permissions'
 import { serverBaseClient } from '@/lib/rpc'
 import { PLATFORM_COLLECTION } from '@/lib/config'
@@ -30,10 +30,8 @@ const FEED_ELIGIBLE_TOKEN_LIMIT = 20
 // when the indexer hasn't yet picked up a freshly-deployed collection.
 async function loadCollectionMeta(address: string): Promise<Record<string, unknown>> {
   try {
-    const url = new URL(`${INPROCESS_API}/collection`)
-    url.searchParams.set('collectionAddress', address)
-    url.searchParams.set('chainId', '8453')
-    const res = await fetch(url.toString(), {
+    const url = inprocessUrl('/collection', { collectionAddress: address, chainId: '8453' })
+    const res = await fetch(url, {
       headers: { Accept: 'application/json' },
       next: { revalidate: 60 },
     })
@@ -87,11 +85,12 @@ async function loadCollectAllEligibility(
     usdcEligibleTotalUsdc: '0',
   }
   try {
-    const tlUrl = new URL(`${INPROCESS_API}/timeline`)
-    tlUrl.searchParams.set('collection', address)
-    tlUrl.searchParams.set('limit', String(FEED_ELIGIBLE_TOKEN_LIMIT))
-    tlUrl.searchParams.set('chain_id', '8453')
-    const tlRes = await fetch(tlUrl.toString(), {
+    const tlUrl = inprocessUrl('/timeline', {
+      collection: address,
+      limit: FEED_ELIGIBLE_TOKEN_LIMIT,
+      chain_id: '8453',
+    })
+    const tlRes = await fetch(tlUrl, {
       headers: { Accept: 'application/json' },
       next: { revalidate: 60 },
     })
@@ -151,10 +150,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ contractAddress: singleAddress })
     }
     try {
-      const url = new URL(`${INPROCESS_API}/collection`)
-      url.searchParams.set('collectionAddress', singleAddress)
-      url.searchParams.set('chainId', '8453')
-      const res = await fetch(url.toString(), {
+      const url = inprocessUrl('/collection', { collectionAddress: singleAddress, chainId: '8453' })
+      const res = await fetch(url, {
         headers: { Accept: 'application/json' },
         next: { revalidate: 120 },
       })
@@ -238,12 +235,10 @@ export async function GET(req: NextRequest) {
     if (!isAddress(artist)) {
       return errorResponse(400, 'Invalid artist address')
     }
-    const url = new URL(`${INPROCESS_API}/collections`)
-    url.searchParams.set('artist', artist)
-    url.searchParams.set('limit', '100')
+    const url = inprocessUrl('/collections', { artist, limit: 100 })
     try {
       const [res, userCreated, kvOwned, hiddenSet, viewer] = await Promise.all([
-        fetch(url.toString(), {
+        fetch(url, {
           headers: { Accept: 'application/json' },
           next: { revalidate: 120 },
         }),

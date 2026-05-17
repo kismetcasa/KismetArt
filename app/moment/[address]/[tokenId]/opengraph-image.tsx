@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og'
 import { isAddress, isValidTokenId } from '@/lib/address'
-import { INPROCESS_API, shortAddress, type MomentDetail } from '@/lib/inprocess'
+import { inprocessUrl, shortAddress, type MomentDetail } from '@/lib/inprocess'
 import {
   shareCard,
   SHARE_CARD_SIZE,
@@ -28,16 +28,13 @@ async function fetchDetail(
   tokenId: string,
 ): Promise<MomentDetail | null> {
   try {
-    const url = new URL(`${INPROCESS_API}/moment`)
-    url.searchParams.set('collectionAddress', address)
-    url.searchParams.set('tokenId', tokenId)
-    url.searchParams.set('chainId', '8453')
+    const url = inprocessUrl('/moment', { collectionAddress: address, tokenId, chainId: '8453' })
     // 24h cache — moment metadata is effectively immutable post-mint, so
     // there's no point revalidating frequently. Longer TTL bounds the
     // generator invocation count (each unique URL fires at most once
     // per day), trading "name edit shows up in share cards within 5
     // minutes" for lower upstream load on the inprocess API.
-    const res = await fetch(url.toString(), { next: { revalidate: 86400 } })
+    const res = await fetch(url, { next: { revalidate: 86400 } })
     if (!res.ok) return null
     return (await res.json()) as MomentDetail
   } catch {

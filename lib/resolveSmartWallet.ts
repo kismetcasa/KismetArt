@@ -1,5 +1,5 @@
 import { isAddress } from '@/lib/address'
-import { INPROCESS_API } from '@/lib/inprocess'
+import { inprocessUrl } from '@/lib/inprocess'
 
 // Per-EOA cache. Smart-wallet ↔ EOA is deterministic per inprocess's
 // derivation, so once resolved it doesn't change. 24h TTL bounds the
@@ -33,9 +33,8 @@ export async function resolveSmartWallet(
 
   let res: Response
   try {
-    const url = new URL(`${INPROCESS_API}/smartwallet`)
-    url.searchParams.set('artist_wallet', artistWallet)
-    res = await fetch(url.toString(), {
+    const url = inprocessUrl('/smartwallet', { artist_wallet: artistWallet })
+    res = await fetch(url, {
       headers: { Accept: 'application/json' },
       next: { revalidate },
     })

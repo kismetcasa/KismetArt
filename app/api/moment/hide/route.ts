@@ -3,7 +3,7 @@ import { isAddress, isValidTokenId } from '@/lib/address'
 import { getSessionAddress } from '@/lib/session'
 import { getMomentMeta } from '@/lib/notifications'
 import { hideMoment, unhideMoment, isMomentHidden } from '@/lib/hiddenMoments'
-import { INPROCESS_API } from '@/lib/inprocess'
+import { inprocessUrl } from '@/lib/inprocess'
 import { errorResponse } from '@/lib/apiResponse'
 
 interface HideBody {
@@ -53,11 +53,12 @@ export async function POST(req: NextRequest) {
 
   if (!creatorLower) {
     try {
-      const url = new URL(`${INPROCESS_API}/timeline`)
-      url.searchParams.set('collection', collectionAddress)
-      url.searchParams.set('limit', '50')
-      url.searchParams.set('chain_id', '8453')
-      const res = await fetch(url.toString(), {
+      const url = inprocessUrl('/timeline', {
+        collection: collectionAddress,
+        limit: 50,
+        chain_id: '8453',
+      })
+      const res = await fetch(url, {
         headers: { Accept: 'application/json' },
         next: { revalidate: 60 },
       })

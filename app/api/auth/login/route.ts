@@ -5,13 +5,15 @@ import { redis } from '@/lib/redis'
 import { serverBaseClient } from '@/lib/rpc'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
 import { ADMIN_ADDRESS, CURATOR_ADDRESSES } from '@/lib/config'
-import { ADMIN_SESSION_COOKIE } from '@/lib/curator'
+import { ADMIN_SESSION_COOKIE, adminSessionKey, adminNonceKey } from '@/lib/curator'
 import { errorResponse } from '@/lib/apiResponse'
 
 // 4 hours — matches the prior signature-TTL UX so admins/curators sign
 // once per work session. Stored server-side in Redis so we can revoke
-// or shrink the window without changing the client.
-const SESSION_TTL_SECONDS = 4 * 60 * 60
+// or shrink the window without changing the client. Named distinct from
+// the user-session TTL in lib/session.ts (7d) so a global search for one
+// doesn't get a false hit on the other.
+const ADMIN_SESSION_TTL_SECONDS = 4 * 60 * 60
 
 /**
  * SIWE login. Client constructs an EIP-4361 message containing a single-
@@ -90,7 +92,7 @@ export async function POST(req: NextRequest) {
   // 1 means we just consumed a valid nonce; 0 means it was already used or
   // expired. Doing this AFTER signature verification means a failed-sig
   // attempt doesn't burn the nonce (the legitimate user can retry).
-  const consumed = await redis.del(`kismetart:auth-nonce:${nonce}`).catch(() => 0)
+  const consumed = await redis.del(adminNonceKey(nonce)).catch(() => 0)
   if (consumed !== 1) {
     return errorResponse(401, 'Invalid or expired nonce')
   }
@@ -99,14 +101,14 @@ export async function POST(req: NextRequest) {
   // any practical brute force. The token never leaves Redis + the cookie;
   // there's no JWT to forge offline.
   const token = randomBytes(32).toString('hex')
-  await redis.set(`kismetart:auth-session:${token}`, signer, { ex: SESSION_TTL_SECONDS })
+  await redis.set(adminSessionKey(token), signer, { ex: ADMIN_SESSION_TTL_SECONDS })
 
   const res = NextResponse.json({ ok: true, address: signer })
   res.cookies.set(ADMIN_SESSION_COOKIE, token, {
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'strict',
-    maxAge: SESSION_TTL_SECONDS,
+    maxAge: ADMIN_SESSION_TTL_SECONDS,
     path: '/',
   })
   return res

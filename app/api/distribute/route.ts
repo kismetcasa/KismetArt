@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { verifyMessage } from 'viem'
 import { isAddress, isValidTokenId } from '@/lib/address'
-import { INPROCESS_API } from '@/lib/inprocess'
+import { INPROCESS_API, inprocessUrl } from '@/lib/inprocess'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
 import { consumeNonce } from '@/lib/profile'
 import { getStoredSplits, hasRegisteredSplits } from '@/lib/splits'
@@ -100,11 +100,8 @@ export async function POST(req: NextRequest) {
   // accept any caller in the list (creator OR delegated admin) via
   // .includes() below, so ordering doesn't matter here.
   try {
-    const momentUrl = new URL(`${INPROCESS_API}/moment`)
-    momentUrl.searchParams.set('collectionAddress', collectionAddress)
-    momentUrl.searchParams.set('tokenId', tokenId)
-    momentUrl.searchParams.set('chainId', '8453')
-    const momentRes = await fetch(momentUrl.toString(), { headers: { Accept: 'application/json' } })
+    const momentUrl = inprocessUrl('/moment', { collectionAddress, tokenId, chainId: '8453' })
+    const momentRes = await fetch(momentUrl, { headers: { Accept: 'application/json' } })
     if (!momentRes.ok) {
       return errorResponse(403, 'Could not verify moment creator')
     }

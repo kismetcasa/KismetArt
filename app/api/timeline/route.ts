@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getTrackedCollectionsByScope, getCreatedMintsSet, type CollectionScope } from '@/lib/kv'
-import { INPROCESS_API } from '@/lib/inprocess'
+import { inprocessUrl } from '@/lib/inprocess'
 import { redis, FEATURED_KEY } from '@/lib/redis'
 import { getCollectedMembers } from '@/lib/collected'
 import { getHiddenMomentsSet } from '@/lib/hiddenMoments'
@@ -9,12 +9,9 @@ import { getSessionAddress } from '@/lib/session'
 import { getMomentMetaBatch } from '@/lib/notifications'
 
 async function fetchCollection(collection: string, limit: number): Promise<unknown[]> {
-  const url = new URL(`${INPROCESS_API}/timeline`)
-  url.searchParams.set('collection', collection)
-  url.searchParams.set('limit', String(limit))
-  url.searchParams.set('chain_id', '8453')
+  const url = inprocessUrl('/timeline', { collection, limit, chain_id: '8453' })
   try {
-    const res = await fetch(url.toString(), { headers: { Accept: 'application/json' }, next: { revalidate: 30 } })
+    const res = await fetch(url, { headers: { Accept: 'application/json' }, next: { revalidate: 30 } })
     const text = await res.text()
     const data = JSON.parse(text)
     return Array.isArray(data.moments) ? data.moments : []

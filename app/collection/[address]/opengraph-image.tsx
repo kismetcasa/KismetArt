@@ -1,6 +1,6 @@
 import { ImageResponse } from 'next/og'
 import { isAddress } from '@/lib/address'
-import { INPROCESS_API, shortAddress } from '@/lib/inprocess'
+import { inprocessUrl, shortAddress } from '@/lib/inprocess'
 import {
   shareCard,
   SHARE_CARD_SIZE,
@@ -28,13 +28,11 @@ interface CollectionRow {
 
 async function fetchCollection(address: string): Promise<CollectionRow | null> {
   try {
-    const url = new URL(`${INPROCESS_API}/collection`)
-    url.searchParams.set('collectionAddress', address)
-    url.searchParams.set('chainId', '8453')
+    const url = inprocessUrl('/collection', { collectionAddress: address, chainId: '8453' })
     // 24h cache — see opengraph-image.tsx in moment route for rationale.
     // Collection metadata is similarly long-lived; the extra freshness of
     // a 5min TTL isn't worth the inprocess fetch traffic.
-    const res = await fetch(url.toString(), { next: { revalidate: 86400 } })
+    const res = await fetch(url, { next: { revalidate: 86400 } })
     if (!res.ok) return null
     return (await res.json()) as CollectionRow
   } catch {

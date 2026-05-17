@@ -1,5 +1,5 @@
 import { cache } from 'react'
-import { INPROCESS_API, type MomentDetail } from './inprocess'
+import { inprocessUrl, type MomentDetail } from './inprocess'
 import { isMomentHidden } from './hiddenMoments'
 import { getMomentMeta } from './notifications'
 
@@ -19,12 +19,9 @@ export const fetchMomentDetail = cache(async (
   tokenId: string,
 ): Promise<MomentDetail | null> => {
   try {
-    const url = new URL(`${INPROCESS_API}/moment`)
-    url.searchParams.set('collectionAddress', address)
-    url.searchParams.set('tokenId', tokenId)
-    url.searchParams.set('chainId', '8453')
+    const url = inprocessUrl('/moment', { collectionAddress: address, tokenId, chainId: '8453' })
     const [res, hidden] = await Promise.all([
-      fetch(url.toString(), { next: { revalidate: 60 } }),
+      fetch(url, { next: { revalidate: 60 } }),
       isMomentHidden(address, tokenId),
     ])
     if (!res.ok) return null

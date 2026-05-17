@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAddress, isValidTokenId } from '@/lib/address'
-import { INPROCESS_API } from '@/lib/inprocess'
+import { inprocessUrl } from '@/lib/inprocess'
 import { isMomentHidden } from '@/lib/hiddenMoments'
 import { isCollectionHidden } from '@/lib/hiddenCollections'
 import { errorResponse } from '@/lib/apiResponse'
@@ -17,12 +17,13 @@ async function fetchCreator(
   chainId: string,
 ): Promise<{ address: string; username: string | null } | null> {
   try {
-    const url = new URL(`${INPROCESS_API}/timeline`)
-    url.searchParams.set('collection', collectionAddress)
     // We only need the row for this tokenId; cap small to keep upstream cheap.
-    url.searchParams.set('limit', '50')
-    url.searchParams.set('chain_id', chainId)
-    const res = await fetch(url.toString(), {
+    const url = inprocessUrl('/timeline', {
+      collection: collectionAddress,
+      limit: 50,
+      chain_id: chainId,
+    })
+    const res = await fetch(url, {
       headers: { Accept: 'application/json' },
       next: { revalidate: 60 },
     })
@@ -60,13 +61,10 @@ export async function GET(req: NextRequest) {
     return errorResponse(400, 'Invalid tokenId')
   }
 
-  const url = new URL(`${INPROCESS_API}/moment`)
-  url.searchParams.set('collectionAddress', collectionAddress)
-  url.searchParams.set('tokenId', tokenId)
-  url.searchParams.set('chainId', chainId)
+  const url = inprocessUrl('/moment', { collectionAddress, tokenId, chainId })
 
   const [upstream, momentHidden, collectionHidden, creator] = await Promise.all([
-    fetch(url.toString(), {
+    fetch(url, {
       headers: { Accept: 'application/json' },
       next: { revalidate: 60 },
     }),

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAddress, isValidTokenId } from '@/lib/address'
-import { INPROCESS_API } from '@/lib/inprocess'
+import { inprocessUrl } from '@/lib/inprocess'
 import { errorResponse } from '@/lib/apiResponse'
 
 export async function GET(req: NextRequest) {
@@ -23,13 +23,14 @@ export async function GET(req: NextRequest) {
     return errorResponse(400, 'Invalid offset')
   }
 
-  const url = new URL(`${INPROCESS_API}/moment/comments`)
-  url.searchParams.set('collectionAddress', collectionAddress)
-  url.searchParams.set('tokenId', tokenId)
-  url.searchParams.set('chainId', chainId)
-  if (offset !== '0') url.searchParams.set('offset', offset)
+  const url = inprocessUrl('/moment/comments', {
+    collectionAddress,
+    tokenId,
+    chainId,
+    offset: offset !== '0' ? offset : undefined,
+  })
 
-  const res = await fetch(url.toString(), {
+  const res = await fetch(url, {
     headers: { Accept: 'application/json' },
     next: { revalidate: 30 },
   })

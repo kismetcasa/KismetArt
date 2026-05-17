@@ -12,7 +12,7 @@ const keyByAddress = (address: string) =>
   `kismetart:profile:${address.toLowerCase()}`
 const keyNonce = (address: string) =>
   `kismetart:nonce:${address.toLowerCase()}`
-const KEY_PROFILES = 'kismetart:profiles'
+export const KEY_PROFILES = 'kismetart:profiles'
 
 export async function getProfile(address: string): Promise<Profile> {
   const raw = await redis.get<string | Profile>(keyByAddress(address))
