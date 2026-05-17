@@ -1,23 +1,14 @@
 import { ModalOverlay } from '@/components/ModalOverlay'
 
 /**
- * Renders instantly when the user clicks a card and the IR route's
- * server work (params, cookie read, /moment fetch) hasn't resolved
- * yet. Without this, Next.js holds the old URL until the async page
- * completes — clicks feel laggy on cold cache. With it, the URL
- * updates immediately and the user sees the overlay skeleton.
- *
- * Skeleton mirrors the canonical detail layout (square media on
- * left, info column on right) so the transition into the real
- * MomentDetailView doesn't visibly shift.
+ * Renders while the IR route's server work (params + cookie read +
+ * /moment fetch) resolves. Without it, Next.js holds the old URL and
+ * clicks feel laggy on cold cache.
  */
 export default function ModalMomentLoading() {
   return (
     <ModalOverlay>
       <div className="max-w-6xl mx-auto pb-16 animate-pulse">
-        <div className="px-4 py-3 border-b border-[#2a2a2a]">
-          <div className="h-3 w-12 bg-[#1a1a1a]" />
-        </div>
         <div className="md:grid md:grid-cols-2 border-b border-[#2a2a2a]">
           <div className="border-b border-[#2a2a2a] md:border-b-0 md:border-r md:border-r-[#2a2a2a]">
             <div className="aspect-square bg-[#111]" />
