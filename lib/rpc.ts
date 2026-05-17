@@ -7,9 +7,21 @@ import { base } from 'viem/chains'
 // transport: http() with no URL hits mainnet.base.org which rate-limits
 // aggressively under load and surfaces as "over rate limit" errors in
 // the airdrop authorize precheck and similar paths.
-export function serverBaseClient() {
+//
+// Cached at module scope: viem's client is stateless and undici already
+// keeps sockets alive across `fetch()` calls, so re-creating the client
+// per request was pure allocation overhead.
+function createClient() {
   return createPublicClient({
     chain: base,
     transport: http(process.env.NEXT_PUBLIC_BASE_RPC_URL),
   })
+}
+
+let cached: ReturnType<typeof createClient> | undefined
+
+export function serverBaseClient() {
+  if (cached) return cached
+  cached = createClient()
+  return cached
 }

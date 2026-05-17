@@ -233,8 +233,12 @@ export async function GET(req: NextRequest) {
       return scoreB - scoreA
     })
   } else if (sort === 'trending') {
-    // Fetch all trending scores from Redis in one call (flat alternating member/score array)
-    const raw = (await redis.zrange('kismetart:trending', 0, -1, {
+    // Fetch top trending scores in one call (flat alternating member/score array).
+    // Capped at top 10k so the zset's lifetime growth doesn't bloat this read
+    // (every collect is an unbounded ZINCRBY). Moments past the cap fall back
+    // to score 0 via scoreMap.get's undefined → 0 coalesce below, putting them
+    // at the bottom of trending sort — same effective ordering as fetching all.
+    const raw = (await redis.zrange('kismetart:trending', 0, 9999, {
       rev: true,
       withScores: true,
     })) as (string | number)[]
