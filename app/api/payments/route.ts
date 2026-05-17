@@ -11,7 +11,9 @@ export async function GET(req: NextRequest) {
     return errorResponse(400, 'Invalid artist address')
   }
 
-  const url = inprocessUrl('/payments', { artist: artist ?? undefined })
+  // `?artist=` (empty value) and missing param should both omit the upstream
+  // filter, matching the original `if (artist) set(...)` behavior.
+  const url = inprocessUrl('/payments', { artist: artist || undefined })
 
   try {
     const res = await fetch(url, {
