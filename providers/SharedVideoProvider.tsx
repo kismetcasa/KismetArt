@@ -40,12 +40,10 @@ import { gatewayUrls } from '@/lib/arweave/gateways'
  *   - posterFailed / videoFailed state for graceful degradation.
  */
 
-// ─── Z-index override context ───────────────────────────────────────
 // Overlay surfaces (intercepting-route modals, lightbox) wrap their
 // children in <SharedVideoZIndexProvider> to override the z-index any
-// nested <SharedVideoSlot> uses for its video element — so the video
-// stacks above the overlay's backdrop instead of being hidden behind it.
-// Defaults to undefined: slot uses its own zIndex prop or the default.
+// nested <SharedVideoSlot> uses — so the video stacks above the
+// overlay's backdrop instead of being hidden behind it.
 
 const SharedVideoZIndexCtx = createContext<number | undefined>(undefined)
 
@@ -72,7 +70,6 @@ export function useSharedVideoZIndex(): number | undefined {
 interface Slot {
   ref: HTMLElement
   controls: boolean
-  /** Z-index for the video element while this slot is active. */
   zIndex: number
   /** Fired when every gateway has errored — caller drops the slot and
    *  shows the poster-only fallback. */
@@ -89,9 +86,21 @@ interface ManagedVideo {
   observer: IntersectionObserver | null
   gateways: string[]
   gatewayIndex: number
-  src: string
   loaded: boolean
   lastActiveAt: number
+  /** Set true by destroyVideo so the event listeners can bail if they
+   *  fire after teardown (the AbortSignal removes them but a queued
+   *  event may still be dispatched). */
+  destroyed: boolean
+  /** Removes both event listeners on the video element in one shot. */
+  abort: AbortController
+  /** Last-applied rect for the dirty-check in positionElement — scroll
+   *  fires per-pixel and most ticks don't move the slot. NaN sentinels
+   *  guarantee the first call writes. */
+  lastTop: number
+  lastLeft: number
+  lastWidth: number
+  lastHeight: number
 }
 
 interface ContextValue {
@@ -133,18 +142,27 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
   function positionElement(video: ManagedVideo, slot: Slot) {
     const rect = slot.ref.getBoundingClientRect()
     const el = video.el
-    el.style.top = `${rect.top}px`
-    el.style.left = `${rect.left}px`
-    el.style.width = `${rect.width}px`
-    el.style.height = `${rect.height}px`
+    if (
+      rect.top !== video.lastTop ||
+      rect.left !== video.lastLeft ||
+      rect.width !== video.lastWidth ||
+      rect.height !== video.lastHeight
+    ) {
+      el.style.top = `${rect.top}px`
+      el.style.left = `${rect.left}px`
+      el.style.width = `${rect.width}px`
+      el.style.height = `${rect.height}px`
+      video.lastTop = rect.top
+      video.lastLeft = rect.left
+      video.lastWidth = rect.width
+      video.lastHeight = rect.height
+    }
     el.style.zIndex = String(slot.zIndex)
     el.style.pointerEvents = slot.controls ? 'auto' : 'none'
     el.controls = slot.controls
     // preload="auto" on committed-viewing surfaces (detail page, lightbox)
     // so the browser buffers aggressively; "metadata" on previews so a
-    // grid of cards doesn't saturate bandwidth simultaneously. Hint
-    // only — browsers may ignore changes after initial load — but
-    // matches caller intent in case the element is later replaced.
+    // grid of cards doesn't saturate bandwidth simultaneously.
     el.preload = slot.controls ? 'auto' : 'metadata'
     if (video.loaded) el.style.visibility = 'visible'
   }
@@ -159,7 +177,6 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
 
     // Replace any prior IntersectionObserver. Controlled surfaces
     // (detail page, lightbox) skip IO — the user owns play/pause there.
-    // Otherwise pause when off-screen.
     video.observer?.disconnect()
     video.observer = null
     if (!slot.controls) {
@@ -186,8 +203,10 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
   }
 
   function destroyVideo(video: ManagedVideo) {
+    video.destroyed = true
     video.observer?.disconnect()
     if (video.releaseTimer !== null) clearTimeout(video.releaseTimer)
+    video.abort.abort()
     video.el.pause()
     video.el.removeAttribute('src')
     video.el.load()
@@ -196,8 +215,6 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
 
   function evictIdleIfOverCap() {
     if (poolRef.current.size <= MAX_POOL_SIZE) return
-    // Collect candidates first, then sort — avoids TypeScript narrowing
-    // issues with closure-captured `let` variables inside forEach.
     const candidates: Array<{ src: string; video: ManagedVideo }> = []
     poolRef.current.forEach((video, src) => {
       if (video.slots.length === 0) candidates.push({ src, video })
@@ -225,6 +242,7 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     el.style.transition =
       'top 0.2s ease, left 0.2s ease, width 0.2s ease, height 0.2s ease'
 
+    const abort = new AbortController()
     const video: ManagedVideo = {
       el,
       slots: [],
@@ -232,17 +250,18 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
       observer: null,
       gateways,
       gatewayIndex: 0,
-      src,
       loaded: false,
       lastActiveAt: Date.now(),
+      destroyed: false,
+      abort,
+      lastTop: NaN,
+      lastLeft: NaN,
+      lastWidth: NaN,
+      lastHeight: NaN,
     }
 
-    // Gateway walking. On error, try the next gateway. When the pool
-    // is exhausted, notify every registered slot's onError so each
-    // caller can drop the slot and show the poster fallback — then
-    // destroy the broken element instead of letting it linger in
-    // document.body until the 5-minute idle eviction.
     el.addEventListener('error', () => {
+      if (video.destroyed) return
       const next = video.gatewayIndex + 1
       if (next < video.gateways.length) {
         video.gatewayIndex = next
@@ -257,31 +276,27 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
         video.slots = []
         slotsToNotify.forEach((s) => s.onError?.())
         destroyVideo(video)
-        poolRef.current.delete(video.src)
+        poolRef.current.delete(src)
       }
-    })
+    }, { signal: abort.signal })
 
-    // First-frame paint: reveal the element. Same element persists
-    // across surfaces, so this fires once per src.
     el.addEventListener('loadeddata', () => {
+      if (video.destroyed) return
       video.loaded = true
       el.style.opacity = '1'
       if (video.slots.length > 0) el.style.visibility = 'visible'
-    })
+    }, { signal: abort.signal })
 
     el.src = gateways[0] ?? src
     // Append to document.body, NOT a React-rendered container. A
     // fixed-position container would create its own stacking context
     // and bound child z-indexes inside it — videos couldn't visually
-    // sit above modals (z-50) or overlays. Living directly in body,
-    // each video's z-index applies in body's stacking context.
+    // sit above modals (z-50) or overlays.
     document.body.appendChild(el)
 
     return video
   }
 
-  // Stable function identities — the pool state lives in poolRef.current,
-  // so the context value never needs to change across renders.
   const value = useMemo<ContextValue>(
     () => ({
       acquire(src: string, slot: Slot) {
@@ -291,8 +306,6 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
           poolRef.current.set(src, video)
           evictIdleIfOverCap()
         }
-        // Push to the front of the slots list — this slot is now
-        // most-recent and becomes the active one.
         video.slots.unshift(slot)
         activateSlot(video, slot)
         return () => {
@@ -302,10 +315,6 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
           const wasActive = idx === 0
           video.slots.splice(idx, 1)
           if (!wasActive) return
-          // Active slot released. If there's another registered slot
-          // (e.g. card slot still mounted while overlay slot just
-          // released), fall back to it immediately — no grace timer
-          // needed because we have somewhere to go.
           const next = video.slots[0]
           if (next) {
             activateSlot(video, next)
@@ -326,20 +335,13 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
         if (video && active) positionElement(video, active)
       },
     }),
-    // All helper functions close over refs (stable across renders) — no
-    // need to re-create the context value when the component re-renders.
+    // All helpers close over poolRef (stable across renders) — context
+    // value never needs to change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   )
 
-  // Periodic eviction of idle entries past the TTL. Also runs full
-  // destroy on provider unmount (cleanup) so we don't leak video
-  // elements in document.body if the provider is ever swapped out.
   useEffect(() => {
-    // Capture the Map identity at effect time. poolRef.current never
-    // gets reassigned (it's set once via useRef's initial value), so
-    // this is the same Map at cleanup time — satisfying the lint rule
-    // without changing behaviour.
     const pool = poolRef.current
     const interval = window.setInterval(() => {
       const now = Date.now()
@@ -352,9 +354,8 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     }, 60_000)
     return () => {
       clearInterval(interval)
-      // Defensive: if the provider unmounts (shouldn't happen in
-      // normal use since it's in the root layout), destroy all videos
-      // so they don't outlive the React tree as orphan DOM nodes.
+      // Defensive: destroy all videos on provider unmount so they
+      // don't outlive the React tree as orphan DOM nodes.
       pool.forEach((video) => destroyVideo(video))
       pool.clear()
     }

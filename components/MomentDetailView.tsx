@@ -34,18 +34,7 @@ import { CopyAddress } from './CopyAddress'
 import { SplitsPanel } from './SplitsPanel'
 import { useAdmin } from '@/contexts/AdminContext'
 import { toastError } from '@/lib/toast'
-import { isOperatorAddress } from '@/lib/config'
-
-// `momentAdmins[]` is unordered and may include the operator smart
-// wallet (no Kismet profile) or a 0xSplits SplitWallet (no profile
-// either, but detecting it needs a chain read). Filtering operator
-// addresses covers the common case for moments minted outside the
-// Kismet flow where the creator-fallback chain has to use this list.
-function pickFirstNonOperatorAdmin(
-  admins: readonly string[] | undefined,
-): string | undefined {
-  return admins?.find((a) => !isOperatorAddress(a))
-}
+import { pickFirstNonOperatorAdmin } from '@/lib/momentAuthz'
 
 interface Props {
   address: string
@@ -627,8 +616,8 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
           a "back" link that points to "/" would navigate away from the
           feed instead of just closing the overlay. */}
       {(!inOverlay || ownedCount > 0) && (
-        <div className="px-4 py-3 border-b border-[#2a2a2a] flex items-center justify-between gap-3">
-          {!inOverlay ? (
+        <div className={`px-4 py-3 border-b border-[#2a2a2a] flex items-center gap-3 ${inOverlay ? 'justify-end' : 'justify-between'}`}>
+          {!inOverlay && (
             <Link
               href="/"
               className="inline-flex items-center gap-1.5 text-xs font-mono text-[#555] hover:text-[#888] transition-colors"
@@ -636,8 +625,6 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
               <ArrowLeft size={12} />
               back
             </Link>
-          ) : (
-            <span />
           )}
           {ownedCount > 0 && (
             <p className="text-[10px] font-mono text-[#555] uppercase tracking-widest">

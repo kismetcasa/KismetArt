@@ -21,8 +21,7 @@ interface Props {
    *  drops the slot and falls back to poster-only rendering. */
   onError?: () => void
   /** Visual className applied to the placeholder div the pool positions
-   *  the video element over. Use the same sizing/layout classes you'd
-   *  use on the <video> directly. */
+   *  the video element over. */
   className?: string
 }
 
@@ -36,7 +35,8 @@ const DEFAULT_Z_INDEX = 10
  * On mount: registers a slot with the pool. On unmount: releases (the
  * pool starts a 1-second grace timer so route transitions don't destroy
  * the element). ResizeObserver + window scroll/resize listeners keep
- * the video positioned correctly as the slot's bounds change.
+ * the video positioned correctly as the slot's bounds change — coalesced
+ * via rAF since `scroll` fires per-pixel on most browsers.
  */
 export function SharedVideoSlot({
   src,
@@ -50,15 +50,11 @@ export function SharedVideoSlot({
   const overrideZIndex = useSharedVideoZIndex()
 
   // Keep latest onError in a ref so the acquire effect doesn't re-run
-  // every time the parent re-creates the callback. Without this, an
-  // inline `onError={() => setX(true)}` in the parent would churn
-  // release+acquire on every parent render, defeating the persistence.
+  // on every parent render. Direct write during render is the standard
+  // ref-on-render pattern — refs aren't reactive so this is safe.
   const onErrorRef = useRef(onError)
-  useEffect(() => {
-    onErrorRef.current = onError
-  })
+  onErrorRef.current = onError
 
-  // Resolve effective z-index: explicit prop > overlay context > default.
   const finalZIndex = zIndex ?? overrideZIndex ?? DEFAULT_Z_INDEX
 
   useEffect(() => {
@@ -72,20 +68,28 @@ export function SharedVideoSlot({
       onError: () => onErrorRef.current?.(),
     })
 
-    // Reposition the video on any layout change that affects the slot.
-    // ResizeObserver catches element-size changes; window scroll/resize
-    // catch viewport changes. Scroll is passive — no performance cost.
-    const ro = new ResizeObserver(() => ctx.refresh(src))
+    // rAF-coalesce repositioning. Scroll fires per-pixel on most
+    // browsers; without coalescing every tick triggers a getBoundingClientRect
+    // + style writes per slot per frame — N×forced-layout on a feed.
+    let rafPending = false
+    const scheduleRefresh = () => {
+      if (rafPending) return
+      rafPending = true
+      requestAnimationFrame(() => {
+        rafPending = false
+        ctx.refresh(src)
+      })
+    }
+    const ro = new ResizeObserver(scheduleRefresh)
     ro.observe(el)
-    const refresh = () => ctx.refresh(src)
-    window.addEventListener('scroll', refresh, { passive: true })
-    window.addEventListener('resize', refresh)
+    window.addEventListener('scroll', scheduleRefresh, { passive: true })
+    window.addEventListener('resize', scheduleRefresh)
 
     return () => {
       release()
       ro.disconnect()
-      window.removeEventListener('scroll', refresh)
-      window.removeEventListener('resize', refresh)
+      window.removeEventListener('scroll', scheduleRefresh)
+      window.removeEventListener('resize', scheduleRefresh)
     }
   }, [ctx, src, controls, finalZIndex])
 

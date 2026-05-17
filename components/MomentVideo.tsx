@@ -29,11 +29,6 @@ interface MomentVideoProps {
   /** className for the slot placeholder (sizing + layout classes you'd
    *  normally pass to <video> directly). */
   className?: string
-  /** Vestigial — pool ignores caller-passed `preload`. The pool sets
-   *  preload='auto' on controlled slots, 'metadata' on previews. Kept
-   *  in the prop signature for backward-compatibility with call sites
-   *  that previously passed it; safe to omit at the callsite. */
-  preload?: 'none' | 'metadata' | 'auto'
   /** Fired once every gateway has errored for the video (separate from
    *  poster errors). Parent can swap in a placeholder. */
   onAllError?: () => void
@@ -72,45 +67,44 @@ export function MomentVideo({
   useEffect(() => { setPosterFailed(false) }, [poster])
 
   // Per-surface video failure. The pool walks gateways internally; when
-  // all are exhausted it fires onError on the active slot. We unmount
-  // the slot and show poster-only.
+  // all are exhausted it fires onError on the active slot.
   const [videoFailed, setVideoFailed] = useState(false)
   useEffect(() => { setVideoFailed(false) }, [src])
 
   // Surface the catastrophic "no video AND no poster" case to the
-  // parent via onAllError. Done in an effect, not inside render, to
-  // avoid the React anti-pattern of side effects during render
-  // (matters under concurrent rendering / Strict Mode).
+  // parent via onAllError. Done in an effect to avoid a side effect
+  // during render.
   useEffect(() => {
     if (videoFailed && (!poster || posterFailed)) onAllError?.()
   }, [videoFailed, posterFailed, poster, onAllError])
 
-  // All-gateways-exhausted fallback for video + poster: render the
-  // poster directly so the surface isn't blank.
+  // Shared poster + thumbhash layer used by both the main render and
+  // the videoFailed fallback. Extracted to keep the two render paths
+  // from drifting.
+  const posterLayer = (posterSrc: string) => (
+    <>
+      {blurDataURL && (
+        <span
+          aria-hidden
+          className="absolute inset-0 bg-cover bg-center pointer-events-none"
+          style={{ backgroundImage: `url(${blurDataURL})` }}
+        />
+      )}
+      <MomentImg
+        src={posterSrc}
+        alt=""
+        // skipProxy: posters route direct from gateway, not through
+        // /api/img. See lib/media/shareImage.ts for the rationale.
+        skipProxy
+        className={`absolute inset-0 ${className ?? ''}`.trim()}
+        onAllError={() => setPosterFailed(true)}
+      />
+    </>
+  )
+
   if (videoFailed) {
-    if (!poster || posterFailed) {
-      return null
-    }
-    if (showPosterLayer) {
-      return (
-        <>
-          {blurDataURL && (
-            <span
-              aria-hidden
-              className="absolute inset-0 bg-cover bg-center pointer-events-none"
-              style={{ backgroundImage: `url(${blurDataURL})` }}
-            />
-          )}
-          <MomentImg
-            src={poster}
-            alt=""
-            skipProxy
-            className={`absolute inset-0 ${className ?? ''}`.trim()}
-            onAllError={() => setPosterFailed(true)}
-          />
-        </>
-      )
-    }
+    if (!poster || posterFailed) return null
+    if (showPosterLayer) return posterLayer(poster)
     const posterFallback = isProxiable(poster) ? proxyUrl(poster) : poster
     // eslint-disable-next-line @next/next/no-img-element
     return <img src={posterFallback} alt="" className={className} />
@@ -121,26 +115,7 @@ export function MomentVideo({
 
   return (
     <>
-      {showImageLayer && (
-        <>
-          {blurDataURL && (
-            <span
-              aria-hidden
-              className="absolute inset-0 bg-cover bg-center pointer-events-none"
-              style={{ backgroundImage: `url(${blurDataURL})` }}
-            />
-          )}
-          <MomentImg
-            src={poster!}
-            alt=""
-            // skipProxy: posters route direct from gateway, not through
-            // /api/img. See lib/media/shareImage.ts for the rationale.
-            skipProxy
-            className={`absolute inset-0 ${className ?? ''}`.trim()}
-            onAllError={() => setPosterFailed(true)}
-          />
-        </>
-      )}
+      {showImageLayer && posterLayer(poster!)}
       {showThumbhashLayer && blurDataURL && (
         <span
           aria-hidden

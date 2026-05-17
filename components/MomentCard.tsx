@@ -157,186 +157,184 @@ export function MomentCard({ moment, hidePriceSupply, priority }: MomentCardProp
   const isTextMoment = meta.content?.mime === 'text/plain'
   const textSnippet = useTextContent(isTextMoment ? meta.content?.uri : undefined)
   return (
-    <>
-      <article className="group flex flex-col bg-[#161616] border border-[#2a2a2a] overflow-hidden">
-        {/* Media — wrapped in <Link> so the click triggers Next.js's
-            intercepting route at app/@modal/(.)moment/.../page.tsx. The
-            feed stays mounted; the detail page renders as an overlay
-            above. Combined with SharedVideoProvider, the same <video>
-            element CSS-transitions from card to overlay without re-mount.
-            Direct URL load of /moment/X bypasses the interception and
-            hits the canonical detail page. */}
-        <Link
-          href={`/moment/${moment.address}/${moment.token_id}`}
-          onMouseEnter={() => {
-            prefetchComments()
-            prefetchTextContent()
-            // Link auto-prefetches on hover (in production) but the
-            // explicit prefetch warms the route bundle alongside the
-            // comments/text caches.
-            router.prefetch(`/moment/${moment.address}/${moment.token_id}`)
-          }}
-          className="cursor-pointer relative aspect-square bg-[#111] overflow-hidden block"
-        >
-          {isAdmin && (
-            <button
-              onClick={(e) => {
-                // Star sits inside the <Link>; preventDefault stops the
-                // navigation that would otherwise fire, stopPropagation
-                // belt-and-suspenders any future ancestor click handler.
-                e.preventDefault()
-                e.stopPropagation()
-                toggleFeatured(moment.address, moment.token_id)
-              }}
-              className={`absolute top-2 left-2 z-10 p-1 transition-colors ${
-                isFeatured ? 'text-yellow-400' : 'text-[#333] hover:text-[#888]'
-              }`}
-              title={isFeatured ? 'Unfeature' : 'Feature'}
-            >
-              <Star size={16} fill={isFeatured ? 'currentColor' : 'none'} strokeWidth={1.5} />
-            </button>
-          )}
-          {moment.hidden && (
-            <span className="absolute top-2 right-2 z-10 p-1 bg-[#0d0d0d]/80 border border-[#2a2a2a]">
-              <EyeOff size={10} className="text-[#555]" />
-            </span>
-          )}
-          {isVideo && meta.animation_url ? (
-            <MomentVideo
-              src={meta.animation_url}
-              poster={meta.image}
-              thumbhash={meta.kismet_thumbhash}
-              showPosterLayer
-              className="w-full h-full object-contain"
-            />
-          ) : meta.image && !imgError ? (
-            <MomentImage
-              src={meta.image}
-              alt={meta.name ?? 'moment'}
-              fill
-              className="object-contain transition-transform duration-500 group-hover:scale-105"
-              onAllError={() => setImgError(true)}
-              sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-              mime={meta.content?.mime}
-              thumbhash={meta.kismet_thumbhash}
-              priority={priority}
-            />
-          ) : isTextMoment ? (
-            <div className="w-full h-full flex flex-col p-5 bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a]">
-              <span className="text-[10px] font-mono text-[#555] uppercase tracking-widest mb-2">writing</span>
-              {meta.name && (
-                <p className="text-sm sm:text-base font-mono text-[#efefef] truncate mb-2">
-                  {meta.name}
-                </p>
-              )}
-              {textSnippet && (
-                <p className="text-xs sm:text-sm font-mono text-[#bbb] leading-relaxed whitespace-pre-wrap">
-                  {textSnippet}
-                </p>
-              )}
-              {!meta.name && !textSnippet && (
-                <p className="text-xs sm:text-sm font-mono text-[#bbb]">untitled</p>
-              )}
-            </div>
-          ) : (
-            <div className="w-full h-full flex items-center justify-center">
-              <span className="text-[#2a2a2a] font-mono text-xs">no preview</span>
-            </div>
-          )}
-        </Link>
-
-        {/* Info */}
-        <div className="px-4 pt-4 pb-3 flex flex-col gap-1.5">
-          <div className="flex items-start gap-2">
-            <h3 className="text-sm text-[#efefef] font-mono truncate flex-1 min-w-0">
-              {meta.name ?? `#${moment.token_id}`}
-            </h3>
-            <button
-              onClick={handleCopyLink}
-              title="copy link"
-              className="flex-shrink-0 mt-0.5 text-[#444] hover:text-[#888] transition-colors"
-            >
-              {linkCopied
-                ? <Check size={11} className="text-[#6ee7b7]" />
-                : <Copy size={11} />}
-            </button>
-          </div>
-          <Link
-            href={`/profile/${moment.creator.address}`}
-            onClick={(e) => e.stopPropagation()}
-            className="flex items-center gap-1.5 group/creator w-fit"
-            title={moment.creator.address}
-          >
-            <ProfileAvatar address={moment.creator.address} avatarUrl={creatorAvatar} size={16} />
-            <span className="text-xs text-[#555] font-mono group-hover/creator:text-[#888] transition-colors">{creatorName}</span>
-          </Link>
-          {collectionName && (
-            <Link
-              href={`/collection/${moment.address}`}
-              onClick={(e) => e.stopPropagation()}
-              className="flex items-center gap-1.5 group/collection w-fit"
-              title={collectionName}
-            >
-              {collectionImage && !collectionImageFailed && (
-                <div className="w-4 h-4 relative flex-shrink-0 bg-[#1a1a1a] overflow-hidden">
-                  <MomentImage
-                    src={collectionImage}
-                    alt=""
-                    fill
-                    className="object-cover"
-                    sizes="16px"
-                    onAllError={() => setCollectionImageFailed(true)}
-                  />
-                </div>
-              )}
-              <span className="text-xs text-[#555] font-mono group-hover/collection:text-[#888] transition-colors">
-                {collectionName}
-              </span>
-            </Link>
-          )}
-        </div>
-
-        {/* Actions row: [price|supply] [list] [collect] */}
-        <div className="px-4 pb-4 flex gap-2 items-stretch">
-          {!hidePriceSupply && owned === 0 && !collected && (
-            <div className="flex border border-[#2a2a2a] flex-none">
-              <div className="px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
-                <span className="text-[11px] font-mono accent-grad">{price ?? '…'}</span>
-              </div>
-              {maxSupply !== null && maxSupply !== undefined && maxSupply > 0 && (
-                <div className="border-l border-[#2a2a2a] px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
-                  <span className="text-[11px] font-mono text-[#444]">{maxSupply.toLocaleString()}</span>
-                </div>
-              )}
-            </div>
-          )}
-          {owned > 0 && (
-            <div className="flex-1 min-w-0">
-              <ListButton
-                collectionAddress={moment.address}
-                tokenId={moment.token_id}
-                name={meta.name}
-                image={meta.image ? resolveUri(meta.image) : undefined}
-                creatorAddress={moment.creator?.address}
-                contentUri={meta.content?.uri}
-                contentMime={meta.content?.mime}
-                buttonClassName={hidePriceSupply ? 'py-3' : 'py-2'}
-              />
-            </div>
-          )}
+    <article className="group flex flex-col bg-[#161616] border border-[#2a2a2a] overflow-hidden">
+      {/* Media — wrapped in <Link> so the click triggers Next.js's
+          intercepting route at app/@modal/(.)moment/.../page.tsx. The
+          feed stays mounted; the detail page renders as an overlay
+          above. Combined with SharedVideoProvider, the same <video>
+          element CSS-transitions from card to overlay without re-mount.
+          Direct URL load of /moment/X bypasses the interception and
+          hits the canonical detail page. */}
+      <Link
+        href={`/moment/${moment.address}/${moment.token_id}`}
+        onMouseEnter={() => {
+          prefetchComments()
+          prefetchTextContent()
+          // Link auto-prefetches on hover (in production) but the
+          // explicit prefetch warms the route bundle alongside the
+          // comments/text caches.
+          router.prefetch(`/moment/${moment.address}/${moment.token_id}`)
+        }}
+        className="cursor-pointer relative aspect-square bg-[#111] overflow-hidden block"
+      >
+        {isAdmin && (
           <button
-            onClick={handleCollect}
-            disabled={collecting || collected || owned > 0 || !collectReady}
-            className={`flex-1 ${hidePriceSupply ? 'py-2' : 'py-2.5'} text-xs font-mono tracking-wider uppercase border transition-all disabled:opacity-50 ${collecting ? 'cursor-not-allowed' : ''} ${
-              collected || owned > 0
-                ? 'text-[#8B5CF6] bg-[#8B5CF6]/10 border-[#8B5CF6]'
-                : 'text-[#555] border-[#2a2a2a] hover:bg-gradient-to-r hover:from-[#8B5CF6] hover:to-[#C084FC] hover:text-white hover:border-[#8B5CF6]'
+            onClick={(e) => {
+              // Star sits inside the <Link>; preventDefault stops the
+              // navigation that would otherwise fire, stopPropagation
+              // belt-and-suspenders any future ancestor click handler.
+              e.preventDefault()
+              e.stopPropagation()
+              toggleFeatured(moment.address, moment.token_id)
+            }}
+            className={`absolute top-2 left-2 z-10 p-1 transition-colors ${
+              isFeatured ? 'text-yellow-400' : 'text-[#333] hover:text-[#888]'
             }`}
+            title={isFeatured ? 'Unfeature' : 'Feature'}
           >
-            {collecting ? 'collecting…' : (collected || owned > 0) ? 'collected' : 'collect'}
+            <Star size={16} fill={isFeatured ? 'currentColor' : 'none'} strokeWidth={1.5} />
+          </button>
+        )}
+        {moment.hidden && (
+          <span className="absolute top-2 right-2 z-10 p-1 bg-[#0d0d0d]/80 border border-[#2a2a2a]">
+            <EyeOff size={10} className="text-[#555]" />
+          </span>
+        )}
+        {isVideo && meta.animation_url ? (
+          <MomentVideo
+            src={meta.animation_url}
+            poster={meta.image}
+            thumbhash={meta.kismet_thumbhash}
+            showPosterLayer
+            className="w-full h-full object-contain"
+          />
+        ) : meta.image && !imgError ? (
+          <MomentImage
+            src={meta.image}
+            alt={meta.name ?? 'moment'}
+            fill
+            className="object-contain transition-transform duration-500 group-hover:scale-105"
+            onAllError={() => setImgError(true)}
+            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            mime={meta.content?.mime}
+            thumbhash={meta.kismet_thumbhash}
+            priority={priority}
+          />
+        ) : isTextMoment ? (
+          <div className="w-full h-full flex flex-col p-5 bg-gradient-to-br from-[#1a1a1a] to-[#0a0a0a]">
+            <span className="text-[10px] font-mono text-[#555] uppercase tracking-widest mb-2">writing</span>
+            {meta.name && (
+              <p className="text-sm sm:text-base font-mono text-[#efefef] truncate mb-2">
+                {meta.name}
+              </p>
+            )}
+            {textSnippet && (
+              <p className="text-xs sm:text-sm font-mono text-[#bbb] leading-relaxed whitespace-pre-wrap">
+                {textSnippet}
+              </p>
+            )}
+            {!meta.name && !textSnippet && (
+              <p className="text-xs sm:text-sm font-mono text-[#bbb]">untitled</p>
+            )}
+          </div>
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <span className="text-[#2a2a2a] font-mono text-xs">no preview</span>
+          </div>
+        )}
+      </Link>
+
+      {/* Info */}
+      <div className="px-4 pt-4 pb-3 flex flex-col gap-1.5">
+        <div className="flex items-start gap-2">
+          <h3 className="text-sm text-[#efefef] font-mono truncate flex-1 min-w-0">
+            {meta.name ?? `#${moment.token_id}`}
+          </h3>
+          <button
+            onClick={handleCopyLink}
+            title="copy link"
+            className="flex-shrink-0 mt-0.5 text-[#444] hover:text-[#888] transition-colors"
+          >
+            {linkCopied
+              ? <Check size={11} className="text-[#6ee7b7]" />
+              : <Copy size={11} />}
           </button>
         </div>
-      </article>
-    </>
+        <Link
+          href={`/profile/${moment.creator.address}`}
+          onClick={(e) => e.stopPropagation()}
+          className="flex items-center gap-1.5 group/creator w-fit"
+          title={moment.creator.address}
+        >
+          <ProfileAvatar address={moment.creator.address} avatarUrl={creatorAvatar} size={16} />
+          <span className="text-xs text-[#555] font-mono group-hover/creator:text-[#888] transition-colors">{creatorName}</span>
+        </Link>
+        {collectionName && (
+          <Link
+            href={`/collection/${moment.address}`}
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-1.5 group/collection w-fit"
+            title={collectionName}
+          >
+            {collectionImage && !collectionImageFailed && (
+              <div className="w-4 h-4 relative flex-shrink-0 bg-[#1a1a1a] overflow-hidden">
+                <MomentImage
+                  src={collectionImage}
+                  alt=""
+                  fill
+                  className="object-cover"
+                  sizes="16px"
+                  onAllError={() => setCollectionImageFailed(true)}
+                />
+              </div>
+            )}
+            <span className="text-xs text-[#555] font-mono group-hover/collection:text-[#888] transition-colors">
+              {collectionName}
+            </span>
+          </Link>
+        )}
+      </div>
+
+      {/* Actions row: [price|supply] [list] [collect] */}
+      <div className="px-4 pb-4 flex gap-2 items-stretch">
+        {!hidePriceSupply && owned === 0 && !collected && (
+          <div className="flex border border-[#2a2a2a] flex-none">
+            <div className="px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
+              <span className="text-[11px] font-mono accent-grad">{price ?? '…'}</span>
+            </div>
+            {maxSupply !== null && maxSupply !== undefined && maxSupply > 0 && (
+              <div className="border-l border-[#2a2a2a] px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
+                <span className="text-[11px] font-mono text-[#444]">{maxSupply.toLocaleString()}</span>
+              </div>
+            )}
+          </div>
+        )}
+        {owned > 0 && (
+          <div className="flex-1 min-w-0">
+            <ListButton
+              collectionAddress={moment.address}
+              tokenId={moment.token_id}
+              name={meta.name}
+              image={meta.image ? resolveUri(meta.image) : undefined}
+              creatorAddress={moment.creator?.address}
+              contentUri={meta.content?.uri}
+              contentMime={meta.content?.mime}
+              buttonClassName={hidePriceSupply ? 'py-3' : 'py-2'}
+            />
+          </div>
+        )}
+        <button
+          onClick={handleCollect}
+          disabled={collecting || collected || owned > 0 || !collectReady}
+          className={`flex-1 ${hidePriceSupply ? 'py-2' : 'py-2.5'} text-xs font-mono tracking-wider uppercase border transition-all disabled:opacity-50 ${collecting ? 'cursor-not-allowed' : ''} ${
+            collected || owned > 0
+              ? 'text-[#8B5CF6] bg-[#8B5CF6]/10 border-[#8B5CF6]'
+              : 'text-[#555] border-[#2a2a2a] hover:bg-gradient-to-r hover:from-[#8B5CF6] hover:to-[#C084FC] hover:text-white hover:border-[#8B5CF6]'
+          }`}
+        >
+          {collecting ? 'collecting…' : (collected || owned > 0) ? 'collected' : 'collect'}
+        </button>
+      </div>
+    </article>
   )
 }

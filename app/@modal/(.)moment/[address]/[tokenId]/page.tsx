@@ -2,8 +2,8 @@ import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { EyeOff } from 'lucide-react'
 import { isAddress, isValidTokenId } from '@/lib/address'
-import { INPROCESS_API, type MomentDetail } from '@/lib/inprocess'
-import { isMomentHidden } from '@/lib/hiddenMoments'
+import { fetchMomentDetail } from '@/lib/momentDetail'
+import { pickFirstNonOperatorAdmin } from '@/lib/momentAuthz'
 import { SESSION_COOKIE, verifySession } from '@/lib/session'
 import { MomentDetailView } from '@/components/MomentDetailView'
 import { ModalOverlay } from '@/components/ModalOverlay'
@@ -31,44 +31,31 @@ interface Props {
  * over an already-loaded feed, so the user perceives "modal pops up"
  * not "page loads."
  */
-async function fetchDetail(
-  address: string,
-  tokenId: string,
-): Promise<MomentDetail | null> {
-  try {
-    const url = new URL(`${INPROCESS_API}/moment`)
-    url.searchParams.set('collectionAddress', address)
-    url.searchParams.set('tokenId', tokenId)
-    url.searchParams.set('chainId', '8453')
-    const [res, hidden] = await Promise.all([
-      fetch(url.toString(), { next: { revalidate: 60 } }),
-      isMomentHidden(address, tokenId),
-    ])
-    if (!res.ok) return null
-    const data = (await res.json()) as MomentDetail
-    return { ...data, hidden }
-  } catch {
-    return null
-  }
+async function resolveViewer(): Promise<string | null> {
+  const cookieStore = await cookies()
+  const sessionToken = cookieStore.get(SESSION_COOKIE)?.value
+  return sessionToken ? await verifySession(sessionToken) : null
 }
 
 export default async function ModalMomentPage({ params }: Props) {
   const { address, tokenId } = await params
   if (!isAddress(address) || !isValidTokenId(tokenId)) notFound()
 
-  // Hidden-moment privacy gate — match the canonical page's logic so
-  // hidden moments don't leak via the overlay path. Non-creators of
-  // hidden moments see the placeholder; creators see the moment with
-  // a "hidden" badge (MomentDetailView handles the badge internally).
-  const cookieStore = await cookies()
-  const sessionToken = cookieStore.get(SESSION_COOKIE)?.value
-  const viewer = sessionToken ? await verifySession(sessionToken) : null
+  // Detail fetch + viewer resolution are independent — run them in
+  // parallel so the overlay's TTFB isn't gated on session verify.
+  const [detail, viewer] = await Promise.all([
+    fetchMomentDetail(address, tokenId),
+    resolveViewer(),
+  ])
 
-  const detail = await fetchDetail(address, tokenId)
-
+  // Hidden-moment privacy gate. Creator-resolution chain matches the
+  // client-side check in MomentDetailView so the two never disagree
+  // — without pickFirstNonOperatorAdmin, the operator smart wallet
+  // could land as `momentAdmins[0]` and lock the real creator out of
+  // their own hidden moment.
   const creator =
     detail?.creator?.address?.toLowerCase() ??
-    detail?.momentAdmins?.[0]?.toLowerCase()
+    pickFirstNonOperatorAdmin(detail?.momentAdmins)?.toLowerCase()
   const isCreator =
     !!viewer && !!creator && viewer.toLowerCase() === creator
 
