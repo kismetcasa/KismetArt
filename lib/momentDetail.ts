@@ -36,17 +36,10 @@ export const fetchMomentDetail = cache(async (
 })
 
 /**
- * Authoritative creator EOA for moments minted through Kismet. mint-proxy
- * writes this to KV the instant the upstream call lands, so it's available
- * even before inprocess's timeline indexes the new moment.
- *
- * Inprocess /moment often returns the platform smart wallet as
- * creator.address for Kismet-minted moments, and Kismet profiles are
- * keyed by EOA — without this fallthrough, MomentDetailView would look
- * up the wrong address and the creator chip would stay stuck on a
- * shortAddress instead of the user's display name. Shared by the
- * canonical moment page and the intercepting-route overlay so both
- * surfaces resolve to the same EOA.
+ * EOA recorded by mint-proxy at mint time. Inprocess /moment returns the
+ * platform smart wallet as creator.address for Kismet-minted moments, and
+ * Kismet profiles are keyed by EOA — without this fallthrough the creator
+ * chip would stay stuck on a shortAddress.
  */
 export const getKvCreatorAddress = cache(async (
   address: string,
