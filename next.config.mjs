@@ -4,6 +4,12 @@ const require = createRequire(import.meta.url)
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Emit a self-contained `.next/standalone/server.js` plus a traced
+  // minimal node_modules tree. Cuts the Docker runtime image from
+  // ~700MB (full node_modules) to ~200MB, and lets us run `node
+  // server.js` directly so SIGTERM reaches Node for graceful shutdown.
+  output: 'standalone',
+
   // Keep Node.js Turbo SDK external so /api/upload and /api/sign run natively
   serverExternalPackages: ['@ardrive/turbo-sdk'],
 
@@ -29,9 +35,9 @@ const nextConfig = {
       { protocol: 'https', hostname: 'ipfs.decentralized-content.com' },
     ],
     // Arweave + IPFS are content-addressed (URL contains a hash), so the
-    // bytes at any given URL never change — safe to cache aggressively at
-    // Vercel's edge. 31 days is the max for next/image. After the first
-    // load, subsequent views of any moment image are served from CDN edge
+    // bytes at any given URL never change — safe to cache aggressively.
+    // 31 days is the max for next/image. After the first load, subsequent
+    // views of any moment image are served from the on-disk image cache
     // instead of round-tripping back to Arweave.
     minimumCacheTTL: 60 * 60 * 24 * 31,
     // Cap the on-disk optimizer cache at 5 GB. Self-hosted on Oracle (200 GB

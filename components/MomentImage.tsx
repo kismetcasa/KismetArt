@@ -127,11 +127,11 @@ export function MomentImage({ src, onAllError, mime, preferProxy, thumbhash, pri
 
 type ImgProps = CommonProps & Omit<React.ImgHTMLAttributes<HTMLImageElement>, 'src' | 'onError'> & {
   /** Skip the `/api/img` proxy and go straight to the gateway pool.
-   *  Trades the proxy's multi-gateway race + edge cache for zero Vercel
-   *  Fast Origin Transfer cost on the image bytes — appropriate for
-   *  high-volume surfaces (every video moment's poster image) where the
-   *  bytes through the proxy add up across the user base. Gateway
-   *  walking still happens via `useFallbackUrl` on error. */
+   *  Trades the proxy's multi-gateway race + edge cache for zero
+   *  bandwidth cost on our server — appropriate for high-volume
+   *  surfaces (every video moment's poster image) where the bytes
+   *  through the proxy add up across the user base. Gateway walking
+   *  still happens via `useFallbackUrl` on error. */
   skipProxy?: boolean
 }
 
@@ -143,8 +143,9 @@ type ImgProps = CommonProps & Omit<React.ImgHTMLAttributes<HTMLImageElement>, 's
  *
  * `skipProxy` opts out of the proxy stage entirely. The image fetches
  * direct from the first gateway URL with onError → walk semantics. Used
- * by high-volume surfaces where Fast Origin Transfer on the image bytes
- * outweighs the proxy's resilience benefit.
+ * by high-volume surfaces where streaming the image bytes through our
+ * own server (CPU + egress on every fetch) outweighs the proxy's
+ * resilience benefit.
  */
 export function MomentImg({ src, onAllError, skipProxy, ...rest }: ImgProps) {
   const { url: walkedUrl, onError: walkGateway } = useFallbackUrl(src, onAllError)

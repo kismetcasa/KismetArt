@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getTrackedCollectionsByScope, getCreatedMintsSet, type CollectionScope } from '@/lib/kv'
 import { INPROCESS_API } from '@/lib/inprocess'
 import { redis, FEATURED_KEY } from '@/lib/redis'
+import { getCollectedMembers } from '@/lib/collected'
 import { getHiddenMomentsSet } from '@/lib/hiddenMoments'
 import { getHiddenCollectionsSet } from '@/lib/hiddenCollections'
 import { getSessionAddress } from '@/lib/session'
-import { getMomentMeta } from '@/lib/notifications'
+import { getMomentMetaBatch } from '@/lib/notifications'
 
 async function fetchCollection(collection: string, limit: number): Promise<unknown[]> {
   const url = new URL(`${INPROCESS_API}/timeline`)
@@ -70,9 +71,7 @@ export async function GET(req: NextRequest) {
   let collectedSet: Set<string> | null = null
   let collectedCollections: string[] = []
   if (collector) {
-    const pairs = (await redis
-      .zrange(`kismetart:collected:${collector}`, 0, -1, { rev: true })
-      .catch(() => [])) as string[]
+    const pairs = await getCollectedMembers(collector)
     collectedSet = new Set(pairs)
     const fromZset = new Set<string>()
     for (const pair of pairs) {
@@ -140,11 +139,11 @@ export async function GET(req: NextRequest) {
   // Without this override, delegated mints surface on the deployer's
   // profile + cards instead of the actual minter's. Same trust path
   // MomentDetailView already uses via the kvCreatorAddress fallback.
-  const metas = await Promise.all(
+  // One MGET in place of N parallel GETs — same shape out, single round trip.
+  const metas = await getMomentMetaBatch(
     merged.map((m: unknown) => {
       const moment = m as { address?: string; token_id?: string }
-      if (!moment.address || !moment.token_id) return null
-      return getMomentMeta(moment.address, moment.token_id).catch(() => null)
+      return { address: moment.address, tokenId: moment.token_id }
     }),
   )
   merged = merged.map((m: unknown, i: number) => {
@@ -329,9 +328,8 @@ export async function GET(req: NextRequest) {
     })
   }
 
-  return NextResponse.json({
-    status: 'success',
-    moments,
-    pagination: { page, limit, total_pages },
-  })
+  return NextResponse.json(
+    { status: 'success', moments, pagination: { page, limit, total_pages } },
+    { headers: { 'Cache-Control': 'private, no-store' } },
+  )
 }

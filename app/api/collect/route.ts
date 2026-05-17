@@ -1,9 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { decodeEventLog, parseAbi, type Address, type Hex } from 'viem'
 import { isAddress } from '@/lib/address'
 import { DEFAULT_COLLECT_COMMENT } from '@/lib/inprocess'
 import { redis } from '@/lib/redis'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
+import { recordCollected } from '@/lib/collected'
 import { getMomentMeta, writeNotification } from '@/lib/notifications'
 import { serverBaseClient } from '@/lib/rpc'
 import { readSalePricePerToken } from '@/lib/saleConfig'
@@ -204,12 +205,7 @@ export async function POST(req: NextRequest) {
 
   await Promise.all([
     redis.zincrby('kismetart:trending', 1, `${collectionLower}:${tokenId}`).catch(() => {}),
-    redis
-      .zadd(`kismetart:collected:${account}`, {
-        score: Date.now(),
-        member: `${collectionLower}:${tokenId}`,
-      })
-      .catch(() => {}),
+    recordCollected(account, collectionLower, tokenId).catch(() => {}),
   ])
 
   // Derive price server-side so the notification reflects the on-chain
@@ -228,8 +224,7 @@ export async function POST(req: NextRequest) {
   }
   const finalPrice = derivedPrice !== null ? derivedPrice.toString() : pricePerToken
 
-  // Notification is fire-and-forget — never let it gate the response.
-  void (async () => {
+  after(async () => {
     try {
       const meta = await getMomentMeta(collectionLower, tokenId)
       if (!meta) return
@@ -248,7 +243,7 @@ export async function POST(req: NextRequest) {
     } catch {
       // notifications are non-critical
     }
-  })()
+  })
 
   return NextResponse.json({ ok: true })
 }

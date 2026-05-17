@@ -1,3 +1,4 @@
+import { after } from 'next/server'
 import { redis } from './redis'
 import { randomUUID } from 'crypto'
 import type { SerializedOrderComponents } from './seaport'
@@ -72,16 +73,18 @@ export async function createListing(
     redis.sadd(keyBySeller(listing.seller), listing.id),
   ])
 
-  fanoutToFollowers(listing.seller, {
-    type: 'listing_created',
-    tokenAddress: listing.collectionAddress,
-    tokenId: listing.tokenId,
-    tokenName: listing.name,
-    tokenImage: listing.image,
-    price: listing.price,
-    currency: listing.currency,
-    listingId: listing.id,
-  })
+  after(() =>
+    fanoutToFollowers(listing.seller, {
+      type: 'listing_created',
+      tokenAddress: listing.collectionAddress,
+      tokenId: listing.tokenId,
+      tokenName: listing.name,
+      tokenImage: listing.image,
+      price: listing.price,
+      currency: listing.currency,
+      listingId: listing.id,
+    }),
+  )
 
   return listing
 }
@@ -95,6 +98,20 @@ export async function getListing(id: string): Promise<Listing | null> {
   // USDC code path.
   if (!listing.currency) listing.currency = 'eth'
   return listing
+}
+
+// Bulk variant of `getListing`. One MGET in place of N parallel GETs.
+// Preserves the legacy currency='eth' fallback so callers see identical
+// shapes whether they go through the single or batch path.
+async function getListingsBatch(ids: string[]): Promise<(Listing | null)[]> {
+  if (ids.length === 0) return []
+  const raws = await redis.mget<(string | Listing | null)[]>(...ids.map(keyById))
+  return raws.map((raw) => {
+    if (!raw) return null
+    const listing: Listing = typeof raw === 'string' ? JSON.parse(raw) : raw
+    if (!listing.currency) listing.currency = 'eth'
+    return listing
+  })
 }
 
 // Look up a specific seller's active listing for a token
@@ -129,7 +146,7 @@ async function handleExpiredListings(listings: Listing[]): Promise<void> {
       redis.zrem(KEY_ALL, listing.id),
     ])
 
-    void writeNotification({
+    await writeNotification({
       type: 'listing_expired',
       recipient: listing.seller,
       tokenAddress: listing.collectionAddress,
@@ -158,7 +175,7 @@ export async function getListings({
 } = {}): Promise<{ listings: Listing[]; total: number }> {
   const ids = (await redis.zrange(KEY_ALL, 0, MAX_LISTINGS_SCAN - 1, { rev: true })) as string[]
 
-  const all = await Promise.all(ids.map((id) => getListing(id)))
+  const all = await getListingsBatch(ids)
   const now = Date.now()
   const expired: Listing[] = []
   const ghosts: string[] = [] // ZSET entries with no/non-active data — clean up
@@ -180,7 +197,7 @@ export async function getListings({
   })
 
   if (expired.length > 0) {
-    void handleExpiredListings(expired).catch(() => {})
+    after(() => handleExpiredListings(expired))
   }
   if (ghosts.length > 0) {
     redis.zrem(KEY_ALL, ...ghosts).catch(() => {})
@@ -194,7 +211,7 @@ export async function getListings({
 export async function getListingsBySeller(seller: string): Promise<Listing[]> {
   const ids = await redis.smembers(keyBySeller(seller.toLowerCase())) as string[]
   if (!ids.length) return []
-  const all = await Promise.all(ids.map((id) => getListing(id)))
+  const all = await getListingsBatch(ids)
   const now = Date.now()
   const expired: Listing[] = []
 
@@ -208,7 +225,7 @@ export async function getListingsBySeller(seller: string): Promise<Listing[]> {
   })
 
   if (expired.length > 0) {
-    void handleExpiredListings(expired).catch(() => {})
+    after(() => handleExpiredListings(expired))
   }
 
   return active

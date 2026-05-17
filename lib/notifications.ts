@@ -164,25 +164,24 @@ export async function writeNotification(input: NotificationInput): Promise<void>
   }
 }
 
-// Fire-and-forget: write a notification to every follower of `source`,
-// with actor=source. writeNotification's self-check filters source==follower;
-// burst dedup runs inside writeNotification too, so callers stay minimal.
-export function fanoutToFollowers(
+// Write a notification to every follower of `source`, with actor=source.
+// writeNotification's self-check filters source==follower; burst dedup runs
+// inside writeNotification too. Callers should schedule via `after()` so
+// the fan-out survives the response.
+export async function fanoutToFollowers(
   source: string,
   payload: Omit<NotificationInput, 'recipient' | 'actor'>,
-): void {
-  void (async () => {
-    try {
-      const followers = await getFollowers(source)
-      await Promise.all(
-        followers.map((follower) =>
-          writeNotification({ ...payload, recipient: follower, actor: source }),
-        ),
-      )
-    } catch {
-      // notifications are non-critical
-    }
-  })()
+): Promise<void> {
+  try {
+    const followers = await getFollowers(source)
+    await Promise.all(
+      followers.map((follower) =>
+        writeNotification({ ...payload, recipient: follower, actor: source }),
+      ),
+    )
+  } catch {
+    // notifications are non-critical
+  }
 }
 
 interface NotificationListOpts {
@@ -252,14 +251,23 @@ export async function markAllRead(address: string): Promise<void> {
   ])
 }
 
+// SADD+EXPIRE in MULTI/EXEC so a dropped EXPIRE can't leave the key
+// TTL-less. Sliding TTL is intentional — active users keep their
+// read/mute state warm.
 export async function markOneRead(address: string, id: string): Promise<void> {
-  await redis.sadd(keyReadIds(address), id)
-  void redis.expire(keyReadIds(address), READ_IDS_TTL_SECS).catch(() => {})
+  await redis
+    .multi()
+    .sadd(keyReadIds(address), id)
+    .expire(keyReadIds(address), READ_IDS_TTL_SECS)
+    .exec()
 }
 
 export async function muteActor(address: string, actor: string): Promise<void> {
-  await redis.sadd(keyMuted(address), actor.toLowerCase())
-  void redis.expire(keyMuted(address), MUTED_TTL_SECS).catch(() => {})
+  await redis
+    .multi()
+    .sadd(keyMuted(address), actor.toLowerCase())
+    .expire(keyMuted(address), MUTED_TTL_SECS)
+    .exec()
 }
 
 export async function unmuteActor(address: string, actor: string): Promise<void> {
@@ -271,8 +279,11 @@ export async function getMutedActors(address: string): Promise<string[]> {
 }
 
 export async function muteType(address: string, type: NotificationType): Promise<void> {
-  await redis.sadd(keyMutedTypes(address), type)
-  void redis.expire(keyMutedTypes(address), MUTED_TTL_SECS).catch(() => {})
+  await redis
+    .multi()
+    .sadd(keyMutedTypes(address), type)
+    .expire(keyMutedTypes(address), MUTED_TTL_SECS)
+    .exec()
 }
 
 export async function unmuteType(address: string, type: NotificationType): Promise<void> {
@@ -290,6 +301,50 @@ export async function getMomentMeta(
   const raw = await redis.get<string | MomentMeta>(keyMomentMeta(contractAddress, tokenId))
   if (!raw) return null
   return typeof raw === 'string' ? JSON.parse(raw) : raw
+}
+
+/**
+ * Bulk fetch of moment-meta records. One MGET in place of N parallel GETs.
+ * Returns the same index-aligned `(MomentMeta | null)[]` Promise.all would
+ * have produced — null where the pair is invalid, the key is missing, or
+ * the stored JSON is corrupt; null for every entry on MGET failure (matches
+ * the prior per-call `.catch(() => null)` shape).
+ */
+export async function getMomentMetaBatch(
+  pairs: { address?: string; tokenId?: string }[],
+): Promise<(MomentMeta | null)[]> {
+  const out: (MomentMeta | null)[] = pairs.map(() => null)
+  if (pairs.length === 0) return out
+
+  // Compact the valid pairs into a parallel array of keys so MGET only sees
+  // well-formed inputs. The `compactIdx` lookup table re-aligns results
+  // back to the original positions.
+  const compactKeys: string[] = []
+  const compactIdx: number[] = []
+  for (let i = 0; i < pairs.length; i++) {
+    const { address, tokenId } = pairs[i]
+    if (!address || !tokenId) continue
+    compactIdx.push(i)
+    compactKeys.push(keyMomentMeta(address, tokenId))
+  }
+  if (compactKeys.length === 0) return out
+
+  let raws: (string | MomentMeta | null)[]
+  try {
+    raws = await redis.mget<(string | MomentMeta | null)[]>(...compactKeys)
+  } catch {
+    return out
+  }
+  for (let j = 0; j < compactIdx.length; j++) {
+    const raw = raws[j]
+    if (!raw) continue
+    try {
+      out[compactIdx[j]] = typeof raw === 'string' ? (JSON.parse(raw) as MomentMeta) : raw
+    } catch {
+      // Leave null — a single corrupt entry shouldn't poison the page.
+    }
+  }
+  return out
 }
 
 export async function setMomentMeta(

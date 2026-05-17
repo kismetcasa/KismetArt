@@ -17,7 +17,8 @@ const keyAuthorizedCreators = (collection: string) =>
 const KEY = 'kismetart:collections'
 // Curator-blessed positive set — Create Collection form deploys plus
 // any legacy real collection the curator manually promoted. Source
-// of truth for collection-shaped surfaces.
+// of truth for collection-shaped surfaces. Plain SET; the Discover
+// feed sorts by inprocess `created_at` (mirrors the Mints pattern).
 const CREATED_COLLECTIONS_KEY = 'kismetart:created-collections'
 // Mints minted via Kismet's MintForm or as a Create Collection cover.
 // Members are `<addr>:<tokenId>` strings. Source of truth for the

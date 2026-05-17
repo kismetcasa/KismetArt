@@ -13,10 +13,9 @@
  *
  * Resolves ar:// / ipfs:// to the canonical gateway URL so crawlers
  * fetch directly from arweave.net / ipfs.io. Used to route through
- * /api/img for multi-gateway resilience, but share-card crawler hits
- * burn Fast Origin Transfer on every cache-miss per region, and the
- * resilience matters less for low-frequency crawler traffic than for
- * in-app rendering. Direct URL puts the bytes outside Vercel entirely.
+ * /api/img for multi-gateway resilience, but the resilience matters
+ * less for low-frequency crawler traffic than for in-app rendering,
+ * and a direct URL skips one hop and keeps bytes off our server.
  */
 export function shareImageUrl(
   imageUri: string | undefined,

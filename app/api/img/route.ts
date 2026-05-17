@@ -1,10 +1,10 @@
 import { NextRequest } from 'next/server'
 import { gatewayUrls } from '@/lib/arweave/gateways'
 
-// Edge runtime caps streaming responses; node has no such cap, which matters
-// for the multi-MB GIFs this proxy is built around.
+// Pinned to Node's runtime: this proxy streams multi-MB GIF payloads
+// end-to-end and we want Node's stream primitives plus unbounded request
+// lifetimes.
 export const runtime = 'nodejs'
-export const maxDuration = 60
 
 const MAX_DECLARED_BYTES = 500 * 1024 * 1024
 const RACE_TIMEOUT_MS = 30_000
@@ -39,8 +39,9 @@ async function raceFetchGateways(
 /**
  * Passthrough proxy for ar:// + ipfs:// content. Races the gateway pool
  * server-side and streams the winner back with an immutable 1-year cache
- * header — puts GIFs and >4MB sources behind Vercel's per-region edge cache.
- * Used by MomentImage's 'proxy' delivery mode.
+ * header so downstream caches (browser, reverse proxy, optional CDN)
+ * serve repeats without re-racing the pool. Used by MomentImage's
+ * 'proxy' delivery mode.
  */
 export async function GET(req: NextRequest) {
   const u = req.nextUrl.searchParams.get('u')

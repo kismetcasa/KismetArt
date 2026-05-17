@@ -1,5 +1,4 @@
 import type { Metadata } from 'next'
-import { Analytics } from '@vercel/analytics/next'
 import { Toaster } from 'sonner'
 import { Providers } from '@/providers/WagmiProvider'
 import { Nav } from '@/components/Nav'
@@ -7,9 +6,9 @@ import './globals.css'
 
 export const metadata: Metadata = {
   // Resolves relative URLs in generateMetadata across the app (og:image
-  // in particular). Override via env for preview deployments; default to
-  // the canonical custom domain so production share cards never leak the
-  // .vercel.app URL into Twitter/Discord/etc.
+  // in particular). Override via NEXT_PUBLIC_SITE_URL for staging or
+  // other non-prod hosts; default to the canonical custom domain so
+  // share cards always point at production.
   metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? 'https://www.kismet.art'),
   title: 'Kismet Art',
   description: 'mint, collect, and discover art on Kismet Art',
@@ -70,7 +69,6 @@ export default function RootLayout({
             }}
           />
         </Providers>
-        <Analytics />
       </body>
     </html>
   )

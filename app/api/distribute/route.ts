@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextRequest, NextResponse, after } from 'next/server'
 import { verifyMessage } from 'viem'
 import { isAddress, isValidTokenId } from '@/lib/address'
 import { INPROCESS_API } from '@/lib/inprocess'
@@ -20,7 +20,7 @@ import { getMomentMeta, writeNotification } from '@/lib/notifications'
  */
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req)
-  const allowed = await checkRateLimit(`distribute:${ip}`, 5, 60)
+  const allowed = await checkRateLimit(`distribute:${ip}`, 20, 60)
   if (!allowed) return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
 
   const apiKey = process.env.INPROCESS_API_KEY
@@ -149,7 +149,7 @@ export async function POST(req: NextRequest) {
   // Fan-out payout notifications on inprocess 2xx (best-effort).
   // writeNotification's self-check filters caller-as-recipient.
   if (res.ok) {
-    void (async () => {
+    after(async () => {
       try {
         const stored = await getStoredSplits(collectionAddress, tokenId)
         if (!stored.recipients.length) return
@@ -168,7 +168,7 @@ export async function POST(req: NextRequest) {
           ),
         )
       } catch {}
-    })()
+    })
   }
 
   return NextResponse.json(data, { status: res.status })
