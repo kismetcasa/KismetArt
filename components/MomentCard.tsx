@@ -23,7 +23,6 @@ import { useAdmin } from '@/contexts/AdminContext'
 import { ERC1155_ABI } from '@/lib/seaport'
 import { useDirectCollect, type CollectCurrency } from '@/hooks/useDirectCollect'
 import { ListButton } from './ListButton'
-import { MomentModal } from './MomentModal'
 import { MomentImage } from './MomentImage'
 import { MomentVideo } from './MomentVideo'
 import { isVideoMoment } from '@/lib/media/isVideo'
@@ -60,7 +59,6 @@ export function MomentCard({ moment, hidePriceSupply, directLink, priority }: Mo
   const [collectionName, setCollectionName] = useState<string | null>(null)
   const [collectionImage, setCollectionImage] = useState<string | null>(null)
   const [collectionImageFailed, setCollectionImageFailed] = useState(false)
-  const [modalOpen, setModalOpen] = useState(false)
   const [collected, setCollected] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
   const { isAdmin, featuredKeys, toggleFeatured } = useAdmin()
@@ -162,37 +160,32 @@ export function MomentCard({ moment, hidePriceSupply, directLink, priority }: Mo
   return (
     <>
       <article className="group flex flex-col bg-[#161616] border border-[#2a2a2a] overflow-hidden">
-        {/* Media — click opens modal on desktop, navigates to detail page on mobile */}
-        <div
-          onClick={() => {
-            // Video moments skip the modal preview and go straight to the
-            // detail page — the modal would mount a second <video>
-            // element, force a fresh load + decode (the card video
-            // already in the DOM doesn't get reused), and add a slow
-            // intermediate step before the user lands on the surface with
-            // native controls anyway. For images the modal still earns
-            // its keep as a quick-look-before-navigating preview.
-            if (directLink || window.innerWidth < 640 || isVideo) {
-              router.push(`/moment/${moment.address}/${moment.token_id}`)
-            } else {
-              setModalOpen(true)
-            }
-          }}
+        {/* Media — wrapped in <Link> so the click triggers Next.js's
+            intercepting route at app/@modal/(.)moment/.../page.tsx. The
+            feed stays mounted; the detail page renders as an overlay
+            above. Combined with SharedVideoProvider, the same <video>
+            element CSS-transitions from card to overlay without re-mount.
+            Direct URL load of /moment/X bypasses the interception and
+            hits the canonical detail page. */}
+        <Link
+          href={`/moment/${moment.address}/${moment.token_id}`}
           onMouseEnter={() => {
             prefetchComments()
             prefetchTextContent()
-            // Warm the detail-page route bundle so click→navigate is
-            // snappy. Especially matters for video moments after the
-            // modal-skip change (fcbb921) — every video click is now a
-            // route transition, and the user's hover is the strongest
-            // intent signal we get before they commit.
+            // Link auto-prefetches on hover (in production) but the
+            // explicit prefetch warms the route bundle alongside the
+            // comments/text caches.
             router.prefetch(`/moment/${moment.address}/${moment.token_id}`)
           }}
-          className="cursor-pointer relative aspect-square bg-[#111] overflow-hidden"
+          className="cursor-pointer relative aspect-square bg-[#111] overflow-hidden block"
         >
           {isAdmin && (
             <button
               onClick={(e) => {
+                // Star sits inside the <Link>; preventDefault stops the
+                // navigation that would otherwise fire, stopPropagation
+                // belt-and-suspenders any future ancestor click handler.
+                e.preventDefault()
                 e.stopPropagation()
                 toggleFeatured(moment.address, moment.token_id)
               }}
@@ -251,7 +244,7 @@ export function MomentCard({ moment, hidePriceSupply, directLink, priority }: Mo
               <span className="text-[#2a2a2a] font-mono text-xs">no preview</span>
             </div>
           )}
-        </div>
+        </Link>
 
         {/* Info */}
         <div className="px-4 pt-4 pb-3 flex flex-col gap-1.5">
@@ -358,22 +351,6 @@ export function MomentCard({ moment, hidePriceSupply, directLink, priority }: Mo
           </button>
         </div>
       </article>
-
-      {!directLink && modalOpen && (
-        <MomentModal
-          moment={moment}
-          onClose={() => setModalOpen(false)}
-          initialPrice={price ?? undefined}
-          initialPricePerToken={pricePerToken ?? undefined}
-          initialCurrency={currency ?? undefined}
-          initialMaxSupply={maxSupply !== undefined ? maxSupply : undefined}
-          initialCreatorName={creatorName}
-          initialCreatorAvatar={creatorAvatar}
-          initialCollectionName={collectionName}
-          initialCollectionImage={collectionImage}
-          initialOwnedBalance={ownedBalance !== undefined ? Number(ownedBalance) : undefined}
-        />
-      )}
     </>
   )
 }
