@@ -1,9 +1,11 @@
 import type { MomentDetail, MomentComment } from './inprocess'
 
 // ─── Detail cache ─────────────────────────────────────────────────────────────
-// Populated by feed/card renders and consumed by MomentDetailView so the
-// intercepted-route overlay (and full-page detail) can render immediately
-// without re-fetching what the feed already pulled.
+// Module-level store written + read by MomentDetailView so reopening a
+// moment you just viewed (IR overlay → close → re-open, or canonical →
+// back → re-open) renders instantly with the last-known detail while the
+// background fetch revalidates. Hide/unhide and comment-post flows write
+// the optimistic result here too so the next surface sees the update.
 
 const detailStore = new Map<string, MomentDetail>()
 

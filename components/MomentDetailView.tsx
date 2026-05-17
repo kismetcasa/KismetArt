@@ -707,26 +707,19 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   return (
     <div className="max-w-[88rem] mx-auto pb-16">
 
-      {/* Back nav (canonical only) + owned-count callout. In the overlay
-          the X / Escape / backdrop-click triad already dismisses; rendering
-          a "back" link that points to "/" would navigate away from the
-          feed instead of just closing the overlay. */}
-      {(!inOverlay || ownedCount > 0) && (
-        <div className={`px-4 py-3 border-b border-[#2a2a2a] flex items-center gap-3 ${inOverlay ? 'justify-end' : 'justify-between'}`}>
-          {!inOverlay && (
-            <Link
-              href="/"
-              className="inline-flex items-center gap-1.5 text-xs font-mono text-[#555] hover:text-[#888] transition-colors"
-            >
-              <ArrowLeft size={12} />
-              back
-            </Link>
-          )}
-          {ownedCount > 0 && (
-            <p className="text-[10px] font-mono text-[#555] uppercase tracking-widest">
-              ×{ownedCount} owned
-            </p>
-          )}
+      {/* Back nav — canonical only. In the overlay the X / Escape /
+          backdrop-click triad already dismisses; rendering a "back"
+          link that points to "/" would navigate away from the feed
+          instead of just closing the overlay. */}
+      {!inOverlay && (
+        <div className="px-4 py-3 border-b border-[#2a2a2a]">
+          <Link
+            href="/"
+            className="inline-flex items-center gap-1.5 text-xs font-mono text-[#555] hover:text-[#888] transition-colors"
+          >
+            <ArrowLeft size={12} />
+            back
+          </Link>
         </div>
       )}
 
@@ -1051,13 +1044,21 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
             </div>
           )}
 
-          {/* Total mints — subtle, above action row.
-              "×N owned" lives next to the back link at the top now. */}
+          {/* Mints line — "sold" for paid mints, "collected" for free
+              mints (and as the default while detail is still loading,
+              since "collected" is the broader truthful term). Owned
+              count sits next to it when the viewer holds any. */}
           {totalMinted !== undefined && (
             <div className="px-5 pb-1 flex items-center gap-3">
               <p className="text-[10px] font-mono text-[#444] uppercase tracking-widest">
-                {Number(totalMinted).toLocaleString()} collected
+                {Number(totalMinted).toLocaleString()}{' '}
+                {detail && BigInt(detail.saleConfig.pricePerToken) > 0n ? 'sold' : 'collected'}
               </p>
+              {ownedCount > 0 && (
+                <p className="text-[10px] font-mono text-[#555] uppercase tracking-widest">
+                  ×{ownedCount} owned
+                </p>
+              )}
             </div>
           )}
 
