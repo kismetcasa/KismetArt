@@ -462,7 +462,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     ? 'collecting…'
     : mintedOut
       ? hasCollected ? 'collected' : 'minted out'
-      : hasCollected ? 'collect more' : 'collect'
+      : hasCollected ? 'collect+' : 'collect'
 
   async function handleDistribute() {
     if (!detail) { toast.error('Moment details still loading'); return }
