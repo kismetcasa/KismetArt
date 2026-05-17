@@ -7,9 +7,9 @@ export const SESSION_TTL_SECONDS = 7 * 24 * 60 * 60
 // `__Host-` prefix is browser-enforced cookie integrity: the browser only
 // accepts cookies with this prefix when they are also Secure, Path=/, and
 // have NO Domain attribute set. This blocks subdomain-based cookie
-// confusion attacks (an attacker on attacker.kismet-art.vercel.app can't
-// set a cookie that overrides ours). Requires HTTPS — so we only apply
-// the prefix in production. Dev (localhost http) keeps the plain name.
+// confusion attacks (an attacker on attacker.kismet.art can't set a
+// cookie that overrides ours). Requires HTTPS — so we only apply the
+// prefix in production. Dev (localhost http) keeps the plain name.
 export const SESSION_COOKIE =
   process.env.NODE_ENV === 'production'
     ? '__Host-kismet_session'

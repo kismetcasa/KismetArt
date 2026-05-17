@@ -5,11 +5,11 @@ import { http } from 'wagmi'
 const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID
 
 // Warn-and-continue rather than throw: Next.js prerenders the root
-// layout's Providers tree during `Collecting page data`, and Vercel
-// doesn't always inject env vars at that step. Throwing here would
-// kill the build for any route that touches the layout. A placeholder
-// keeps build green; if the real ID is genuinely missing in prod,
-// RainbowKit surfaces the misconfig the moment a wallet UI mounts.
+// layout's Providers tree during `Collecting page data`, and env vars
+// aren't always populated at that step. Throwing here would kill the
+// build for any route that touches the layout. A placeholder keeps
+// build green; if the real ID is genuinely missing in prod, RainbowKit
+// surfaces the misconfig the moment a wallet UI mounts.
 if (!projectId) {
   console.warn(
     '[wagmi] NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID not set — wallet connect will not work at runtime',
