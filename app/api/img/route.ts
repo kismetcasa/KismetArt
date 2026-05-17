@@ -39,8 +39,9 @@ async function raceFetchGateways(
 /**
  * Passthrough proxy for ar:// + ipfs:// content. Races the gateway pool
  * server-side and streams the winner back with an immutable 1-year cache
- * header — puts GIFs and >4MB sources behind Vercel's per-region edge cache.
- * Used by MomentImage's 'proxy' delivery mode.
+ * header so downstream caches (browser, reverse proxy, optional CDN)
+ * serve repeats without re-racing the pool. Used by MomentImage's
+ * 'proxy' delivery mode.
  */
 export async function GET(req: NextRequest) {
   const u = req.nextUrl.searchParams.get('u')

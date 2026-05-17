@@ -9,7 +9,6 @@ import { INPROCESS_API, shortAddress } from '@/lib/inprocess'
 // without a cover ever set). When a real cover exists, generateMetadata
 // puts it first in openGraph.images and crawlers prefer it.
 
-export const runtime = 'edge'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -29,7 +28,7 @@ async function fetchCollection(address: string): Promise<CollectionRow | null> {
     url.searchParams.set('chainId', '8453')
     // 24h cache — see opengraph-image.tsx in moment route for rationale.
     // Collection metadata is similarly long-lived; the extra freshness of
-    // a 5min TTL isn't worth the edge-function invocation cost.
+    // a 5min TTL isn't worth the inprocess fetch traffic.
     const res = await fetch(url.toString(), { next: { revalidate: 86400 } })
     if (!res.ok) return null
     return (await res.json()) as CollectionRow

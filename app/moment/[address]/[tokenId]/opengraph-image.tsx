@@ -11,7 +11,6 @@ import { INPROCESS_API, shortAddress, type MomentDetail } from '@/lib/inprocess'
 // real image as the share card — that URL appears first in the
 // metadata and crawlers prefer it.
 
-export const runtime = 'edge'
 export const size = { width: 1200, height: 630 }
 export const contentType = 'image/png'
 
@@ -29,11 +28,10 @@ async function fetchDetail(
     url.searchParams.set('tokenId', tokenId)
     url.searchParams.set('chainId', '8453')
     // 24h cache — moment metadata is effectively immutable post-mint, so
-    // there's no point revalidating frequently. Longer TTL keeps the
-    // edge-function invocation count bounded (each unique URL fires the
-    // generator at most once per day per region), trading "name edit
-    // shows up in share cards within 5 minutes" for "share-card
-    // generation doesn't burn through edge-runtime quota."
+    // there's no point revalidating frequently. Longer TTL bounds the
+    // generator invocation count (each unique URL fires at most once
+    // per day), trading "name edit shows up in share cards within 5
+    // minutes" for lower upstream load on the inprocess API.
     const res = await fetch(url.toString(), { next: { revalidate: 86400 } })
     if (!res.ok) return null
     return (await res.json()) as MomentDetail

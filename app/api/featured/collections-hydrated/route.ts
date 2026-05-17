@@ -17,7 +17,7 @@ export const revalidate = 30
 const COLLECTION_PREVIEW_LIMIT = 20 // tokens fetched per featured collection
 const ROW_DISPLAY_LIMIT = 8 // moments shown in horizontal scroll
 // Cap on featured collections hydrated per request. Bounds per-call cost
-// (inprocess fetches + RPC multicalls + Vercel function-time) so latency
+// (inprocess fetches + RPC multicalls + total server-time) so latency
 // stays predictable as the curated set grows. zrange is featuredAt-desc,
 // so entries beyond the cap are silently dropped oldest-first. If the
 // featured set ever needs to grow past this, the correct architectural
