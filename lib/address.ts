@@ -25,3 +25,32 @@ export function isAddress(value: unknown): value is Address {
 export function isValidTokenId(value: unknown): value is string {
   return typeof value === 'string' && /^\d+$/.test(value)
 }
+
+type EnsClientLike = {
+  getEnsAddress: (args: { name: string }) => Promise<Address | null>
+} | undefined
+
+/**
+ * Resolve an ENS name or 0x address to a lowercase 0x address. Returns
+ * null when the input is neither a valid hex address nor a `.eth` name
+ * that resolves on the mainnet client. Pass a wagmi mainnet
+ * `usePublicClient({ chainId: mainnet.id })` as the client — when it's
+ * undefined (mounting), `.eth` names fail-closed so callers don't push
+ * an invalid entry.
+ */
+export async function resolveAddressOrEns(
+  client: EnsClientLike,
+  raw: string,
+): Promise<`0x${string}` | null> {
+  const trimmed = raw.trim()
+  if (viemIsAddress(trimmed)) return trimmed.toLowerCase() as `0x${string}`
+  if (trimmed.endsWith('.eth') && client) {
+    try {
+      const resolved = await client.getEnsAddress({ name: trimmed })
+      return resolved ? (resolved.toLowerCase() as `0x${string}`) : null
+    } catch {
+      return null
+    }
+  }
+  return null
+}

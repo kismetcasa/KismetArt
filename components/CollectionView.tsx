@@ -20,6 +20,7 @@ import { useAuthorizedCreators } from '@/hooks/useAuthorizedCreators'
 import { fetchInprocessSmartWallet } from '@/hooks/useInprocessSmartWallet'
 import { COLLECTION_ABI } from '@/lib/collections'
 import { hasAdminBit, hasMinterBit } from '@/lib/permissions'
+import { resolveAddressOrEns } from '@/lib/address'
 import { MomentCard } from './MomentCard'
 import { ProfileAvatar } from './ProfileAvatar'
 
@@ -92,11 +93,7 @@ export function CollectionView({
   const [profiles, setProfiles] = useState<Record<string, AvatarProfile>>({})
   const [hidden, setHidden] = useState(initialHidden)
   const [resolvedAdminName, setResolvedAdminName] = useState<string | null>(
-    defaultAdminUsername
-      ? `@${defaultAdminUsername}`
-      : defaultAdminAddress
-        ? null  // resolve via profile cache below
-        : null
+    defaultAdminUsername ? `@${defaultAdminUsername}` : null,
   )
   // Moments fetched client-side so the header renders immediately from server
   // data, and hidden-moment filtering is applied via the session-aware
@@ -228,23 +225,8 @@ export function CollectionView({
 
   // Mainnet client for client-side ENS resolution. Wagmi already
   // configures a mainnet transport for ENS (lib/wagmi.ts), so we reuse
-  // it instead of standing up a duplicate viem client. Falls through to
-  // strict 0x validation when the read fails (offline, RPC blip, .eth
-  // record missing).
+  // it instead of standing up a duplicate viem client.
   const mainnetClient = usePublicClient({ chainId: mainnet.id })
-  async function resolveAddressInput(raw: string): Promise<`0x${string}` | null> {
-    const trimmed = raw.trim()
-    if (isAddress(trimmed)) return trimmed.toLowerCase() as `0x${string}`
-    if (trimmed.endsWith('.eth') && mainnetClient) {
-      try {
-        const resolved = await mainnetClient.getEnsAddress({ name: trimmed })
-        return resolved ? (resolved.toLowerCase() as `0x${string}`) : null
-      } catch {
-        return null
-      }
-    }
-    return null
-  }
 
   // ─── Authorize creators (ADMIN to smart wallet) ─────────────────────
   async function handleAuthorizeCreator() {
@@ -253,7 +235,7 @@ export function CollectionView({
     if (!raw) return
     try {
       toast.loading('Resolving address…', { id: 'authorize-creator' })
-      const eoa = await resolveAddressInput(raw)
+      const eoa = await resolveAddressOrEns(mainnetClient, raw)
       if (!eoa) {
         toast.error(
           raw.endsWith('.eth')

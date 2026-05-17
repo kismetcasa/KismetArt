@@ -7,11 +7,10 @@ import { resolveUri } from '@/lib/inprocess'
 import { shareImageUrl } from '@/lib/media/shareImage'
 import { getCollectionMeta as getKvCollectionMeta, getUserCollections } from '@/lib/kv'
 import { getMomentContent } from '@/lib/momentContent'
-import { getMomentMeta as getKvMomentMeta } from '@/lib/notifications'
 import { isCollectionHidden } from '@/lib/hiddenCollections'
 import { PLATFORM_COLLECTION } from '@/lib/config'
 import { SESSION_COOKIE, verifySession } from '@/lib/session'
-import { fetchMomentDetail } from '@/lib/momentDetail'
+import { fetchMomentDetail, getKvCreatorAddress } from '@/lib/momentDetail'
 import { pickFirstNonOperatorAdmin } from '@/lib/momentAuthz'
 import { MomentDetailView } from '@/components/MomentDetailView'
 
@@ -64,25 +63,6 @@ const getInitialCollectionMeta = cache(async (
   if (!userCreated.some((a) => a.toLowerCase() === lowerAddr)) return undefined
   if (!kv?.name && !kv?.image) return undefined
   return { name: kv.name, image: kv.image }
-})
-
-// Authoritative creator EOA for moments minted through Kismet. mint-proxy
-// writes this to KV the instant the upstream call lands, so it's available
-// even before inprocess's timeline indexes the new moment. We thread it
-// into MomentDetailView so the creator chip resolves to the EOA's Kismet
-// profile (where username "Turro" lives) instead of falling back to
-// `momentAdmins[0]` which is typically a smart wallet / platform admin
-// with no profile attached.
-const getKvCreatorAddress = cache(async (
-  address: string,
-  tokenId: string,
-): Promise<string | undefined> => {
-  try {
-    const meta = await getKvMomentMeta(address, tokenId)
-    return meta?.creator
-  } catch {
-    return undefined
-  }
 })
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {

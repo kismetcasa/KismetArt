@@ -1,6 +1,7 @@
 import { cache } from 'react'
 import { INPROCESS_API, type MomentDetail } from './inprocess'
 import { isMomentHidden } from './hiddenMoments'
+import { getMomentMeta } from './notifications'
 
 /**
  * Server-side moment detail fetch shared by the canonical page and the
@@ -31,5 +32,23 @@ export const fetchMomentDetail = cache(async (
     return { ...data, hidden }
   } catch {
     return null
+  }
+})
+
+// EOA address recorded by the mint proxy in KV at mint time. The
+// inprocess /moment response often returns the platform smart wallet
+// as creator.address for Kismet-minted moments, and Kismet profiles
+// are keyed by EOA — without this fallthrough, MomentDetailView would
+// look up the wrong address and the creator chip would stay stuck on
+// shortAddress instead of the user's display name.
+export const getKvCreatorAddress = cache(async (
+  address: string,
+  tokenId: string,
+): Promise<string | undefined> => {
+  try {
+    const meta = await getMomentMeta(address, tokenId)
+    return meta?.creator
+  } catch {
+    return undefined
   }
 })

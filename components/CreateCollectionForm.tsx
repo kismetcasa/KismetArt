@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { Upload, X, Plus, Trash2, Check } from 'lucide-react'
 import { FACTORY_ADDRESS, FACTORY_ABI, encodeMinterPermission, encodeAdminPermission, buildCoverTokenSetupActions } from '@/lib/collections'
 import { CREATE_REFERRAL, OPERATOR_SMART_WALLET } from '@/lib/config'
+import { resolveAddressOrEns } from '@/lib/address'
 import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { generateThumbhash } from '@/lib/media/thumbhash'
 import { canTranscode, extractGifPoster } from '@/lib/media/transcodeGif'
@@ -92,30 +93,13 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
   const PENDING_MAX_AGE_MS = 30 * 60 * 1000 // 30 min — older entries are abandoned
   const TX_TIMEOUT_MS = 90 * 1000 // 90s before we surface a "still pending" message
 
-  // Resolves an ENS name or 0x address to a checksum 0x. Returns null
-  // when the name doesn't resolve so callers can surface a discrete
-  // toast instead of pushing an invalid entry into the list.
-  async function resolveAddressOrEns(raw: string): Promise<`0x${string}` | null> {
-    const trimmed = raw.trim()
-    if (isAddress(trimmed)) return trimmed.toLowerCase() as `0x${string}`
-    if (trimmed.endsWith('.eth') && mainnetClient) {
-      try {
-        const resolved = await mainnetClient.getEnsAddress({ name: trimmed })
-        return resolved ? (resolved.toLowerCase() as `0x${string}`) : null
-      } catch {
-        return null
-      }
-    }
-    return null
-  }
-
   async function addMinter() {
     if (resolvingMinter) return
     const raw = minterInput.trim()
     if (!raw) return
     setResolvingMinter(true)
     try {
-      const addr = await resolveAddressOrEns(raw)
+      const addr = await resolveAddressOrEns(mainnetClient, raw)
       if (!addr) {
         toast.error(
           raw.endsWith('.eth')
@@ -399,7 +383,7 @@ export function CreateCollectionForm({ onDeployed }: CreateCollectionFormProps =
     // entry the user can't get back. Empty -> connected wallet.
     let resolvedRoyalty: `0x${string}` = address as `0x${string}`
     if (royaltyTrimmed) {
-      const resolved = await resolveAddressOrEns(royaltyTrimmed)
+      const resolved = await resolveAddressOrEns(mainnetClient, royaltyTrimmed)
       if (!resolved) {
         toast.error(
           royaltyTrimmed.endsWith('.eth')
