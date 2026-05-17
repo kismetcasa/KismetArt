@@ -15,7 +15,7 @@ import { getCollectionMeta } from '@/lib/kv'
 export const revalidate = 30
 
 const COLLECTION_PREVIEW_LIMIT = 20 // tokens fetched per featured collection
-const ROW_DISPLAY_LIMIT = 20 // moments shown inside the featured collection row
+const ROW_DISPLAY_LIMIT = 10 // moments shown inside the featured collection row
 // Cap on featured collections hydrated per request. Bounds per-call cost
 // (inprocess fetches + RPC multicalls + total server-time) so latency
 // stays predictable as the curated set grows. zrange is featuredAt-desc,
