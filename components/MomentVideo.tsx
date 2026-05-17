@@ -146,6 +146,12 @@ export function MomentVideo({
       <MomentImg
         src={poster!}
         alt=""
+        // skipProxy: posters render on every video moment, every feed
+        // load. Routing through /api/img would burn Fast Origin Transfer
+        // on every cold-cache hit per region. Direct gateway URL puts
+        // the bytes path entirely outside Vercel (arweave.net → browser),
+        // and gateway-walking on error still works via useFallbackUrl.
+        skipProxy
         className={`absolute inset-0 ${rest.className ?? ''}`.trim()}
         onAllError={() => setPosterFailed(true)}
       />
