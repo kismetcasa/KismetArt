@@ -27,7 +27,7 @@ export interface FeaturedCollectionRow {
 interface CollectionRowProps {
   collection: FeaturedCollectionRow
   // Above-the-fold hint forwarded to the cover image (and propagated to the
-  // first horizontal MomentCard so the row's LCP candidate isn't lazy-loaded).
+  // first mint card so the row's LCP candidate isn't lazy-loaded).
   priority?: boolean
 }
 
@@ -58,12 +58,19 @@ export function CollectionRow({ collection, priority }: CollectionRowProps) {
   }, [adminAddr, initialUsername])
 
   return (
-    <article className="grid grid-cols-1 md:grid-cols-12 border border-[#2a2a2a] bg-[#161616] overflow-hidden">
-      {/* Hero: cover + details. md+ takes 5/12, mobile stacks full width. */}
-      <div className="md:col-span-5 flex flex-col">
+    // Two layouts share one tree:
+    //   mobile (<sm): flex-row — cover on the left, mints scroll horizontally
+    //     to the right. Single row, no info section. Curator's call: keeps
+    //     featured rows compact in the feed instead of a tall vertical block.
+    //   sm+: block — header (cover + info) on top, mints grid below.
+    // The SharedVideoProvider clips video elements to their scrollable
+    // ancestor's bounds (see clip-path in positionElement), so the
+    // horizontal scroller doesn't leak videos past the article edge.
+    <article className="flex sm:block border border-[#2a2a2a] bg-[#161616] overflow-hidden">
+      <div className="flex-shrink-0 sm:flex sm:flex-row sm:gap-4 sm:p-4 sm:border-b sm:border-[#2a2a2a]">
         <Link
           href={`/collection/${c.contractAddress}`}
-          className="relative aspect-square block overflow-hidden bg-[#111] group/img"
+          className="relative aspect-square w-32 sm:w-40 md:w-48 flex-shrink-0 block overflow-hidden bg-[#111] group/img"
         >
           {isAdmin && (
             <button
@@ -86,7 +93,7 @@ export function CollectionRow({ collection, priority }: CollectionRowProps) {
               alt={name}
               fill
               className="object-contain transition-transform duration-500 group-hover/img:scale-105"
-              sizes="(max-width: 768px) 100vw, 41vw"
+              sizes="(max-width: 640px) 128px, 192px"
               onAllError={() => setImgFailed(true)}
               priority={priority}
               preferProxy
@@ -97,10 +104,15 @@ export function CollectionRow({ collection, priority }: CollectionRowProps) {
               <span className="text-[#2a2a2a] font-mono text-xs">no preview</span>
             </div>
           )}
+          {/* Mobile-only name overlay: the sm+ info section is hidden,
+              so the collection still needs a label inside the row. */}
+          <span className="sm:hidden absolute inset-x-0 bottom-0 px-2 py-1 text-[10px] font-mono text-[#efefef] bg-gradient-to-t from-[#0d0d0d]/95 to-transparent truncate">
+            {name}
+          </span>
         </Link>
 
-        <div className="px-4 pt-4 pb-4 flex flex-col gap-1 flex-1">
-          <h3 className="text-sm font-mono text-[#efefef] truncate">{name}</h3>
+        <div className="hidden sm:flex flex-col gap-1 min-w-0 flex-1">
+          <h3 className="text-base font-mono text-[#efefef] truncate">{name}</h3>
           {creatorLabel && (
             <Link
               href={adminAddr ? `/profile/${adminAddr}` : '#'}
@@ -110,44 +122,44 @@ export function CollectionRow({ collection, priority }: CollectionRowProps) {
             </Link>
           )}
           {description && (
-            <p className="text-xs font-mono text-[#555] mt-0.5 line-clamp-2">{description}</p>
+            <p className="text-xs font-mono text-[#555] mt-1 line-clamp-3">{description}</p>
           )}
 
-          <div className="flex flex-col gap-1.5 mt-auto pt-3">
+          <div className="flex flex-wrap gap-2 mt-auto pt-3">
             <Link
               href={`/collection/${c.contractAddress}`}
-              className="w-full py-1.5 text-center text-xs font-mono border border-[#2a2a2a] text-[#888] hover:border-[#555] hover:text-[#efefef] transition-colors"
+              className="px-4 py-1.5 text-center text-xs font-mono border border-[#2a2a2a] text-[#888] hover:border-[#555] hover:text-[#efefef] transition-colors"
             >
               view collection
             </Link>
-            <CollectAllAction
-              collectionAddress={c.contractAddress}
-              ethEligibleTokenIds={c.ethEligibleTokenIds}
-              ethEligibleTotalWei={c.ethEligibleTotalWei}
-              usdcEligibleTokenIds={c.usdcEligibleTokenIds}
-              usdcEligibleTotalUsdc={c.usdcEligibleTotalUsdc}
-            />
+            <div className="flex-1 min-w-[10rem]">
+              <CollectAllAction
+                collectionAddress={c.contractAddress}
+                ethEligibleTokenIds={c.ethEligibleTokenIds}
+                ethEligibleTotalWei={c.ethEligibleTotalWei}
+                usdcEligibleTokenIds={c.usdcEligibleTokenIds}
+                usdcEligibleTotalUsdc={c.usdcEligibleTotalUsdc}
+              />
+            </div>
           </div>
         </div>
       </div>
 
-      {/* Horizontal scroll mints. md+ takes 7/12. Mobile shows ~80% width
-          per card so the next card peeks as a swipe affordance. */}
-      <div className="md:col-span-7 flex overflow-x-auto snap-x snap-mandatory gap-3 p-3 [-webkit-overflow-scrolling:touch]">
+      {/* Mints: up to 20 in chronological order (oldest → newest, left to
+          right). Single switch between horizontal scroller and grid via
+          responsive classes — sm+ wins, mobile defaults apply below it. */}
+      <div className="flex-1 min-w-0 overflow-x-auto flex gap-2 p-2 snap-x snap-mandatory [-webkit-overflow-scrolling:touch] sm:flex-none sm:overflow-visible sm:grid sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-10 sm:gap-2 sm:p-3 sm:snap-none">
         {c.moments.length === 0 ? (
-          <div className="flex-1 flex items-center justify-center min-h-[200px]">
+          <div className="flex-1 sm:col-span-full flex items-center justify-center min-h-[160px] sm:min-h-[200px]">
             <span className="text-xs font-mono text-[#555]">no moments yet</span>
           </div>
         ) : (
           c.moments.map((m, idx) => (
             <div
               key={m.id || `${m.address}-${m.token_id}`}
-              className="snap-start flex-shrink-0 w-[80%] md:w-[calc(33.333%-0.5rem)]"
+              className="w-32 flex-shrink-0 snap-start sm:w-auto sm:flex-shrink"
             >
-              {/* When this row is above-the-fold, prioritize only the first
-                  visible mint in the horizontal scroller — anything past idx 0
-                  is already off-screen on mobile and barely peeks on desktop. */}
-              <MomentCard moment={m} hidePriceSupply priority={priority && idx === 0} />
+              <MomentCard moment={m} compact priority={priority && idx === 0} />
             </div>
           ))
         )}
@@ -155,4 +167,3 @@ export function CollectionRow({ collection, priority }: CollectionRowProps) {
     </article>
   )
 }
-
