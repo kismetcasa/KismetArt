@@ -9,11 +9,10 @@ export function getClientIp(req: NextRequest): string {
   )
 }
 
-// Atomic INCR+EXPIRE. Splitting these into two REST round-trips meant a
-// dropped EXPIRE left the counter TTL-less; once it crossed the limit
-// the IP was rate-limited forever with no self-recovery. Bundling them
-// in a Lua script makes the pair atomic server-side and keeps EXPIRE
-// scoped to the first INCR (so the window stays fixed, not sliding).
+// Atomic INCR+EXPIRE via Lua. Two REST calls let a dropped EXPIRE
+// leave the counter TTL-less, locking the IP out forever once the
+// limit was crossed. EXPIRE stays scoped to the first INCR so the
+// window remains fixed, not sliding.
 const RATELIMIT_LUA = `
 local n = redis.call('INCR', KEYS[1])
 if n == 1 then
@@ -26,7 +25,7 @@ return n
 export async function checkRateLimit(
   key: string,
   limit: number,
-  windowSecs: number,
+  windowSecs: number
 ): Promise<boolean> {
   try {
     const k = `kismetart:rl:${key}`

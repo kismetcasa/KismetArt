@@ -3,10 +3,9 @@ import { redis } from './redis'
 const keyFollowing = (a: string) => `kismetart:following:${a.toLowerCase()}`
 const keyFollowers = (a: string) => `kismetart:followers:${a.toLowerCase()}`
 
-// Both sides of the follow graph mutate inside a MULTI/EXEC so a
-// network failure can't leave the relationship half-written (e.g.,
+// MULTI/EXEC so a network failure can't half-write the graph: e.g.
 // A->following has B but B->followers is missing A, which silently
-// breaks fanoutToFollowers for that pair).
+// breaks fanoutToFollowers for that pair.
 export async function follow(follower: string, target: string): Promise<void> {
   const f = follower.toLowerCase()
   const t = target.toLowerCase()

@@ -1,13 +1,9 @@
 import { redis } from './redis'
 
-// ZSET per collector — members are `<collectionAddr>:<tokenId>`, scores
-// are ms-epoch at collect time. Read newest-first by the timeline route's
-// Collected tab; written by /api/collect (direct mints) and
-// /api/airdrop/notify (admin-mint airdrop recipients).
-//
-// Centralized here so the key shape and member format have a single
-// source of truth — three sites used to hard-code both, and a typo in
-// any one would have silently disappeared collected tokens from the UI.
+// Per-collector "what I've collected" ZSET. Written by /api/collect
+// (direct mints) and /api/airdrop/notify (recipients); read by the
+// timeline route's Collected tab. Centralized so the key shape and
+// member format have a single source of truth.
 const keyCollected = (collector: string) =>
   `kismetart:collected:${collector.toLowerCase()}`
 

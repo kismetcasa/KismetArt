@@ -251,10 +251,9 @@ export async function markAllRead(address: string): Promise<void> {
   ])
 }
 
-// Each "SADD a key with a TTL" pair runs in a MULTI/EXEC so the TTL
-// can't be silently lost on a fire-and-forget EXPIRE drop. Refreshing
-// the TTL on every write is intentional — these are sliding windows
-// (active users keep their read/mute state warm).
+// SADD+EXPIRE in MULTI/EXEC so a dropped EXPIRE can't leave the key
+// TTL-less. Sliding TTL is intentional — active users keep their
+// read/mute state warm.
 export async function markOneRead(address: string, id: string): Promise<void> {
   await redis
     .multi()
