@@ -83,6 +83,10 @@ interface ManagedVideo {
    *  over. */
   slots: Slot[]
   releaseTimer: number | null
+  /** Cancels the "drop the transition after the morph" timeout. Reset
+   *  on each activateSlot so back-to-back route transitions don't strand
+   *  the element in transitioning state after the second one finishes. */
+  transitionTimer: number | null
   observer: IntersectionObserver | null
   gateways: string[]
   gatewayIndex: number
@@ -173,6 +177,17 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
       video.releaseTimer = null
     }
     video.lastActiveAt = Date.now()
+    // Apply the morph transition for this one re-position (route-change
+    // case: card slot → overlay slot). Cleared on a timer so subsequent
+    // scroll-driven positionElement calls snap instantly instead of
+    // dragging behind the slot.
+    video.el.style.transition =
+      'top 0.18s ease, left 0.18s ease, width 0.18s ease, height 0.18s ease'
+    if (video.transitionTimer !== null) clearTimeout(video.transitionTimer)
+    video.transitionTimer = window.setTimeout(() => {
+      video.el.style.transition = 'none'
+      video.transitionTimer = null
+    }, 220)
     positionElement(video, slot)
 
     // Replace any prior IntersectionObserver. Controlled surfaces
@@ -206,6 +221,7 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     video.destroyed = true
     video.observer?.disconnect()
     if (video.releaseTimer !== null) clearTimeout(video.releaseTimer)
+    if (video.transitionTimer !== null) clearTimeout(video.transitionTimer)
     video.abort.abort()
     video.el.pause()
     video.el.removeAttribute('src')
@@ -239,14 +255,17 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     el.style.objectFit = 'contain'
     el.style.visibility = 'hidden'
     el.style.opacity = '0'
-    el.style.transition =
-      'top 0.2s ease, left 0.2s ease, width 0.2s ease, height 0.2s ease'
+    // Transition is set only by activateSlot for the duration of the
+    // morph and cleared right after — so scroll-driven repositions go
+    // through without easing and the video tracks the slot per-frame.
+    el.style.transition = 'none'
 
     const abort = new AbortController()
     const video: ManagedVideo = {
       el,
       slots: [],
       releaseTimer: null,
+      transitionTimer: null,
       observer: null,
       gateways,
       gatewayIndex: 0,
@@ -320,10 +339,14 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
             activateSlot(video, next)
             return
           }
-          // No remaining slots — start the grace timer. If a new slot
-          // for this src mounts within the grace window (typical
-          // route-transition pattern), it'll cancel the timer and
-          // reuse the element.
+          // No remaining slots. Hide the element immediately so a
+          // route-change to a page that has no slot for this src
+          // (e.g. /profile) doesn't leave the orphan video painting
+          // over the new page for the grace window. Decoder +
+          // currentTime stay alive in the pool; if a new slot mounts
+          // within grace, activateSlot flips visibility back on
+          // without re-creating the element.
+          video.el.style.visibility = 'hidden'
           video.releaseTimer = window.setTimeout(() => {
             deactivate(video)
           }, RELEASE_GRACE_MS)
