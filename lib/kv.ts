@@ -17,13 +17,10 @@ const keyAuthorizedCreators = (collection: string) =>
 const KEY = 'kismetart:collections'
 // Curator-blessed positive set — Create Collection form deploys plus
 // any legacy real collection the curator manually promoted. Source
-// of truth for collection-shaped surfaces. ZSET scored by deploy
-// timestamp so the discover feed propagates newest-first the same
-// way the Mints feed does (mints get their order from inprocess's
-// `created_at`; collections have no upstream equivalent, so we
-// stamp ms-epoch at insert time and read via ZRANGE rev=true).
-// One-time SET→ZSET migration lives in
-// scripts/migrate-created-collections-zset.mjs.
+// of truth for collection-shaped surfaces. ZSET (scored by deploy
+// timestamp) rather than SET so Discover paginates newest-first;
+// `-z` suffix is required because Redis rejects ZADD on a key that
+// already holds a SET. See scripts/migrate-created-collections-zset.mjs.
 const CREATED_COLLECTIONS_KEY = 'kismetart:created-collections-z'
 // Mints minted via Kismet's MintForm or as a Create Collection cover.
 // Members are `<addr>:<tokenId>` strings. Source of truth for the
@@ -104,10 +101,8 @@ export async function addTrackedCollection(
   try {
     const ops: Promise<unknown>[] = [redis.sadd(KEY, address)]
     // Auto-deploy wrappers join only KEY — never the curator-blessed
-    // set, so they don't surface as collections. NX preserves SET-like
-    // idempotency: re-POSTing the same address keeps the original
-    // deploy-time score so a duplicate write can't bump the entry to
-    // the top of the discover feed.
+    // set, so they don't surface as collections. NX: re-POSTs don't
+    // bump position.
     if (source === 'create-form') {
       ops.push(
         redis.zadd(
