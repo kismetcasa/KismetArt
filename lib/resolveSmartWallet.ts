@@ -1,6 +1,13 @@
 import { isAddress } from '@/lib/address'
 import { INPROCESS_API } from '@/lib/inprocess'
 
+// Per-EOA cache. Smart-wallet ↔ EOA is deterministic per inprocess's
+// derivation, so once resolved it doesn't change. 24h TTL bounds the
+// drift if the algorithm ever migrates. Only successful resolutions are
+// cached — nulls (network/parse failures) retry on the next call.
+const cache = new Map<string, { value: string; expiresAt: number }>()
+const TTL_MS = 24 * 60 * 60 * 1000
+
 /**
  * Resolves an artist's inprocess smart wallet address from their EOA via
  * `GET /api/smartwallet`. Centralizes the defensive shape parsing —
@@ -18,6 +25,10 @@ export async function resolveSmartWallet(
   options: { revalidate?: number } = {},
 ): Promise<string | null> {
   if (!isAddress(artistWallet)) return null
+  const key = artistWallet.toLowerCase()
+  const hit = cache.get(key)
+  if (hit && hit.expiresAt > Date.now()) return hit.value
+
   const revalidate = options.revalidate ?? 3600
 
   let res: Response
@@ -55,5 +66,7 @@ export async function resolveSmartWallet(
 
   if (typeof candidate !== 'string' || !isAddress(candidate)) return null
 
-  return candidate.toLowerCase()
+  const resolved = candidate.toLowerCase()
+  cache.set(key, { value: resolved, expiresAt: Date.now() + TTL_MS })
+  return resolved
 }
