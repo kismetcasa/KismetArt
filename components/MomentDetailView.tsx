@@ -684,7 +684,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   // creator's intent to hide is honored even on direct URL access.
   if (isHidden && !isCreator) {
     return (
-      <div className="max-w-[88rem] mx-auto pb-16">
+      <div className="max-w-[88rem] mx-auto px-3 sm:px-4 pt-3 sm:pt-4 pb-16">
         {!inOverlay && (
           <div className="px-4 py-3 border-b border-[#2a2a2a]">
             <Link
@@ -705,7 +705,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   }
 
   return (
-    <div className="max-w-[88rem] mx-auto pb-16">
+    <div className="max-w-[88rem] mx-auto px-3 sm:px-4 pt-3 sm:pt-4 pb-16">
 
       {/* Back nav — canonical only. In the overlay the X / Escape /
           backdrop-click triad already dismisses; rendering a "back"
@@ -1056,7 +1056,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
               </p>
               {ownedCount > 0 && (
                 <p className="text-[10px] font-mono text-[#555] uppercase tracking-widest">
-                  ×{ownedCount} owned
+                  ×{ownedCount} own
                 </p>
               )}
             </div>

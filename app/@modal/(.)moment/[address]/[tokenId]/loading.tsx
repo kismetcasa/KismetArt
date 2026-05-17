@@ -8,7 +8,7 @@ import { ModalOverlay } from '@/components/ModalOverlay'
 export default function ModalMomentLoading() {
   return (
     <ModalOverlay>
-      <div className="max-w-[88rem] mx-auto pb-16 animate-pulse">
+      <div className="max-w-[88rem] mx-auto px-3 sm:px-4 pt-3 sm:pt-4 pb-16 animate-pulse">
         <div className="md:grid md:grid-cols-2 border-b border-[#2a2a2a]">
           <div className="border-b border-[#2a2a2a] md:border-b-0 md:border-r md:border-r-[#2a2a2a]">
             <div className="aspect-square bg-[#111]" />
