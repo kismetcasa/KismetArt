@@ -1062,26 +1062,17 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
           >
             <X size={18} />
           </button>
-          {isVideo && meta.animation_url ? (
-            // onClick stopPropagation is no longer needed — Plan C puts
-            // the actual <video> element in document.body, not inside
-            // the lightbox tree, so clicks on the video can't bubble
-            // up to the lightbox's dismiss handler.
-            <MomentVideo
-              src={meta.animation_url}
-              poster={meta.image}
-              thumbhash={meta.kismet_thumbhash}
-              controls
-              className="max-h-[95vh] max-w-[95vw] object-contain"
-            />
-          ) : meta.image ? (
+          {/* Image-only lightbox. Videos don't open the lightbox — the
+              cursor-zoom-in affordance above is gated on `!isVideo` and
+              videos already expose native fullscreen via the controls. */}
+          {meta.image && (
             <MomentImg
               src={meta.image}
               alt={meta.name ?? 'moment'}
               className="max-h-[95vh] max-w-[95vw] object-contain"
               onClick={(e) => e.stopPropagation()}
             />
-          ) : null}
+          )}
         </div>
       )}
     </div>

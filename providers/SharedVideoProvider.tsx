@@ -239,14 +239,25 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
 
     // Gateway walking. On error, try the next gateway. When the pool
     // is exhausted, notify every registered slot's onError so each
-    // caller can drop the slot and show the poster fallback.
+    // caller can drop the slot and show the poster fallback — then
+    // destroy the broken element instead of letting it linger in
+    // document.body until the 5-minute idle eviction.
     el.addEventListener('error', () => {
       const next = video.gatewayIndex + 1
       if (next < video.gateways.length) {
         video.gatewayIndex = next
         el.src = video.gateways[next]!
       } else {
-        video.slots.forEach((s) => s.onError?.())
+        // Snapshot + clear slots first so the synchronous onError
+        // callbacks (which set videoFailed=true → unmount the slot →
+        // release()) find an empty list and bail harmlessly. Then
+        // tear down the orphaned element so it doesn't sit in body
+        // for IDLE_EVICT_MS.
+        const slotsToNotify = video.slots
+        video.slots = []
+        slotsToNotify.forEach((s) => s.onError?.())
+        destroyVideo(video)
+        poolRef.current.delete(video.src)
       }
     })
 
