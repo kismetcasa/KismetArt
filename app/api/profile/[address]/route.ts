@@ -4,6 +4,7 @@ import { isAddress } from '@/lib/address'
 import { mainnet } from 'viem/chains'
 import { redis } from '@/lib/redis'
 import { getProfile, upsertProfile, consumeNonce } from '@/lib/profile'
+import { getFarcasterProfileByAddress } from '@/lib/farcasterProfile'
 import { errorResponse } from '@/lib/apiResponse'
 
 // Prefer a configured RPC URL (Alchemy / Infura) to avoid rate limits on
@@ -47,16 +48,36 @@ export async function GET(
   if (!isAddress(address)) {
     return errorResponse(400, 'Invalid address')
   }
-  const profile = await getProfile(address)
-  if (!profile.username) {
-    const cached = await getCachedEns(address)
-    if (cached === undefined) {
-      after(() => resolveEnsAndCache(address))
-    } else if (cached) {
-      return NextResponse.json({ profile: { ...profile, ensName: cached } })
-    }
+  // Profile, ENS, and Farcaster lookups are independent + I/O-bound. Fan
+  // them out so the slowest one (the FC API, ~50-200ms cold) sets total
+  // latency rather than their sum.
+  const [profile, cachedEns, farcaster] = await Promise.all([
+    getProfile(address),
+    getCachedEns(address),
+    getFarcasterProfileByAddress(address),
+  ])
+  if (!profile.username && cachedEns === undefined) {
+    after(() => resolveEnsAndCache(address))
   }
-  return NextResponse.json({ profile })
+  // Server-side enrichment so existing components auto-propagate FC
+  // identity without per-component changes:
+  //   - avatarUrl: prefer the user's own Kismet upload; fall back to FC pfp
+  //   - displayName: collapses the username/farcaster/ens fallback chain
+  //     into a single field so callers don't have to repeat the precedence
+  //     logic at every render site
+  const ensName = cachedEns || undefined
+  const avatarUrl = profile.avatarUrl || farcaster?.pfpUrl || undefined
+  const displayName =
+    profile.username || farcaster?.username || ensName || null
+  return NextResponse.json({
+    profile: {
+      ...profile,
+      avatarUrl,
+      ensName,
+      displayName,
+      farcaster: farcaster ?? undefined,
+    },
+  })
 }
 
 export async function PUT(

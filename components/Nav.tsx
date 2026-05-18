@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import { useEffect, useState } from 'react'
@@ -10,32 +11,67 @@ import { ProfileAvatar } from './ProfileAvatar'
 import { SearchBar } from './SearchBar'
 import { SearchModal } from './SearchModal'
 import { NotificationBell } from './NotificationBell'
+import { useFarcaster } from '@/providers/FarcasterProvider'
 
 export function Nav() {
   const pathname = usePathname()
   const { address, isConnected } = useAccount()
+  const { identity: fcIdentity } = useFarcaster()
   const [avatarUrl, setAvatarUrl] = useState<string | undefined>(undefined)
   const [searchOpen, setSearchOpen] = useState(false)
   const [modalQuery, setModalQuery] = useState('')
 
+  // FC primary is the canonical Kismet identity whenever it's available:
+  //   - Mini App: identity comes from the verified Quick Auth JWT
+  //   - Web with an FC-verified wallet: identity comes from the reverse
+  //     lookup in FarcasterProvider (works for any of the user's verified
+  //     wallets — primary or sibling)
+  //   - Web with a non-FC wallet: falls back to wagmi address
+  // Profile link, avatar, and notification scope all key off this so the
+  // user sees the same Kismet identity regardless of which of their
+  // wallets they happen to have connected.
+  const effectiveAddress = fcIdentity?.address ?? address
+  const effectiveSignedIn = !!fcIdentity?.address || isConnected
+
   useEffect(() => {
-    if (!address) { setAvatarUrl(undefined); return }
-    fetch(`/api/profile/${address}`)
+    if (!effectiveAddress) { setAvatarUrl(undefined); return }
+    // Seed instantly with the FC pfp from host context so the avatar
+    // doesn't flash a blockie before the /api/profile round-trip lands.
+    if (fcIdentity?.pfpUrl) setAvatarUrl(fcIdentity.pfpUrl)
+    fetch(`/api/profile/${effectiveAddress}`)
       .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setAvatarUrl(d.profile?.avatarUrl))
       .catch(() => {})
-  }, [address])
+  }, [effectiveAddress, fcIdentity?.pfpUrl])
 
   return (
     <>
       {/* No backdrop-filter: Safari recomputes the blur every scroll
           frame over the playing-video feed behind this fixed bar, and
           the GPU cost shows up as jank. Solid /95 stays visually flat. */}
-      <header className="fixed top-0 left-0 right-0 z-50 border-b border-line bg-[#0d0d0d]/95">
+      <header
+        className="fixed top-0 left-0 right-0 z-50 border-b border-line bg-[#0d0d0d]/95"
+        // Pad the header by --safe-top so the dark background extends
+        // through the device's notch / status bar while the actual nav
+        // content (h-14 below) sits in the visible area. On web, --safe-top
+        // is 0 and nothing changes.
+        style={{ paddingTop: 'var(--safe-top)' }}
+      >
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3 sm:gap-8">
-            <Link href="/" className="text-sm font-mono tracking-widest uppercase accent-grad">
-              Kismet
+            <Link
+              href="/"
+              className="flex items-center gap-2 text-sm font-mono tracking-widest uppercase accent-grad"
+            >
+              <Image
+                src="/logo.png"
+                alt=""
+                width={24}
+                height={24}
+                className="object-contain"
+                priority
+              />
+              <span>Kismet</span>
             </Link>
             <nav className="flex items-center gap-0.5 sm:gap-1">
               <Link
@@ -69,11 +105,11 @@ export function Nav() {
             >
               <Search size={18} />
             </button>
-            {isConnected && address && <NotificationBell address={address} />}
+            {effectiveSignedIn && effectiveAddress && <NotificationBell address={effectiveAddress} />}
             <WalletButton />
-            {isConnected && address && (
-              <Link href={`/profile/${address}`} className="flex-shrink-0">
-                <ProfileAvatar address={address} avatarUrl={avatarUrl} size={32} clickable />
+            {effectiveSignedIn && effectiveAddress && (
+              <Link href={`/profile/${effectiveAddress}`} className="flex-shrink-0">
+                <ProfileAvatar address={effectiveAddress} avatarUrl={avatarUrl} size={32} clickable />
               </Link>
             )}
           </div>
