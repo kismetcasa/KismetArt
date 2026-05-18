@@ -191,18 +191,24 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
   function positionElement(video: ManagedVideo, slot: Slot) {
     const rect = slot.ref.getBoundingClientRect()
     const el = video.el
-    if (
-      rect.top !== video.lastTop ||
-      rect.left !== video.lastLeft ||
-      rect.width !== video.lastWidth ||
-      rect.height !== video.lastHeight
-    ) {
-      el.style.top = `${rect.top}px`
-      el.style.left = `${rect.left}px`
-      el.style.width = `${rect.width}px`
-      el.style.height = `${rect.height}px`
+    // Position via `transform: translate3d` (GPU-composited on every
+    // engine) rather than `top`/`left` (which force layout per frame on
+    // Safari). Size still needs width/height — animating those triggers
+    // layout, but only during the 220ms morph and only when the slot
+    // actually resizes. Scroll ticks usually change position only, so
+    // the hot path stays GPU-only.
+    const positionChanged =
+      rect.top !== video.lastTop || rect.left !== video.lastLeft
+    const sizeChanged =
+      rect.width !== video.lastWidth || rect.height !== video.lastHeight
+    if (positionChanged) {
+      el.style.transform = `translate3d(${rect.left}px, ${rect.top}px, 0)`
       video.lastTop = rect.top
       video.lastLeft = rect.left
+    }
+    if (sizeChanged) {
+      el.style.width = `${rect.width}px`
+      el.style.height = `${rect.height}px`
       video.lastWidth = rect.width
       video.lastHeight = rect.height
     }
@@ -274,7 +280,7 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     // behind a user setting.
     if (video.el.style.visibility === 'visible') {
       video.el.style.transition =
-        'top 0.18s ease, left 0.18s ease, width 0.18s ease, height 0.18s ease'
+        'transform 0.18s ease, width 0.18s ease, height 0.18s ease'
       video.transitionTimer = window.setTimeout(() => {
         video.el.style.transition = 'none'
         video.transitionTimer = null
@@ -349,6 +355,10 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     el.playsInline = true
     el.preload = 'metadata'
     el.style.position = 'fixed'
+    // Anchor the element at the viewport origin and let positionElement
+    // drive placement via transform — keeps scroll-tracking on the GPU.
+    el.style.top = '0'
+    el.style.left = '0'
     el.style.objectFit = 'contain'
     el.style.visibility = 'hidden'
     el.style.opacity = '0'

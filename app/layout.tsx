@@ -44,7 +44,7 @@ export default function RootLayout({
       <body>
         <Providers>
           <Nav />
-          <main className="pt-14 min-h-screen bg-[#0d0d0d]">
+          <main className="pt-14 min-h-screen min-h-dvh bg-[#0d0d0d]">
             {children}
           </main>
           {/* Intercepted routes render here as an overlay over the
