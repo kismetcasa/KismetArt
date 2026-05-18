@@ -34,10 +34,10 @@ export async function revokeSession(token: string): Promise<void> {
 
 /**
  * Read a Farcaster Quick Auth JWT from the Authorization header, if
- * present. Used as a parallel auth path to the session cookie because the
- * cookie is SameSite=Lax and therefore not sent on cross-site iframe
- * subresource requests (i.e. all requests from a Mini App embedded inside
- * Warpcast / Base App / etc). The JWT, attached to the Authorization
+ * present. Used as a parallel auth path to the session cookie because
+ * the cookie is SameSite=Lax and therefore not sent on cross-site iframe
+ * subresource requests (i.e. all requests from a Mini App embedded
+ * inside any Farcaster host). The JWT, attached to the Authorization
  * header by FarcasterProvider's fetch wrapper, bypasses cookie policy
  * entirely.
  */
