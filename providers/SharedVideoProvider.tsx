@@ -329,7 +329,12 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
             video.el.pause()
           }
         },
-        { threshold: 0.01, rootMargin: '200px' },
+        // rootMargin was 200px (pre-warm videos a card-height above/below
+        // the viewport) — fine on Blink but on WebKit it kept 5-10 video
+        // decoders running concurrently, which is the dominant cause of
+        // playback + scroll jank on Safari. 50px keeps a small prefetch
+        // window without saturating the decoder budget.
+        { threshold: 0.01, rootMargin: '50px' },
       )
       io.observe(slot.ref)
       video.observer = io
