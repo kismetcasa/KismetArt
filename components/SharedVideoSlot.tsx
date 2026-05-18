@@ -33,27 +33,31 @@ const DEFAULT_Z_INDEX = 10
  * at the position/size the video should occupy; the SharedVideoProvider
  * CSS-positions a managed <video> element to overlay it.
  *
- * Acquire lifecycle:
- *   - controls=true (lightbox, detail page): acquire immediately on
- *     mount so the route-transition morph from card → overlay is
- *     instant. Releases on unmount; provider grace timer (1s) keeps
- *     the element alive long enough for the previous surface (e.g.
- *     the card we morphed from) to re-claim it without re-decoding.
- *   - controls=false (feed cards): lazy-acquire via IntersectionObserver
- *     with a 300px rootMargin. Without this, every card on the
- *     homepage triggered an immediate `<video>` element creation +
- *     Arweave HTTP request on mount; with 18 cards on page 1 that's
- *     18 simultaneous fetches, queued past Safari's 6-per-host
- *     connection cap and causing videos near the bottom of the page
- *     to spend seconds waiting in the HTTP queue before they could
- *     even start loading. Lazy-acquire keeps the network + decoder
- *     budget proportional to what's actually near the screen.
+ * On mount: registers a slot with the pool (which creates the underlying
+ * <video> element if no entry exists for the src yet, or reuses the
+ * already-pooled one). On unmount: releases. The pool's 1s grace timer
+ * keeps an element alive across route transitions long enough for the
+ * next surface to re-claim it without re-decoding.
  *
- * On every acquire we attach a ResizeObserver (for slot size changes)
- * and scroll listeners on each clipping ancestor (their scroll events
- * aren't covered by the provider's centralised window-scroll handler,
- * since ancestor sets vary per slot). All of that gets torn down on
- * release so an off-screen slot has zero ongoing cost.
+ * Per-slot we attach a ResizeObserver (for slot size changes) and scroll
+ * listeners on each clipping ancestor — those aren't covered by the
+ * provider's centralised window-scroll handler since ancestor sets are
+ * slot-specific. Window scroll/resize repositioning is handled at the
+ * provider level (one batched listener, all videos updated in a single
+ * read-then-write pass).
+ *
+ * Earlier in this branch we experimented with deferring `ctx.acquire()`
+ * behind an IntersectionObserver ("lazy acquire") to bound concurrent
+ * Arweave fetches at page load. The architectural protection didn't
+ * meaningfully translate to better Safari perf in practice — the actual
+ * Safari bottlenecks (transform-based positioning, backdrop-blur over
+ * playing video, fastdom-style scroll handler) are addressed elsewhere
+ * in this branch — and it regressed Chrome's pre-buffer behaviour
+ * because cards on a long feed no longer warmed their decoders ahead
+ * of scroll. Reverted to eager mount-time acquire. If concurrent-fetch
+ * pressure ever becomes the real bottleneck again, the right fix is
+ * HTTP/2 multiplexing at the CDN layer, not application-level lazy
+ * mounting.
  */
 export function SharedVideoSlot({
   src,
@@ -87,10 +91,15 @@ export function SharedVideoSlot({
     // re-walk + re-getComputedStyle on every refresh tick.
     const clipAncestors = scrollableAncestors(el)
 
-    let release: (() => void) | null = null
-    let ro: ResizeObserver | null = null
-    let rafPending = false
+    const release = ctx.acquire(src, {
+      ref: el,
+      controls,
+      zIndex: finalZIndex,
+      onError: () => onErrorRef.current?.(),
+      clipAncestors,
+    })
 
+    let rafPending = false
     const scheduleRefresh = () => {
       if (rafPending) return
       rafPending = true
@@ -99,59 +108,18 @@ export function SharedVideoSlot({
         ctx.refresh(src)
       })
     }
-
-    const doAcquire = () => {
-      if (release) return
-      release = ctx.acquire(src, {
-        ref: el,
-        controls,
-        zIndex: finalZIndex,
-        onError: () => onErrorRef.current?.(),
-        clipAncestors,
-      })
-      ro = new ResizeObserver(scheduleRefresh)
-      ro.observe(el)
-      for (const a of clipAncestors) {
-        a.addEventListener('scroll', scheduleRefresh, { passive: true })
-      }
-    }
-
-    const doRelease = () => {
-      if (!release) return
-      release()
-      release = null
-      ro?.disconnect()
-      ro = null
-      for (const a of clipAncestors) {
-        a.removeEventListener('scroll', scheduleRefresh)
-      }
-    }
-
-    let acquireIo: IntersectionObserver | null = null
-    if (controls) {
-      doAcquire()
-    } else {
-      // 3000px (~4 screen heights) puts the lazy-acquire margin close
-      // to the pre-branch behaviour of "every card on the page
-      // pre-loaded on mount" without being unbounded — fast scrolls
-      // generally don't outpace this buffer, so by the time a card
-      // enters viewport its bytes are already cached. Narrower margins
-      // (300-1500px) left a visible "video catches up" delay vs. the
-      // original eager-everywhere baseline. Safari still benefits
-      // because pages 3+ of infinite scroll don't all acquire at once.
-      acquireIo = new IntersectionObserver(
-        ([entry]) => {
-          if (entry.isIntersecting) doAcquire()
-          else doRelease()
-        },
-        { rootMargin: '3000px' },
-      )
-      acquireIo.observe(el)
+    const ro = new ResizeObserver(scheduleRefresh)
+    ro.observe(el)
+    for (const a of clipAncestors) {
+      a.addEventListener('scroll', scheduleRefresh, { passive: true })
     }
 
     return () => {
-      acquireIo?.disconnect()
-      doRelease()
+      release()
+      ro.disconnect()
+      for (const a of clipAncestors) {
+        a.removeEventListener('scroll', scheduleRefresh)
+      }
     }
   }, [ctx, src, controls, finalZIndex])
 
