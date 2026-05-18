@@ -7,6 +7,7 @@ import {
   type Notification,
   type NotificationType,
 } from './notifications'
+import { SITE_URL } from './siteUrl'
 
 // Farcaster native push notifications, layered on top of the in-app bell.
 //
@@ -262,7 +263,6 @@ async function isPushMasterOn(fid: number): Promise<boolean> {
 // these conservatively to leave room for emoji-width quirks across clients.
 const TITLE_MAX = 32
 const BODY_MAX = 128
-const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://kismet.art').replace(/\/$/, '')
 
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s

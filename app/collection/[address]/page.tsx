@@ -9,8 +9,7 @@ import { getCollectionMeta as getKvCollectionMeta, getUserCollections } from '@/
 import { isCollectionHidden } from '@/lib/hiddenCollections'
 import { SESSION_COOKIE, verifySession } from '@/lib/session'
 import { buildFarcasterEmbed } from '@/lib/farcasterEmbed'
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://kismet.art'
+import { SITE_URL } from '@/lib/siteUrl'
 
 interface Props {
   params: Promise<{ address: string }>

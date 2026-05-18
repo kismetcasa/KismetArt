@@ -4,9 +4,8 @@ import { Providers } from '@/providers/WagmiProvider'
 import { FarcasterProvider } from '@/providers/FarcasterProvider'
 import { Nav } from '@/components/Nav'
 import { buildFarcasterEmbed } from '@/lib/farcasterEmbed'
+import { SITE_URL } from '@/lib/siteUrl'
 import './globals.css'
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://kismet.art'
 
 export const metadata: Metadata = {
   // Resolves relative URLs in generateMetadata across the app (og:image

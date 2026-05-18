@@ -14,9 +14,8 @@ import { SESSION_COOKIE, verifySession } from '@/lib/session'
 import { fetchMomentDetail } from '@/lib/momentDetail'
 import { pickFirstNonOperatorAdmin } from '@/lib/momentAuthz'
 import { buildFarcasterEmbed } from '@/lib/farcasterEmbed'
+import { SITE_URL } from '@/lib/siteUrl'
 import { MomentDetailView } from '@/components/MomentDetailView'
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://kismet.art'
 
 interface Props {
   params: Promise<{ address: string; tokenId: string }>

@@ -1,5 +1,6 @@
 import { createClient } from '@farcaster/quick-auth'
 import { redis } from './redis'
+import { SITE_URL } from './siteUrl'
 
 // Quick Auth verifies JWTs **locally** via asymmetric signature check
 // against Farcaster's published public key — no per-request network round
@@ -7,7 +8,6 @@ import { redis } from './redis'
 // constraints. One module-level instance is enough.
 const client = createClient()
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://kismet.art'
 // The JWT's `aud` claim is the bare domain (no scheme, no path). Match
 // what the user signed against on the client.
 const DOMAIN = new URL(SITE_URL).hostname

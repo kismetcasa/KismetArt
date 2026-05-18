@@ -13,8 +13,13 @@
 export type FarcasterEmbedAction = {
   /** Page URL the host should open. Defaults to the current page URL when omitted. */
   url?: string
-  /** App name override. Defaults to manifest.name. */
-  name?: string
+  /**
+   * App / page name. REQUIRED by the canonical actionLaunchMiniAppSchema
+   * (miniAppNameSchema = z.string().max(32)). User-influenced values
+   * (moment titles, collection names, usernames) are truncated by the
+   * builder so callers can't accidentally emit an invalid embed.
+   */
+  name: string
   /** Splash image override. Defaults to manifest.splashImageUrl. Must be 200x200 PNG. */
   splashImageUrl?: string
   /** Splash bg override. Defaults to manifest.splashBackgroundColor. */
@@ -26,14 +31,24 @@ export type FarcasterEmbedInput = {
   imageUrl: string
   /** Button text. Spec caps at 32 chars; longer strings are truncated. */
   buttonTitle: string
-  action?: FarcasterEmbedAction
+  action: FarcasterEmbedAction
 }
+
+const NAME_AND_TITLE_MAX = 32
 
 export function buildFarcasterEmbed(
   input: FarcasterEmbedInput,
 ): Record<string, string> {
-  const action = input.action ?? {}
-  const button = { title: input.buttonTitle.slice(0, 32) }
+  // Both buttonTitle and action.name are capped at 32 chars by the
+  // canonical schemas (buttonTitleSchema, miniAppNameSchema). Truncate
+  // here so call sites can pass user-controlled strings directly without
+  // worrying about length — a longer string would otherwise make the
+  // host's embed validation reject the whole card.
+  const button = { title: input.buttonTitle.slice(0, NAME_AND_TITLE_MAX) }
+  const action = {
+    ...input.action,
+    name: input.action.name.slice(0, NAME_AND_TITLE_MAX),
+  }
 
   const miniappPayload = {
     version: '1' as const,

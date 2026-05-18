@@ -4,14 +4,13 @@ import { isAddress } from '@/lib/address'
 import { getProfile } from '@/lib/profile'
 import { getFarcasterProfileByAddress } from '@/lib/farcasterProfile'
 import { buildFarcasterEmbed } from '@/lib/farcasterEmbed'
+import { SITE_URL } from '@/lib/siteUrl'
 import { shortAddress } from '@/lib/inprocess'
 import { ProfileView } from '@/components/ProfileView'
 
 interface Props {
   params: Promise<{ address: string }>
 }
-
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://kismet.art'
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { address } = await params

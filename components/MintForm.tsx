@@ -29,8 +29,8 @@ import { USDC_BASE } from '@/lib/zoraMint'
 import { toastError } from '@/lib/toast'
 import { useFarcaster } from '@/providers/FarcasterProvider'
 import { hapticNotifySuccess } from '@/lib/farcasterHaptics'
+import { SITE_URL } from '@/lib/siteUrl'
 
-const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://kismet.art').replace(/\/$/, '')
 const KISMET_CHANNEL_KEY = 'kismet'
 
 type PriceCurrency = 'eth' | 'usdc'

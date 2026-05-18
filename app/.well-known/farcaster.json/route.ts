@@ -19,10 +19,7 @@ import { NextResponse } from 'next/server'
 // daily, so 1h freshness is plenty.
 export const revalidate = 3600
 
-// Strip trailing slash so `${SITE_URL}/path` doesn't double-slash when an
-// operator sets NEXT_PUBLIC_SITE_URL with a trailing `/`. Matches the
-// normalization in lib/farcasterNotifications.ts and components/MintForm.tsx.
-const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://kismet.art').replace(/\/$/, '')
+import { SITE_URL } from '@/lib/siteUrl'
 
 function envOrDefault(key: string, fallback: string): string {
   const v = process.env[key]
