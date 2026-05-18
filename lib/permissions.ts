@@ -97,12 +97,10 @@ export async function readPermissions(
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr))
 }
 
-/** True iff the bitmap has the ADMIN bit set. */
 export function hasAdminBit(perms: bigint): boolean {
   return (perms & PERMISSION_BIT_ADMIN) === PERMISSION_BIT_ADMIN
 }
 
-/** True iff the bitmap has the MINTER bit set. */
 export function hasMinterBit(perms: bigint): boolean {
   return (perms & PERMISSION_BIT_MINTER) === PERMISSION_BIT_MINTER
 }

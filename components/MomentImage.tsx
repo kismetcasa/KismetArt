@@ -102,7 +102,7 @@ export function MomentImage({ src, onAllError, mime, preferProxy, thumbhash, pri
       {!loaded && !blurDataURL && (
         <span
           aria-hidden
-          className="absolute inset-0 bg-[#1a1a1a] animate-pulse pointer-events-none"
+          className="absolute inset-0 bg-raised animate-pulse pointer-events-none"
         />
       )}
       {/* Key includes mode-derived flags so next/image actually remounts
@@ -133,6 +133,11 @@ type ImgProps = CommonProps & Omit<React.ImgHTMLAttributes<HTMLImageElement>, 's
    *  through the proxy add up across the user base. Gateway walking
    *  still happens via `useFallbackUrl` on error. */
   skipProxy?: boolean
+  /** Above-the-fold hint — eager + fetchPriority="high" when true,
+   *  loading="lazy" when false. Default-lazy means callers showing an
+   *  image as soon as it mounts (lightbox, modals) need to pass true
+   *  explicitly. */
+  priority?: boolean
 }
 
 /**
@@ -147,7 +152,7 @@ type ImgProps = CommonProps & Omit<React.ImgHTMLAttributes<HTMLImageElement>, 's
  * own server (CPU + egress on every fetch) outweighs the proxy's
  * resilience benefit.
  */
-export function MomentImg({ src, onAllError, skipProxy, ...rest }: ImgProps) {
+export function MomentImg({ src, onAllError, skipProxy, priority, ...rest }: ImgProps) {
   const { url: walkedUrl, onError: walkGateway } = useFallbackUrl(src, onAllError)
   const proxiable = isProxiable(src) && !skipProxy
   const [proxyFailed, setProxyFailed] = useState(false)
@@ -160,6 +165,16 @@ export function MomentImg({ src, onAllError, skipProxy, ...rest }: ImgProps) {
   const handleError = useProxy ? () => setProxyFailed(true) : walkGateway
 
   // alt comes through ...rest.
-  // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
-  return <img key={renderUrl} src={renderUrl} onError={handleError} decoding="async" {...rest} />
+  return (
+    // eslint-disable-next-line @next/next/no-img-element, jsx-a11y/alt-text
+    <img
+      key={renderUrl}
+      src={renderUrl}
+      onError={handleError}
+      decoding="async"
+      loading={priority ? 'eager' : 'lazy'}
+      fetchPriority={priority ? 'high' : undefined}
+      {...rest}
+    />
+  )
 }

@@ -14,6 +14,7 @@ import uploadToArweave from '@/lib/arweave/uploadToArweave'
 import { generateThumbhash } from '@/lib/media/thumbhash'
 import { canTranscode, transcodeGifToMp4 } from '@/lib/media/transcodeGif'
 import { extractVideoPoster } from '@/lib/media/extractPoster'
+import { remuxToFaststartMp4 } from '@/lib/media/remuxFaststart'
 import { uploadJson } from '@/lib/arweave/uploadJson'
 import { verifyArweaveAvailable } from '@/lib/arweave/verifyAvailable'
 import { useUploadSession } from '@/hooks/useUploadSession'
@@ -591,9 +592,6 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
             ? ': ' + data.errors.map((e: { field?: string; message?: string }) => `${e.field ?? ''} ${e.message ?? ''}`.trim()).join(', ')
             : ''
           const raw = (data.detail ?? data.error ?? data.message ?? 'Mint failed') + errors
-          // The userOp-revert path replaces the toast with an actionable
-          // one (button → collection's authorize banner) and bails out;
-          // anything else falls through to the generic toastError below.
           if (maybeHandleAuthError(raw, data)) return
           throw new Error(raw)
         }
@@ -641,6 +639,15 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
           }
         } else if (file!.type.startsWith('video/')) {
           setStep('preparing-media')
+          toast.loading('Optimizing video for fast playback…', { id: 'mint' })
+          // Best-effort lossless remux to faststart MP4. Null falls
+          // through to the source unchanged.
+          try {
+            const remuxed = await remuxToFaststartMp4(file!)
+            if (remuxed) mediaFile = remuxed
+          } catch (err) {
+            console.warn('[MintForm] faststart remux failed; uploading original', err)
+          }
           toast.loading('Extracting poster from video…', { id: 'mint' })
           try {
             posterFile = await extractVideoPoster(file!)
@@ -775,9 +782,6 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
             ? ': ' + data.errors.map((e: { field?: string; message?: string }) => `${e.field ?? ''} ${e.message ?? ''}`.trim()).join(', ')
             : ''
           const raw = (data.detail ?? data.error ?? data.message ?? 'Mint failed') + errors
-          // The userOp-revert path replaces the toast with an actionable
-          // one (button → collection's authorize banner) and bails out;
-          // anything else falls through to the generic toastError below.
           if (maybeHandleAuthError(raw, data)) return
           throw new Error(raw)
         }
@@ -837,13 +841,13 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
 
   if (step === 'done' && result) {
     return (
-      <div className="border border-[#2a2a2a] p-8 text-center flex flex-col gap-6">
-        <div className="w-12 h-12 mx-auto rounded-full bg-[#8B5CF6]/10 border border-[#8B5CF6] flex items-center justify-center">
+      <div className="border border-line p-8 text-center flex flex-col gap-6">
+        <div className="w-12 h-12 mx-auto rounded-full bg-accent/10 border border-accent flex items-center justify-center">
           <span className="text-xl accent-grad">✓</span>
         </div>
         <div>
-          <h3 className="text-[#efefef] font-mono text-sm mb-2">Moment minted</h3>
-          <p className="text-[#888] text-xs font-mono">Token #{result.tokenId}</p>
+          <h3 className="text-ink font-mono text-sm mb-2">Moment minted</h3>
+          <p className="text-dim text-xs font-mono">Token #{result.tokenId}</p>
         </div>
         <div className="flex flex-col items-center gap-2.5">
           {isInMiniApp && (
@@ -867,7 +871,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
           href={`https://basescan.org/tx/${result.hash}`}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-xs font-mono text-[#555] hover:text-[#888]"
+          className="text-xs font-mono text-muted hover:text-dim"
         >
           {result.hash.slice(0, 10)}…{result.hash.slice(-8)}
         </a>
@@ -876,13 +880,13 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
             user would only see the transient post-mint toast. Routes
             to the collection page's existing Authorize banner. */}
         {autoDeployNeedsAuth && (
-          <div className="text-left p-3 sm:p-4 border border-[#8B5CF6]/40 bg-[#8B5CF6]/5 flex items-start gap-2.5">
-            <ShieldAlert size={14} className="text-[#8B5CF6] flex-shrink-0 mt-0.5" />
+          <div className="text-left p-3 sm:p-4 border border-accent/40 bg-accent/5 flex items-start gap-2.5">
+            <ShieldAlert size={14} className="text-accent flex-shrink-0 mt-0.5" />
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-mono text-[#efefef]">
+              <p className="text-xs font-mono text-ink">
                 Authorize for follow-up mints
               </p>
-              <p className="text-[11px] font-mono text-[#888] mt-1">
+              <p className="text-[11px] font-mono text-dim mt-1">
                 Your moment is on chain. To mint more into this collection, grant Kismet ADMIN — one onchain tx from your wallet.
               </p>
               <button
@@ -912,7 +916,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
             setSplits([])
             setSplitInput({ address: '', pct: '' })
           }}
-          className="text-xs font-mono text-[#888] hover:text-[#efefef] underline"
+          className="text-xs font-mono text-dim hover:text-ink underline"
         >
           Mint another
         </button>
@@ -926,14 +930,14 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
           runs, surfaced earlier in the lifecycle so we don't burn an
           Arweave upload before discovering missing ADMIN. */}
       {preflightUnauthorized && (
-        <div className="p-3 sm:p-4 border border-[#8B5CF6]/40 bg-[#8B5CF6]/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+        <div className="p-3 sm:p-4 border border-accent/40 bg-accent/5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
           <div className="flex items-start gap-2.5">
-            <ShieldCheck size={16} className="text-[#8B5CF6] flex-shrink-0 mt-0.5" />
+            <ShieldCheck size={16} className="text-accent flex-shrink-0 mt-0.5" />
             <div className="min-w-0">
-              <p className="text-xs font-mono text-[#efefef]">
+              <p className="text-xs font-mono text-ink">
                 Authorize Kismet to mint into {selectedCollection.name}
               </p>
-              <p className="text-[11px] font-mono text-[#888] mt-0.5">
+              <p className="text-[11px] font-mono text-dim mt-0.5">
                 One-time onchain grant from the collection&apos;s admin. Required before this collection can mint moments via Kismet.
               </p>
             </div>
@@ -951,14 +955,14 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
       {/* Media / Text toggle */}
       <div>
         <div className="flex items-center justify-between mb-2">
-          <label className="block text-xs font-mono text-[#888] uppercase tracking-wider">
-            {mintMode === 'media' ? 'Media' : 'Content'} <span className="text-[#efefef]">*</span>
+          <label className="block text-xs font-mono text-dim uppercase tracking-wider">
+            {mintMode === 'media' ? 'Media' : 'Content'} <span className="text-ink">*</span>
           </label>
           <button
             type="button"
             onClick={() => switchMode(mintMode === 'text' ? 'media' : 'text')}
             className={`px-2.5 py-1 text-[10px] font-mono uppercase tracking-wider border transition-colors ${
-              mintMode === 'text' ? 'border-[#555] text-[#efefef]' : 'border-[#2a2a2a] text-[#555] hover:text-[#888]'
+              mintMode === 'text' ? 'border-muted text-ink' : 'border-line text-muted hover:text-dim'
             }`}
           >
             text
@@ -972,7 +976,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
               // full width with auto height, so the box conforms to whatever
               // the artist dropped. 16:9 stays 16:9, 9:16 stays 9:16, 1:1
               // stays 1:1. No letterbox, no crop, no surprise.
-              <div className="relative bg-[#111] border border-[#2a2a2a] overflow-hidden">
+              <div className="relative bg-surface border border-line overflow-hidden">
                 {file?.type.startsWith('video/') ? (
                   <video src={preview} className="block w-full h-auto" muted autoPlay loop playsInline />
                 ) : (
@@ -982,9 +986,9 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
                 <button
                   type="button"
                   onClick={clearFile}
-                  className="absolute top-2 right-2 w-7 h-7 bg-[#0d0d0d]/80 border border-[#2a2a2a] flex items-center justify-center hover:border-[#888]"
+                  className="absolute top-2 right-2 w-7 h-7 bg-[#0d0d0d]/80 border border-line flex items-center justify-center hover:border-dim"
                 >
-                  <X size={14} className="text-[#888]" />
+                  <X size={14} className="text-dim" />
                 </button>
               </div>
             ) : (
@@ -997,12 +1001,12 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
                 // doesn't need to match anything specific — square keeps the
                 // empty target obvious without dominating the form. Same
                 // aspect as the cover-image drop zone for visual consistency.
-                className="aspect-square border border-dashed border-[#2a2a2a] flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-[#888] transition-colors bg-[#111]"
+                className="aspect-square border border-dashed border-line flex flex-col items-center justify-center gap-3 cursor-pointer hover:border-dim transition-colors bg-surface"
               >
-                <Upload size={24} className="text-[#555]" />
+                <Upload size={24} className="text-muted" />
                 <div className="text-center">
-                  <p className="text-xs font-mono text-[#555]">drop file or click to upload</p>
-                  <p className="text-xs font-mono text-[#333] mt-1">
+                  <p className="text-xs font-mono text-muted">drop file or click to upload</p>
+                  <p className="text-xs font-mono text-faint mt-1">
                     image, video, gif,{' '}
                     {/* "text" is a shortcut into the writing-moment mode.
                         stopPropagation so we don't also trigger the parent
@@ -1036,11 +1040,11 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
               onChange={(e) => setTextContent(e.target.value)}
               placeholder="write your moment…"
               rows={12}
-              className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] resize-none"
+              className="w-full bg-surface border border-line px-3 py-2.5 text-sm text-ink font-mono placeholder-faint focus:outline-none focus:border-muted resize-none"
             />
             <div
               className={`mt-1.5 text-right text-[10px] font-mono ${
-                textContent.length > TEXT_MAX ? 'accent-grad' : 'text-[#555]'
+                textContent.length > TEXT_MAX ? 'accent-grad' : 'text-muted'
               }`}
             >
               {textContent.length.toLocaleString()} / {TEXT_MAX.toLocaleString()}
@@ -1051,8 +1055,8 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
 
       {/* Title */}
       <div>
-        <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
-          Title <span className="text-[#efefef]">*</span>
+        <label className="block text-xs font-mono text-dim uppercase tracking-wider mb-2">
+          Title <span className="text-ink">*</span>
         </label>
         <input
           type="text"
@@ -1060,7 +1064,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
           onChange={(e) => setName(e.target.value)}
           placeholder="untitled"
           required
-          className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+          className="w-full bg-surface border border-line px-3 py-2.5 text-sm text-ink font-mono placeholder-faint focus:outline-none focus:border-muted"
         />
       </div>
 
@@ -1068,7 +1072,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
           metadata). The inprocess writing endpoint has no description field. */}
       {mintMode === 'media' && (
         <div>
-          <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
+          <label className="block text-xs font-mono text-dim uppercase tracking-wider mb-2">
             Description
           </label>
           <textarea
@@ -1076,7 +1080,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
             onChange={(e) => setDescription(e.target.value)}
             placeholder="describe your work…"
             rows={3}
-            className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] resize-y min-h-[4.5rem] overflow-auto"
+            className="w-full bg-surface border border-line px-3 py-2.5 text-sm text-ink font-mono placeholder-faint focus:outline-none focus:border-muted resize-y min-h-[4.5rem] overflow-auto"
           />
         </div>
       )}
@@ -1086,7 +1090,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
           be left at "auto-deploy") sits below as a step-down decision. */}
       <div className="flex gap-3">
         <div className="flex-1">
-          <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
+          <label className="block text-xs font-mono text-dim uppercase tracking-wider mb-2">
             Price
           </label>
           <div className="relative">
@@ -1096,26 +1100,26 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
               value={is11 ? '0' : price}
               disabled={is11}
               onChange={(e) => { const v = e.target.value; if (v === '' || /^\d*\.?\d*$/.test(v)) setPrice(v) }}
-              className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555] pr-14 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-surface border border-line px-3 py-2.5 text-sm text-ink font-mono placeholder-faint focus:outline-none focus:border-muted pr-14 disabled:opacity-50 disabled:cursor-not-allowed"
             />
             <button
               type="button"
               onClick={() => setPriceCurrency((c) => c === 'eth' ? 'usdc' : 'eth')}
               disabled={is11}
               title="toggle currency"
-              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-mono text-[#888] hover:text-[#efefef] transition-colors px-1.5 py-0.5 rounded disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-[#888]"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-xs font-mono text-dim hover:text-ink transition-colors px-1.5 py-0.5 rounded disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:text-dim"
             >
               {priceCurrency === 'eth' ? 'ETH' : 'USDC'}
             </button>
           </div>
           {price === '0' && !is11 && (
-            <p className="text-xs text-[#555] font-mono mt-1">free mint</p>
+            <p className="text-xs text-muted font-mono mt-1">free mint</p>
           )}
         </div>
 
         {mintMode === 'media' && (
           <div className="flex-1">
-            <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
+            <label className="block text-xs font-mono text-dim uppercase tracking-wider mb-2">
               Supply
             </label>
             <input
@@ -1124,12 +1128,12 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
               value={maxSupply}
               onChange={(e) => { const v = e.target.value; if (v === '' || /^[1-9]\d*$/.test(v)) setMaxSupply(v) }}
               placeholder="unlimited"
-              className="w-full bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+              className="w-full bg-surface border border-line px-3 py-2.5 text-sm text-ink font-mono placeholder-faint focus:outline-none focus:border-muted"
             />
             {!maxSupply.trim() ? (
-              <p className="text-xs text-[#555] font-mono mt-1">open edition</p>
+              <p className="text-xs text-muted font-mono mt-1">open edition</p>
             ) : is11 ? (
-              <p className="text-xs text-[#555] font-mono mt-1">1/1 minted to your wallet</p>
+              <p className="text-xs text-muted font-mono mt-1">1/1 minted to your wallet</p>
             ) : null}
           </div>
         )}
@@ -1138,17 +1142,17 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
       {/* Collections picker — optional; if the user doesn't pick one, the
           auto-deploy is the default when nothing's selected. */}
       <div>
-        <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
+        <label className="block text-xs font-mono text-dim uppercase tracking-wider mb-2">
           Collection
         </label>
         <div className="flex items-stretch gap-1.5">
           <button
             type="button"
             onClick={() => setPickerOpen((v) => !v)}
-            className="flex-1 min-w-0 flex items-center gap-3 bg-[#111] border border-[#2a2a2a] px-3 py-2.5 hover:border-[#555] transition-colors text-left"
+            className="flex-1 min-w-0 flex items-center gap-3 bg-surface border border-line px-3 py-2.5 hover:border-muted transition-colors text-left"
           >
             {selectedCollection?.image ? (
-              <div className="w-8 h-8 relative flex-shrink-0 bg-[#1a1a1a] overflow-hidden">
+              <div className="w-8 h-8 relative flex-shrink-0 bg-raised overflow-hidden">
                 <MomentImage
                   src={selectedCollection.image}
                   alt=""
@@ -1158,9 +1162,9 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
                 />
               </div>
             ) : selectedCollection ? (
-              <div className="w-8 h-8 bg-[#1a1a1a] flex-shrink-0" />
+              <div className="w-8 h-8 bg-raised flex-shrink-0" />
             ) : null}
-            <span className={`text-sm font-mono truncate flex-1 ${selectedCollection ? 'text-[#efefef]' : 'text-[#555]'}`}>
+            <span className={`text-sm font-mono truncate flex-1 ${selectedCollection ? 'text-ink' : 'text-muted'}`}>
               {selectedCollection
                 ? selectedCollection.name
                 : loadingCollections
@@ -1172,7 +1176,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
                 identify the specific ones. */}
             {collectionsMissingAdmin > 0 && (
               <span
-                className="w-2 h-2 bg-[#8B5CF6] rounded-full flex-shrink-0"
+                className="w-2 h-2 bg-accent rounded-full flex-shrink-0"
                 title={
                   collectionsMissingAdmin === 1
                     ? '1 of your collections needs authorize before minting'
@@ -1180,7 +1184,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
                 }
               />
             )}
-            <span className="text-[#555] text-xs font-mono flex-shrink-0">
+            <span className="text-muted text-xs font-mono flex-shrink-0">
               {pickerOpen ? '▲' : '▼'}
             </span>
           </button>
@@ -1188,7 +1192,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
             <button
               type="button"
               onClick={() => setSelectedCollection(null)}
-              className="px-3 border border-[#2a2a2a] text-[#555] hover:border-[#555] hover:text-[#888] transition-colors"
+              className="px-3 border border-line text-muted hover:border-muted hover:text-dim transition-colors"
               title="Clear selection (auto-deploy a new collection on submit)"
             >
               <X size={12} />
@@ -1197,20 +1201,20 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
         </div>
 
         {pickerOpen && (
-          <div className="border border-t-0 border-[#2a2a2a] bg-[#0d0d0d] max-h-64 overflow-y-auto">
+          <div className="border border-t-0 border-line bg-[#0d0d0d] max-h-64 overflow-y-auto">
             {/* Explains the ⚠️ badges below. Picking a flagged row
                 still works — the banner above the form will then
                 surface the Authorize CTA. */}
             {collectionsMissingAdmin > 0 && (
-              <div className="px-3 py-2 border-b border-[#2a2a2a] bg-[#8B5CF6]/5 flex items-start gap-2">
-                <ShieldAlert size={12} className="text-[#8B5CF6] flex-shrink-0 mt-0.5" />
+              <div className="px-3 py-2 border-b border-line bg-accent/5 flex items-start gap-2">
+                <ShieldAlert size={12} className="text-accent flex-shrink-0 mt-0.5" />
                 <div className="min-w-0">
-                  <p className="text-[11px] font-mono text-[#efefef]">
+                  <p className="text-[11px] font-mono text-ink">
                     {collectionsMissingAdmin === 1
                       ? '1 collection needs authorize'
                       : `${collectionsMissingAdmin} collections need authorize`}
                   </p>
-                  <p className="text-[10px] font-mono text-[#888] mt-0.5">
+                  <p className="text-[10px] font-mono text-dim mt-0.5">
                     Pick one to see the authorize CTA. One-time onchain grant from your wallet.
                   </p>
                 </div>
@@ -1228,12 +1232,12 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
                 setPickerOpen(false)
                 onSwitchToCreate?.()
               }}
-              className="w-full text-left px-3 py-3 border-b border-[#2a2a2a] bg-[#8B5CF6]/10 hover:bg-[#8B5CF6]/20 transition-colors"
+              className="w-full text-left px-3 py-3 border-b border-line bg-accent/10 hover:bg-accent/20 transition-colors"
             >
               <span className="text-xs font-mono accent-grad">
                 + create new collection
               </span>
-              <p className="text-[10px] font-mono text-[#555] mt-0.5">
+              <p className="text-[10px] font-mono text-muted mt-0.5">
                 opens the create collection form
               </p>
             </button>
@@ -1244,16 +1248,16 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
               // are still surfaced inline so the dropdown communicates
               // what's happening when it isn't user-actionable.
               loadingCollections ? (
-                <p className="text-xs font-mono text-[#555] px-3 py-4">
+                <p className="text-xs font-mono text-muted px-3 py-4">
                   loading existing collections…
                 </p>
               ) : !isConnected ? (
-                <p className="text-xs font-mono text-[#555] px-3 py-4">
+                <p className="text-xs font-mono text-muted px-3 py-4">
                   connect a wallet to see your collections
                 </p>
               ) : null
             ) : (
-              <div className="grid grid-cols-3 gap-px bg-[#2a2a2a]">
+              <div className="grid grid-cols-3 gap-px bg-line">
                 {collectionOptions.map((c, idx) => {
                   const isSelected =
                     selectedCollection !== null &&
@@ -1270,8 +1274,8 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
                         setSelectedCollection(c)
                         setPickerOpen(false)
                       }}
-                      className={`relative aspect-square bg-[#111] overflow-hidden group ${
-                        isSelected ? 'ring-2 ring-inset ring-[#8B5CF6]' : ''
+                      className={`relative aspect-square bg-surface overflow-hidden group ${
+                        isSelected ? 'ring-2 ring-inset ring-accent' : ''
                       }`}
                       title={
                         needsAuth
@@ -1290,21 +1294,21 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
                         />
                       ) : (
                         <div className="w-full h-full flex items-center justify-center">
-                          <span className="text-[#333] font-mono text-[10px]">
+                          <span className="text-faint font-mono text-[10px]">
                             {shortAddress(c.address)}
                           </span>
                         </div>
                       )}
                       {needsAuth && (
                         <div
-                          className="absolute top-1 right-1 w-5 h-5 bg-[#8B5CF6]/95 border border-[#8B5CF6]/50 flex items-center justify-center"
+                          className="absolute top-1 right-1 w-5 h-5 bg-accent/95 border border-accent/50 flex items-center justify-center"
                           aria-label="Needs authorize"
                         >
-                          <ShieldAlert size={11} className="text-[#efefef]" />
+                          <ShieldAlert size={11} className="text-ink" />
                         </div>
                       )}
                       <div className="absolute inset-x-0 bottom-0 bg-black/70 px-1.5 py-1 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
-                        <p className="text-[9px] font-mono text-[#efefef] truncate">{c.name}</p>
+                        <p className="text-[9px] font-mono text-ink truncate">{c.name}</p>
                       </div>
                     </button>
                   )
@@ -1318,7 +1322,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
 
       {/* Revenue splits */}
       <div>
-        <label className="block text-xs font-mono text-[#888] uppercase tracking-wider mb-2">
+        <label className="block text-xs font-mono text-dim uppercase tracking-wider mb-2">
           Revenue Splits
         </label>
         <div className="flex gap-2 mb-2">
@@ -1327,7 +1331,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
             value={splitInput.address}
             onChange={(e) => setSplitInput((s) => ({ ...s, address: e.target.value }))}
             placeholder="0x… address"
-            className="flex-1 bg-[#111] border border-[#2a2a2a] px-3 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+            className="flex-1 bg-surface border border-line px-3 py-2.5 text-sm text-ink font-mono placeholder-faint focus:outline-none focus:border-muted"
           />
           <input
             type="number"
@@ -1337,12 +1341,12 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
             placeholder="%"
             min="1"
             max="100"
-            className="w-16 bg-[#111] border border-[#2a2a2a] px-2 py-2.5 text-sm text-[#efefef] font-mono placeholder-[#333] focus:outline-none focus:border-[#555]"
+            className="w-16 bg-surface border border-line px-2 py-2.5 text-sm text-ink font-mono placeholder-faint focus:outline-none focus:border-muted"
           />
           <button
             type="button"
             onClick={addSplit}
-            className="px-3 border border-[#2a2a2a] text-[#888] hover:border-[#555] hover:text-[#efefef] transition-colors"
+            className="px-3 border border-line text-dim hover:border-muted hover:text-ink transition-colors"
           >
             <Plus size={14} />
           </button>
@@ -1350,14 +1354,14 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
         {splits.length > 0 && (
           <ul className="flex flex-col gap-1 mb-2">
             {splits.map((s) => (
-              <li key={s.address} className="flex items-center justify-between bg-[#111] border border-[#2a2a2a] px-3 py-2">
-                <span className="text-xs font-mono text-[#888] truncate">{s.address}</span>
+              <li key={s.address} className="flex items-center justify-between bg-surface border border-line px-3 py-2">
+                <span className="text-xs font-mono text-dim truncate">{s.address}</span>
                 <div className="flex items-center gap-3 ml-2 flex-shrink-0">
-                  <span className="text-xs font-mono text-[#efefef]">{s.percentAllocation}%</span>
+                  <span className="text-xs font-mono text-ink">{s.percentAllocation}%</span>
                   <button
                     type="button"
                     onClick={() => setSplits((prev) => prev.filter((r) => r.address !== s.address))}
-                    className="text-[#555] hover:text-[#888]"
+                    className="text-muted hover:text-dim"
                   >
                     <Trash2 size={12} />
                   </button>
@@ -1367,7 +1371,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
           </ul>
         )}
         {splits.length > 0 && (
-          <p className={`text-xs font-mono ${splitsTotal === 100 ? 'text-[#555]' : 'accent-grad'}`}>
+          <p className={`text-xs font-mono ${splitsTotal === 100 ? 'text-muted' : 'accent-grad'}`}>
             {splitsTotal}% allocated{splitsTotal < 100 ? ` — ${100 - splitsTotal}% remaining` : ' ✓'}
           </p>
         )}
@@ -1408,18 +1412,18 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
           aria-pressed={residenciesEnabled}
           className="flex-shrink-0"
         >
-          <div className={`relative w-8 h-4 rounded-full transition-colors ${residenciesEnabled ? 'bg-[#8B5CF6]' : 'bg-[#2a2a2a] border border-[#3a3a3a]'}`}>
+          <div className={`relative w-8 h-4 rounded-full transition-colors ${residenciesEnabled ? 'bg-accent' : 'bg-line border border-[#3a3a3a]'}`}>
             <span className={`absolute top-0.5 left-0.5 w-3 h-3 rounded-full bg-white transition-transform ${residenciesEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
           </div>
         </button>
-        <span className={`text-[10px] font-mono ${residenciesEnabled ? 'text-[#888]' : 'text-[#444]'}`}>
+        <span className={`text-[10px] font-mono ${residenciesEnabled ? 'text-dim' : 'text-[#444]'}`}>
           {residenciesEnabled ? '5%' : '0%'} to{' '}
           <a
             href="https://kismetcasa.xyz"
             target="_blank"
             rel="noopener noreferrer"
             title="kismetcasa.xyz (opens in new tab)"
-            className="underline hover:text-[#efefef] transition-colors"
+            className="underline hover:text-ink transition-colors"
           >
             kismet casa residencies
           </a>

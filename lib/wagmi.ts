@@ -24,7 +24,7 @@ if (!projectId) {
 // regular-web UX is unchanged: same modal, same wallet options.
 const { wallets } = getDefaultWallets()
 const rainbowKitConnectors = connectorsForWallets(wallets, {
-  appName: 'Kismet Art',
+  appName: 'Kismet',
   projectId: projectId ?? 'placeholder-build-only',
 })
 

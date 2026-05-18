@@ -46,8 +46,11 @@ export function Nav() {
 
   return (
     <>
+      {/* No backdrop-filter: Safari recomputes the blur every scroll
+          frame over the playing-video feed behind this fixed bar, and
+          the GPU cost shows up as jank. Solid /95 stays visually flat. */}
       <header
-        className="fixed top-0 left-0 right-0 z-50 border-b border-[#2a2a2a] bg-[#0d0d0d]/90 backdrop-blur-sm"
+        className="fixed top-0 left-0 right-0 z-50 border-b border-line bg-[#0d0d0d]/95"
         // Pad the header by --safe-top so the dark background extends
         // through the device's notch / status bar while the actual nav
         // content (h-14 below) sits in the visible area. On web, --safe-top
@@ -60,10 +63,6 @@ export function Nav() {
               href="/"
               className="flex items-center gap-2 text-sm font-mono tracking-widest uppercase accent-grad"
             >
-              {/* Brand mark, sized to match the wordmark's cap height. alt=""
-                  because the visible "Kismet" text is the accessibility label
-                  — the icon is decorative. priority because it's above-the-fold
-                  on every page and we don't want a blank slot during nav paint. */}
               <Image
                 src="/logo.png"
                 alt=""
@@ -78,7 +77,7 @@ export function Nav() {
               <Link
                 href="/"
                 className={`px-2 sm:px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
-                  pathname === '/' ? 'text-[#888] font-bold' : 'text-[#888] hover:text-[#efefef]'
+                  pathname === '/' ? 'text-dim font-bold' : 'text-dim hover:text-ink'
                 }`}
               >
                 <span className="sm:hidden">enjoy</span>
@@ -87,7 +86,7 @@ export function Nav() {
               <Link
                 href="/mint"
                 className={`px-2 sm:px-3 py-1.5 text-xs font-mono tracking-wider uppercase transition-colors ${
-                  pathname === '/mint' ? 'text-[#888] font-bold' : 'text-[#888] hover:text-[#efefef]'
+                  pathname === '/mint' ? 'text-dim font-bold' : 'text-dim hover:text-ink'
                 }`}
               >
                 Mint
@@ -102,7 +101,7 @@ export function Nav() {
             {/* Search icon on mobile */}
             <button
               onClick={() => { setModalQuery(''); setSearchOpen(true) }}
-              className="sm:hidden text-[#888] hover:text-[#efefef] transition-colors p-1"
+              className="sm:hidden text-dim hover:text-ink transition-colors p-1"
             >
               <Search size={18} />
             </button>

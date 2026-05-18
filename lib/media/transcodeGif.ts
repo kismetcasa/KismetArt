@@ -6,7 +6,9 @@ const MAX_SOURCE_BYTES = 100 * 1024 * 1024
 
 let ffmpegPromise: Promise<FFmpeg> | null = null
 
-async function getFFmpeg(): Promise<FFmpeg> {
+/** Lazy ffmpeg.wasm singleton. Single-threaded — callers must
+ *  serialise (no concurrent ff.exec). */
+export async function getFFmpeg(): Promise<FFmpeg> {
   if (!ffmpegPromise) {
     ffmpegPromise = (async () => {
       // Dynamic-imported so the ~110KB JS + 31MB wasm only loads when a

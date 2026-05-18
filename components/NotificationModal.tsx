@@ -217,13 +217,13 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
 
       {/* Drawer panel */}
       <div
-        className="fixed right-0 bottom-0 z-[60] w-full max-w-[440px] bg-[#0d0d0d] border-l border-[#2a2a2a] flex flex-col"
+        className="fixed right-0 bottom-0 z-[60] w-full max-w-[440px] bg-[#0d0d0d] border-l border-line flex flex-col"
         style={topOffset}
       >
 
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-[#2a2a2a] flex-shrink-0">
-          <p className="text-[10px] font-mono uppercase tracking-widest text-[#888]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-line flex-shrink-0">
+          <p className="text-[10px] font-mono uppercase tracking-widest text-dim">
             {tab === 'settings' ? 'notification settings' : 'notifications'}
           </p>
           <div className="flex items-center gap-0.5">
@@ -231,7 +231,7 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
               onClick={() => setTab((t) => t === 'settings' ? 'feed' : 'settings')}
               title={tab === 'settings' ? 'back to feed' : 'notification settings'}
               className={`p-1.5 transition-colors rounded ${
-                tab === 'settings' ? 'text-[#efefef]' : 'text-[#444] hover:text-[#888]'
+                tab === 'settings' ? 'text-ink' : 'text-[#444] hover:text-dim'
               }`}
             >
               <Settings size={13} />
@@ -239,7 +239,7 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
             <button
               onClick={onClose}
               title="close"
-              className="p-1.5 text-[#444] hover:text-[#efefef] transition-colors"
+              className="p-1.5 text-[#444] hover:text-ink transition-colors"
             >
               <X size={13} />
             </button>
@@ -254,7 +254,7 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
           ) : (
             <div className="p-4 flex flex-col gap-6">
               <div>
-                <p className="text-[10px] font-mono uppercase tracking-widest text-[#555] mb-1">
+                <p className="text-[10px] font-mono uppercase tracking-widest text-muted mb-1">
                   mobile push (farcaster)
                 </p>
                 <p className="text-[10px] font-mono text-[#444] mb-3">
@@ -266,15 +266,15 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
                 </p>
                 {pushLoading ? (
                   <div className="flex justify-center py-4">
-                    <Loader2 size={14} className="animate-spin text-[#555]" />
+                    <Loader2 size={14} className="animate-spin text-muted" />
                   </div>
                 ) : !pushHasTokens ? (
                   // Locked state: no tokens means no surface to push to.
                   // Render the list disabled so users see what's coming
                   // once they add Kismet, but every toggle is inert.
                   <div className="flex flex-col gap-1.5 opacity-50">
-                    <div className="flex items-center justify-between px-3 py-2 border border-[#2a2a2a]">
-                      <span className="text-xs font-mono text-[#efefef]">
+                    <div className="flex items-center justify-between px-3 py-2 border border-line">
+                      <span className="text-xs font-mono text-ink">
                         All mobile push notifications
                       </span>
                       <span className="text-[9px] font-mono uppercase tracking-widest text-[#444]">
@@ -284,9 +284,9 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
                     {pushAllTypes.map((type) => (
                       <div
                         key={type}
-                        className="flex items-center justify-between px-3 py-2 border border-[#2a2a2a]"
+                        className="flex items-center justify-between px-3 py-2 border border-line"
                       >
-                        <span className="text-xs font-mono text-[#888]">
+                        <span className="text-xs font-mono text-dim">
                           {PUSH_TYPE_LABELS[type] ?? type}
                         </span>
                         <span className="text-[9px] font-mono uppercase tracking-widest text-[#444]">
@@ -299,16 +299,16 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
                   <div className="flex flex-col gap-1.5">
                     {/* Master row: visually distinct (brighter label, no
                         sub-row indent) so users see this gates everything. */}
-                    <div className="flex items-center justify-between px-3 py-2 border border-[#2a2a2a] bg-[#141414]">
-                      <span className="text-xs font-mono text-[#efefef]">
+                    <div className="flex items-center justify-between px-3 py-2 border border-line bg-[#141414]">
+                      <span className="text-xs font-mono text-ink">
                         All mobile push notifications
                       </span>
                       <button
                         onClick={handleToggleMaster}
                         className={`text-[9px] font-mono uppercase tracking-widest transition-colors ${
                           pushMaster
-                            ? 'text-[#efefef] hover:text-[#888]'
-                            : 'text-[#555] hover:text-[#efefef]'
+                            ? 'text-ink hover:text-dim'
+                            : 'text-muted hover:text-ink'
                         }`}
                       >
                         {pushMaster ? 'on' : 'off'}
@@ -329,9 +329,9 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
                         return (
                           <div
                             key={type}
-                            className="flex items-center justify-between px-3 py-2 border border-[#2a2a2a]"
+                            className="flex items-center justify-between px-3 py-2 border border-line"
                           >
-                            <span className="text-xs font-mono text-[#888]">
+                            <span className="text-xs font-mono text-dim">
                               {PUSH_TYPE_LABELS[type] ?? type}
                             </span>
                             <button
@@ -339,8 +339,8 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
                               disabled={!pushMaster}
                               className={`text-[9px] font-mono uppercase tracking-widest transition-colors ${
                                 isOn
-                                  ? 'text-[#efefef] hover:text-[#888]'
-                                  : 'text-[#555] hover:text-[#efefef]'
+                                  ? 'text-ink hover:text-dim'
+                                  : 'text-muted hover:text-ink'
                               }`}
                             >
                               {isOn ? 'on' : 'off'}
@@ -357,15 +357,15 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
               </div>
 
               <div>
-                <p className="text-[10px] font-mono uppercase tracking-widest text-[#555] mb-3">
+                <p className="text-[10px] font-mono uppercase tracking-widest text-muted mb-3">
                   hide from feed
                 </p>
                 {typesLoading ? (
                   <div className="flex justify-center py-4">
-                    <Loader2 size={14} className="animate-spin text-[#555]" />
+                    <Loader2 size={14} className="animate-spin text-muted" />
                   </div>
                 ) : muteableTypes.length === 0 ? (
-                  <p className="text-xs font-mono text-[#555]">no types available</p>
+                  <p className="text-xs font-mono text-muted">no types available</p>
                 ) : (
                   <div className="flex flex-col gap-1.5">
                     {muteableTypes.map((type) => {
@@ -373,14 +373,14 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
                       return (
                         <div
                           key={type}
-                          className="flex items-center justify-between px-3 py-2 border border-[#2a2a2a]"
+                          className="flex items-center justify-between px-3 py-2 border border-line"
                         >
-                          <span className="text-xs font-mono text-[#888]">
+                          <span className="text-xs font-mono text-dim">
                             {TYPE_LABELS[type] ?? type}
                           </span>
                           <button
                             onClick={() => handleToggleType(type)}
-                            className="text-[9px] font-mono uppercase tracking-widest text-[#555] hover:text-[#efefef] transition-colors"
+                            className="text-[9px] font-mono uppercase tracking-widest text-muted hover:text-ink transition-colors"
                           >
                             {isMuted ? 'unmute' : 'mute'}
                           </button>
@@ -395,32 +395,32 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
               </div>
 
               <div>
-                <p className="text-[10px] font-mono uppercase tracking-widest text-[#555] mb-3">
+                <p className="text-[10px] font-mono uppercase tracking-widest text-muted mb-3">
                   muted accounts
                 </p>
                 {mutedLoading ? (
                   <div className="flex justify-center py-8">
-                    <Loader2 size={14} className="animate-spin text-[#555]" />
+                    <Loader2 size={14} className="animate-spin text-muted" />
                   </div>
                 ) : !muted || muted.length === 0 ? (
-                  <p className="text-xs font-mono text-[#555]">no muted accounts</p>
+                  <p className="text-xs font-mono text-muted">no muted accounts</p>
                 ) : (
                   <div className="flex flex-col gap-1.5">
                     {muted.map((actor) => (
                       <div
                         key={actor}
-                        className="flex items-center justify-between px-3 py-2 border border-[#2a2a2a]"
+                        className="flex items-center justify-between px-3 py-2 border border-line"
                       >
                         <div className="flex items-center gap-2">
                           <ProfileAvatar address={actor} size={20} />
-                          <span className="text-xs font-mono text-[#888]">
+                          <span className="text-xs font-mono text-dim">
                             {shortAddress(actor)}
                           </span>
                           <CopyAddress address={actor} size={11} />
                         </div>
                         <button
                           onClick={() => handleUnmute(actor)}
-                          className="text-[9px] font-mono uppercase tracking-widest text-[#555] hover:text-[#efefef] transition-colors"
+                          className="text-[9px] font-mono uppercase tracking-widest text-muted hover:text-ink transition-colors"
                         >
                           unmute
                         </button>

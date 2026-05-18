@@ -25,3 +25,28 @@ export function isAddress(value: unknown): value is Address {
 export function isValidTokenId(value: unknown): value is string {
   return typeof value === 'string' && /^\d+$/.test(value)
 }
+
+type EnsClientLike = {
+  getEnsAddress: (args: { name: string }) => Promise<Address | null>
+} | undefined
+
+/**
+ * Resolve an ENS name or 0x address to a lowercase 0x. Returns null on
+ * unresolved .eth or unmounted client (caller surfaces a toast).
+ */
+export async function resolveAddressOrEns(
+  client: EnsClientLike,
+  raw: string,
+): Promise<`0x${string}` | null> {
+  const trimmed = raw.trim()
+  if (viemIsAddress(trimmed)) return trimmed.toLowerCase() as `0x${string}`
+  if (trimmed.endsWith('.eth') && client) {
+    try {
+      const resolved = await client.getEnsAddress({ name: trimmed })
+      return resolved ? (resolved.toLowerCase() as `0x${string}`) : null
+    } catch {
+      return null
+    }
+  }
+  return null
+}

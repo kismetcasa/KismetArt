@@ -3,6 +3,7 @@ import { isAddress } from '@/lib/address'
 import { INPROCESS_API } from './inprocess'
 import { trackWallet } from './profile'
 import { checkRateLimit, getClientIp } from './ratelimit'
+import { bestEffort } from './bestEffort'
 import { fanoutToFollowers, setMomentMeta, writeNotification } from './notifications'
 import { setMomentContent } from './momentContent'
 import { checkSmartWalletAdmin } from './smartWalletPreflight'
@@ -202,8 +203,8 @@ export async function proxyMintRequest(
 
       after(async () => {
         const tasks: Promise<unknown>[] = [
-          markCreatedMint(contractAddress, tokenId).catch(() => {}),
-          setMomentMeta(contractAddress, tokenId, { creator: account, name: displayName }).catch(() => {}),
+          markCreatedMint(contractAddress, tokenId).catch(bestEffort('mint-proxy.markCreatedMint', { contractAddress, tokenId })),
+          setMomentMeta(contractAddress, tokenId, { creator: account, name: displayName }).catch(bestEffort('mint-proxy.setMomentMeta', { contractAddress, tokenId, account })),
           writeNotification({
             type: 'mint',
             recipient: account,
@@ -219,7 +220,7 @@ export async function proxyMintRequest(
           }),
         ]
         if (tokenContent) {
-          tasks.push(setMomentContent(contractAddress, tokenId, tokenContent).catch(() => {}))
+          tasks.push(setMomentContent(contractAddress, tokenId, tokenContent).catch(bestEffort('mint-proxy.setMomentContent', { contractAddress, tokenId })))
         }
         if (splitsValidation.kind === 'ok' && splitsValidation.splits.length >= 2) {
           tasks.push(

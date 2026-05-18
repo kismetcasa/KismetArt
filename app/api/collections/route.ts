@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { type Address } from 'viem'
 import { isAddress } from '@/lib/address'
-import { INPROCESS_API } from '@/lib/inprocess'
+import { inprocessUrl } from '@/lib/inprocess'
 import { hasAdminBit, readPermissions } from '@/lib/permissions'
 import { serverBaseClient } from '@/lib/rpc'
 import { PLATFORM_COLLECTION } from '@/lib/config'
@@ -19,6 +19,7 @@ import { getSessionAddress } from '@/lib/session'
 import { getHiddenCollectionsSet } from '@/lib/hiddenCollections'
 import { getHiddenMomentsSet } from '@/lib/hiddenMoments'
 import { fetchEligibleTokens } from '@/lib/saleConfig'
+import { errorResponse } from '@/lib/apiResponse'
 
 // Cap on tokens we fetch per collection when computing bulk-collect
 // eligibility for the feed. Aligned with MAX_COLLECT_ALL_BATCH (20) since
@@ -29,10 +30,8 @@ const FEED_ELIGIBLE_TOKEN_LIMIT = 20
 // when the indexer hasn't yet picked up a freshly-deployed collection.
 async function loadCollectionMeta(address: string): Promise<Record<string, unknown>> {
   try {
-    const url = new URL(`${INPROCESS_API}/collection`)
-    url.searchParams.set('collectionAddress', address)
-    url.searchParams.set('chainId', '8453')
-    const res = await fetch(url.toString(), {
+    const url = inprocessUrl('/collection', { collectionAddress: address, chainId: '8453' })
+    const res = await fetch(url, {
       headers: { Accept: 'application/json' },
       next: { revalidate: 60 },
     })
@@ -86,11 +85,12 @@ async function loadCollectAllEligibility(
     usdcEligibleTotalUsdc: '0',
   }
   try {
-    const tlUrl = new URL(`${INPROCESS_API}/timeline`)
-    tlUrl.searchParams.set('collection', address)
-    tlUrl.searchParams.set('limit', String(FEED_ELIGIBLE_TOKEN_LIMIT))
-    tlUrl.searchParams.set('chain_id', '8453')
-    const tlRes = await fetch(tlUrl.toString(), {
+    const tlUrl = inprocessUrl('/timeline', {
+      collection: address,
+      limit: FEED_ELIGIBLE_TOKEN_LIMIT,
+      chain_id: '8453',
+    })
+    const tlRes = await fetch(tlUrl, {
       headers: { Accept: 'application/json' },
       next: { revalidate: 60 },
     })
@@ -135,7 +135,7 @@ export async function GET(req: NextRequest) {
   // render a header.
   if (singleAddress) {
     if (!isAddress(singleAddress)) {
-      return NextResponse.json({ error: 'Invalid address' }, { status: 400 })
+      return errorResponse(400, 'Invalid address')
     }
     const lowerAddr = singleAddress.toLowerCase()
     const platformLower = PLATFORM_COLLECTION.toLowerCase()
@@ -150,10 +150,8 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ contractAddress: singleAddress })
     }
     try {
-      const url = new URL(`${INPROCESS_API}/collection`)
-      url.searchParams.set('collectionAddress', singleAddress)
-      url.searchParams.set('chainId', '8453')
-      const res = await fetch(url.toString(), {
+      const url = inprocessUrl('/collection', { collectionAddress: singleAddress, chainId: '8453' })
+      const res = await fetch(url, {
         headers: { Accept: 'application/json' },
         next: { revalidate: 120 },
       })
@@ -235,14 +233,12 @@ export async function GET(req: NextRequest) {
 
   if (artist) {
     if (!isAddress(artist)) {
-      return NextResponse.json({ error: 'Invalid artist address' }, { status: 400 })
+      return errorResponse(400, 'Invalid artist address')
     }
-    const url = new URL(`${INPROCESS_API}/collections`)
-    url.searchParams.set('artist', artist)
-    url.searchParams.set('limit', '100')
+    const url = inprocessUrl('/collections', { artist, limit: 100 })
     try {
       const [res, userCreated, kvOwned, hiddenSet, viewer] = await Promise.all([
-        fetch(url.toString(), {
+        fetch(url, {
           headers: { Accept: 'application/json' },
           next: { revalidate: 120 },
         }),
@@ -324,12 +320,12 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   const ip = getClientIp(req)
   const allowed = await checkRateLimit(`collections:${ip}`, 5, 60)
-  if (!allowed) return NextResponse.json({ error: 'Too many requests' }, { status: 429 })
+  if (!allowed) return errorResponse(429, 'Too many requests')
 
-  // Authenticated caller — Kismet Art session cookie required.
+  // Authenticated caller — Kismet session cookie required.
   const sessionAddress = await getSessionAddress(req)
   if (!sessionAddress) {
-    return NextResponse.json({ error: 'Sign in to continue' }, { status: 401 })
+    return errorResponse(401, 'Sign in to continue')
   }
 
   let body: {
@@ -351,15 +347,15 @@ export async function POST(req: NextRequest) {
   try {
     body = await req.json()
   } catch {
-    return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+    return errorResponse(400, 'Invalid request body')
   }
 
   if (!body.address || !isAddress(body.address)) {
-    return NextResponse.json({ error: 'valid address required' }, { status: 400 })
+    return errorResponse(400, 'valid address required')
   }
   // Caller must claim themselves as the artist (no spoofing).
   if (!body.artist || body.artist.toLowerCase() !== sessionAddress) {
-    return NextResponse.json({ error: 'artist must match session address' }, { status: 403 })
+    return errorResponse(403, 'artist must match session address')
   }
 
   // Caller must hold ADMIN on chain (tokenId 0 = collection-wide row).
@@ -397,10 +393,7 @@ export async function POST(req: NextRequest) {
       caller: sessionAddress,
       err: lastErr instanceof Error ? lastErr.message : String(lastErr),
     })
-    return NextResponse.json(
-      { error: 'Could not verify collection admin on-chain' },
-      { status: 502 },
-    )
+    return errorResponse(502, 'Could not verify collection admin on-chain')
   }
 
   const source: CollectionSource = body.source === 'auto-deploy' ? 'auto-deploy' : 'create-form'

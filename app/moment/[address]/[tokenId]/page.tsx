@@ -7,11 +7,10 @@ import { resolveUri } from '@/lib/inprocess'
 import { shareImageUrl } from '@/lib/media/shareImage'
 import { getCollectionMeta as getKvCollectionMeta, getUserCollections } from '@/lib/kv'
 import { getMomentContent } from '@/lib/momentContent'
-import { getMomentMeta as getKvMomentMeta } from '@/lib/notifications'
 import { isCollectionHidden } from '@/lib/hiddenCollections'
 import { PLATFORM_COLLECTION } from '@/lib/config'
 import { SESSION_COOKIE, verifySession } from '@/lib/session'
-import { fetchMomentDetail } from '@/lib/momentDetail'
+import { fetchMomentDetail, getKvCreatorAddress } from '@/lib/momentDetail'
 import { pickFirstNonOperatorAdmin } from '@/lib/momentAuthz'
 import { buildFarcasterEmbed } from '@/lib/farcasterEmbed'
 import { SITE_URL } from '@/lib/siteUrl'
@@ -68,40 +67,21 @@ const getInitialCollectionMeta = cache(async (
   return { name: kv.name, image: kv.image }
 })
 
-// Authoritative creator EOA for moments minted through Kismet. mint-proxy
-// writes this to KV the instant the upstream call lands, so it's available
-// even before inprocess's timeline indexes the new moment. We thread it
-// into MomentDetailView so the creator chip resolves to the EOA's Kismet
-// profile (where username "Turro" lives) instead of falling back to
-// `momentAdmins[0]` which is typically a smart wallet / platform admin
-// with no profile attached.
-const getKvCreatorAddress = cache(async (
-  address: string,
-  tokenId: string,
-): Promise<string | undefined> => {
-  try {
-    const meta = await getKvMomentMeta(address, tokenId)
-    return meta?.creator
-  } catch {
-    return undefined
-  }
-})
-
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const { address, tokenId } = await params
   if (!isAddress(address) || !isValidTokenId(tokenId)) {
-    return { title: 'Moment — Kismet Art' }
+    return { title: 'Moment — Kismet' }
   }
   const [detail, fallback] = await Promise.all([
     fetchMomentDetail(address, tokenId),
     getFallbackMeta(address, tokenId),
   ])
   const meta = detail?.metadata ?? fallback
-  if (!meta) return { title: 'Moment — Kismet Art' }
+  if (!meta) return { title: 'Moment — Kismet' }
 
   const name = meta.name ?? `#${tokenId}`
-  const title = `${name} — Kismet Art`
-  const description = meta.description ?? 'View this moment on Kismet Art'
+  const title = `${name} — Kismet`
+  const description = meta.description ?? 'View this moment on Kismet'
   // Guard the share image against the legacy "meta.image is the
   // animation_url" bug — without this, Twitter/Discord/iMessage crawlers
   // would fetch a multi-MB video as the thumbnail and render no preview.
@@ -192,7 +172,7 @@ export default async function MomentPage({ params }: Props) {
   if (detail?.hidden && !isCreator) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-24 text-center">
-        <p className="text-sm font-mono text-[#888]">
+        <p className="text-sm font-mono text-dim">
           this moment has been hidden by the creator
         </p>
       </div>

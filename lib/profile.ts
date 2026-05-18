@@ -1,4 +1,5 @@
 import { redis } from './redis'
+import { bestEffort } from './bestEffort'
 import { randomUUID } from 'crypto'
 
 export interface Profile {
@@ -12,7 +13,7 @@ const keyByAddress = (address: string) =>
   `kismetart:profile:${address.toLowerCase()}`
 const keyNonce = (address: string) =>
   `kismetart:nonce:${address.toLowerCase()}`
-const KEY_PROFILES = 'kismetart:profiles'
+export const KEY_PROFILES = 'kismetart:profiles'
 
 export async function getProfile(address: string): Promise<Profile> {
   const raw = await redis.get<string | Profile>(keyByAddress(address))
@@ -37,7 +38,7 @@ export async function upsertProfile(
 
 export async function trackWallet(address: string): Promise<void> {
   if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) return
-  await redis.sadd(KEY_PROFILES, address.toLowerCase()).catch(() => {})
+  await redis.sadd(KEY_PROFILES, address.toLowerCase()).catch(bestEffort('profile.trackWallet', { address }))
 }
 
 export async function searchProfiles(query: string): Promise<Profile[]> {

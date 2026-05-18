@@ -4,6 +4,7 @@ import { useEffect, useRef } from 'react'
 import {
   useSharedVideoContext,
   useSharedVideoZIndex,
+  scrollableAncestors,
 } from '@/providers/SharedVideoProvider'
 
 interface Props {
@@ -32,11 +33,16 @@ const DEFAULT_Z_INDEX = 10
  * at the position/size the video should occupy; the SharedVideoProvider
  * CSS-positions a managed <video> element to overlay it.
  *
- * On mount: registers a slot with the pool. On unmount: releases (the
- * pool starts a 1-second grace timer so route transitions don't destroy
- * the element). ResizeObserver + window scroll/resize listeners keep
- * the video positioned correctly as the slot's bounds change — coalesced
- * via rAF since `scroll` fires per-pixel on most browsers.
+ * On mount: registers a slot with the pool (which creates the underlying
+ * <video> element if no entry exists for the src yet, or reuses the
+ * already-pooled one). On unmount: releases. The pool's 1s grace timer
+ * keeps an element alive across route transitions long enough for the
+ * next surface to re-claim it without re-decoding.
+ *
+ * Per-slot we attach a ResizeObserver (for slot size changes) and scroll
+ * listeners on each clipping ancestor — those aren't covered by the
+ * provider's centralised window-scroll handler since ancestor sets are
+ * slot-specific.
  */
 export function SharedVideoSlot({
   src,
@@ -61,16 +67,23 @@ export function SharedVideoSlot({
     const el = ref.current
     if (!el) return
 
+    // Inner-scroller awareness. Window scroll alone misses any ancestor
+    // with overflow:auto/scroll/hidden — the featured collection's
+    // mobile horizontal mints row, for example. We need the slot to
+    // re-position on those ancestors' scroll AND we need positionElement
+    // to clip-path the video to their intersected bounds. Compute the
+    // list once on mount and pass through to the pool so it doesn't
+    // re-walk + re-getComputedStyle on every refresh tick.
+    const clipAncestors = scrollableAncestors(el)
+
     const release = ctx.acquire(src, {
       ref: el,
       controls,
       zIndex: finalZIndex,
       onError: () => onErrorRef.current?.(),
+      clipAncestors,
     })
 
-    // rAF-coalesce repositioning. Scroll fires per-pixel on most
-    // browsers; without coalescing every tick triggers a getBoundingClientRect
-    // + style writes per slot per frame — N×forced-layout on a feed.
     let rafPending = false
     const scheduleRefresh = () => {
       if (rafPending) return
@@ -82,14 +95,16 @@ export function SharedVideoSlot({
     }
     const ro = new ResizeObserver(scheduleRefresh)
     ro.observe(el)
-    window.addEventListener('scroll', scheduleRefresh, { passive: true })
-    window.addEventListener('resize', scheduleRefresh)
+    for (const a of clipAncestors) {
+      a.addEventListener('scroll', scheduleRefresh, { passive: true })
+    }
 
     return () => {
       release()
       ro.disconnect()
-      window.removeEventListener('scroll', scheduleRefresh)
-      window.removeEventListener('resize', scheduleRefresh)
+      for (const a of clipAncestors) {
+        a.removeEventListener('scroll', scheduleRefresh)
+      }
     }
   }, [ctx, src, controls, finalZIndex])
 

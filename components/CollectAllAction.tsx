@@ -63,8 +63,16 @@ function statusLabel(status: ReturnType<typeof useCollectAll>['status']): string
  * fallback on others.
  *
  * Returns null when nothing's eligible at all (sale ended, sold out, exotic
- * non-USDC currency). Mixed-currency collections show "Ξ X + $Y" so the
- * cost is unambiguous.
+ * non-USDC currency).
+ *
+ * Chip display policy (display-only — the action still bundles both
+ * currencies, the wallet's confirmation step is the source of truth on
+ * what gets charged):
+ *   - all-ETH or mixed → Ξ total (USDC items ignored by the chip in mixed)
+ *   - all-USDC         → $ total
+ * Keeps the chip in a single currency so it reads at a glance. A later
+ * pass can align the action with the chip if mixed-currency surprises
+ * become an issue in the wallet flow.
  */
 export function CollectAllAction({
   collectionAddress,
@@ -87,18 +95,14 @@ export function CollectAllAction({
   const ethTotalWei = BigInt(ethEligibleTotalWei)
   const usdcTotalUsdc = BigInt(usdcEligibleTotalUsdc)
 
-  // Cost label: combine when both legs have value, otherwise show just the
-  // active currency. "free" is reserved for the (rare) case where every
-  // eligible token is priced at 0.
+  // USDC chip only when the collection is 100% USDC-priced; any ETH
+  // presence flips to the ETH chip (mixed → ETH).
+  const usdcOnly = ethCount === 0
   let costLabel: string
-  if (ethTotalWei === 0n && usdcTotalUsdc === 0n) {
-    costLabel = 'free'
-  } else if (ethTotalWei > 0n && usdcTotalUsdc > 0n) {
-    costLabel = `Ξ ${formatEthChip(ethTotalWei)} + $${formatUsdcChip(usdcTotalUsdc)}`
-  } else if (ethTotalWei > 0n) {
-    costLabel = `Ξ ${formatEthChip(ethTotalWei)}`
+  if (usdcOnly) {
+    costLabel = usdcTotalUsdc > 0n ? `$${formatUsdcChip(usdcTotalUsdc)}` : 'free'
   } else {
-    costLabel = `$${formatUsdcChip(usdcTotalUsdc)}`
+    costLabel = ethTotalWei > 0n ? `Ξ ${formatEthChip(ethTotalWei)}` : 'free'
   }
 
   function handleClick() {
@@ -119,13 +123,13 @@ export function CollectAllAction({
 
   return (
     <div className="flex items-stretch gap-1.5">
-      <span className="px-2 py-1.5 text-xs font-mono border border-[#2a2a2a] text-[#888] whitespace-nowrap">
+      <span className="px-2 py-1.5 text-xs font-mono border border-line text-dim whitespace-nowrap">
         {costLabel}
       </span>
       <button
         onClick={handleClick}
         disabled={inFlight}
-        className="flex-1 py-1.5 text-xs font-mono border border-[#8B5CF6]/40 text-[#8B5CF6] hover:border-[#8B5CF6] hover:bg-[#8B5CF6]/10 transition-colors disabled:opacity-60 disabled:cursor-wait"
+        className="flex-1 py-1.5 text-xs font-mono border border-accent/40 text-accent hover:border-accent hover:bg-accent/10 transition-colors disabled:opacity-60 disabled:cursor-wait"
       >
         {label}
       </button>

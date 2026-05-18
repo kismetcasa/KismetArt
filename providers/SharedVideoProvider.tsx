@@ -74,6 +74,11 @@ interface Slot {
   /** Fired when every gateway has errored — caller drops the slot and
    *  shows the poster-only fallback. */
   onError?: () => void
+  /** Clipping ancestors (overflow auto/scroll/hidden) above the slot.
+   *  Cached on mount by SharedVideoSlot so positionElement doesn't
+   *  walk the parent chain + call getComputedStyle on every refresh
+   *  during a scroll (60Hz on most devices). */
+  clipAncestors: HTMLElement[]
 }
 
 interface ManagedVideo {
@@ -135,29 +140,88 @@ const RELEASE_GRACE_MS = 1000
 // Pool entries with no active slot for this long get destroyed.
 const IDLE_EVICT_MS = 5 * 60 * 1000
 
-// Hard cap on pool size. Past this, idle entries get evicted on next acquire.
-const MAX_POOL_SIZE = 10
+// Hard cap on pool size. Past this, idle entries get evicted on next
+// acquire. Larger pool = more decoder warmth on scroll-back (currentTime
+// and buffered ranges survive while the entry is pooled).
+const MAX_POOL_SIZE = 12
+
+// ─── Helpers ─────────────────────────────────────────────────────────
+
+/** Walk up the parent chain collecting any ancestor with overflow set
+ *  to auto / scroll / hidden on either axis. Used by SharedVideoSlot
+ *  to attach scroll listeners (so the fixed-position video tracks the
+ *  slot when an inner scroller scrolls) and by positionElement to
+ *  derive the clip-path that confines the video to those clipping
+ *  ancestors' visible bounds. */
+export function scrollableAncestors(el: HTMLElement): HTMLElement[] {
+  const out: HTMLElement[] = []
+  let node: HTMLElement | null = el.parentElement
+  while (node && node !== document.body) {
+    const style = getComputedStyle(node)
+    const overflows = `${style.overflow} ${style.overflowX} ${style.overflowY}`
+    if (/(auto|scroll|hidden)/.test(overflows)) out.push(node)
+    node = node.parentElement
+  }
+  return out
+}
+
+/** Intersect every clipping-ancestor's content rect to derive the
+ *  visible-bounds rectangle the slot lives inside. Returns null when
+ *  there are no clipping ancestors (slot can paint to the viewport
+ *  freely). */
+function computeClipRect(ancestors: HTMLElement[]): DOMRect | null {
+  if (ancestors.length === 0) return null
+  let top = -Infinity
+  let left = -Infinity
+  let bottom = Infinity
+  let right = Infinity
+  for (const a of ancestors) {
+    const r = a.getBoundingClientRect()
+    if (r.top > top) top = r.top
+    if (r.left > left) left = r.left
+    if (r.bottom < bottom) bottom = r.bottom
+    if (r.right < right) right = r.right
+  }
+  return new DOMRect(left, top, Math.max(0, right - left), Math.max(0, bottom - top))
+}
 
 // ─── Provider ────────────────────────────────────────────────────────
 
 export function SharedVideoProvider({ children }: { children: ReactNode }) {
   const poolRef = useRef<Map<string, ManagedVideo>>(new Map())
 
-  function positionElement(video: ManagedVideo, slot: Slot) {
-    const rect = slot.ref.getBoundingClientRect()
+  /** Split from `applySlotGeometry` so the batched scroll handler can
+   *  do every read across the pool before any write — fastdom pattern;
+   *  interleaving forces a sync reflow per video per frame on WebKit. */
+  function readSlotGeometry(slot: Slot) {
+    return {
+      rect: slot.ref.getBoundingClientRect(),
+      clip: computeClipRect(slot.clipAncestors),
+    }
+  }
+
+  function applySlotGeometry(
+    video: ManagedVideo,
+    slot: Slot,
+    rect: DOMRect,
+    clip: DOMRect | null,
+  ) {
     const el = video.el
-    if (
-      rect.top !== video.lastTop ||
-      rect.left !== video.lastLeft ||
-      rect.width !== video.lastWidth ||
-      rect.height !== video.lastHeight
-    ) {
-      el.style.top = `${rect.top}px`
-      el.style.left = `${rect.left}px`
-      el.style.width = `${rect.width}px`
-      el.style.height = `${rect.height}px`
+    // translate3d is GPU-composited; top/left would force layout per
+    // scroll frame on WebKit. width/height still trigger layout when
+    // they change, but only during the 220ms morph.
+    const positionChanged =
+      rect.top !== video.lastTop || rect.left !== video.lastLeft
+    const sizeChanged =
+      rect.width !== video.lastWidth || rect.height !== video.lastHeight
+    if (positionChanged) {
+      el.style.transform = `translate3d(${rect.left}px, ${rect.top}px, 0)`
       video.lastTop = rect.top
       video.lastLeft = rect.left
+    }
+    if (sizeChanged) {
+      el.style.width = `${rect.width}px`
+      el.style.height = `${rect.height}px`
       video.lastWidth = rect.width
       video.lastHeight = rect.height
     }
@@ -168,7 +232,41 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     // so the browser buffers aggressively; "metadata" on previews so a
     // grid of cards doesn't saturate bandwidth simultaneously.
     el.preload = slot.controls ? 'auto' : 'metadata'
+
+    // Clip the element to its nearest clipping ancestor. position:fixed
+    // ignores the ancestor's overflow, so a slot inside a horizontal
+    // scroller (e.g. featured collection's mobile mints row) would
+    // otherwise paint the video outside the scroller's bounds when
+    // scrolled past the edge. clip-path keeps the element's bounds
+    // visible only where the slot itself is visible.
+    if (clip) {
+      const top = Math.max(0, clip.top - rect.top)
+      const right = Math.max(0, rect.right - clip.right)
+      const bottom = Math.max(0, rect.bottom - clip.bottom)
+      const left = Math.max(0, clip.left - rect.left)
+      const fullyOutside =
+        rect.right <= clip.left ||
+        rect.left >= clip.right ||
+        rect.bottom <= clip.top ||
+        rect.top >= clip.bottom
+      if (fullyOutside) {
+        // Belt: clip-path inset to 100% reduces paint area to zero.
+        // Suspenders: visibility:hidden so the element doesn't even
+        // participate in the next compositor pass.
+        el.style.clipPath = 'inset(100%)'
+        el.style.visibility = 'hidden'
+        return
+      }
+      el.style.clipPath = `inset(${top}px ${right}px ${bottom}px ${left}px)`
+    } else {
+      el.style.clipPath = ''
+    }
     if (video.loaded) el.style.visibility = 'visible'
+  }
+
+  function positionElement(video: ManagedVideo, slot: Slot) {
+    const { rect, clip } = readSlotGeometry(slot)
+    applySlotGeometry(video, slot, rect, clip)
   }
 
   function activateSlot(video: ManagedVideo, slot: Slot) {
@@ -188,18 +286,9 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     // wherever the element happened to be sitting before, and every
     // card appearing in the feed would open a 220ms window during
     // which scrolls drag instead of snap.
-    //
-    // FUTURE: "fun mode" toggle that keeps the morph transition
-    // permanently active (the original behaviour — transition was set
-    // once in createVideo and never cleared) so videos trail behind
-    // the slot on scroll. Reads as a liquid/floaty motion when many
-    // cards are visible at once. Could extend to gifs (which render
-    // through MomentImage today and would need their own
-    // slot/anchor pattern, but the visual idea is the same). Gate
-    // behind a user setting.
     if (video.el.style.visibility === 'visible') {
       video.el.style.transition =
-        'top 0.18s ease, left 0.18s ease, width 0.18s ease, height 0.18s ease'
+        'transform 0.18s ease, width 0.18s ease, height 0.18s ease'
       video.transitionTimer = window.setTimeout(() => {
         video.el.style.transition = 'none'
         video.transitionTimer = null
@@ -225,7 +314,10 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
             video.el.pause()
           }
         },
-        { threshold: 0.01, rootMargin: '200px' },
+        // Tight margin keeps the simultaneous-decoder count close to
+        // "what's actually visible" — wider values let WebKit pile up
+        // concurrent decoders fast enough to jank scroll.
+        { threshold: 0.01, rootMargin: '50px' },
       )
       io.observe(slot.ref)
       video.observer = io
@@ -274,6 +366,10 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     el.playsInline = true
     el.preload = 'metadata'
     el.style.position = 'fixed'
+    // Anchor the element at the viewport origin and let positionElement
+    // drive placement via transform — keeps scroll-tracking on the GPU.
+    el.style.top = '0'
+    el.style.left = '0'
     el.style.objectFit = 'contain'
     el.style.visibility = 'hidden'
     el.style.opacity = '0'
@@ -388,6 +484,39 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const pool = poolRef.current
+
+    // One window-scroll/resize listener for the whole pool, fastdom
+    // style: read every active slot's geometry in one pass, then apply
+    // every video's styles. Interleaving reads and writes would force
+    // a synchronous reflow per video per frame on WebKit. Per-slot
+    // ancestor-scroll listeners stay in SharedVideoSlot since ancestor
+    // sets vary per slot.
+    let rafPending = false
+    const flushAll = () => {
+      if (rafPending) return
+      rafPending = true
+      requestAnimationFrame(() => {
+        rafPending = false
+        const updates: Array<{
+          video: ManagedVideo
+          slot: Slot
+          rect: DOMRect
+          clip: DOMRect | null
+        }> = []
+        pool.forEach((video) => {
+          const slot = video.slots[0]
+          if (!slot) return
+          const { rect, clip } = readSlotGeometry(slot)
+          updates.push({ video, slot, rect, clip })
+        })
+        for (const { video, slot, rect, clip } of updates) {
+          applySlotGeometry(video, slot, rect, clip)
+        }
+      })
+    }
+    window.addEventListener('scroll', flushAll, { passive: true })
+    window.addEventListener('resize', flushAll)
+
     const interval = window.setInterval(() => {
       const now = Date.now()
       pool.forEach((video, src) => {
@@ -398,6 +527,8 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
       })
     }, 60_000)
     return () => {
+      window.removeEventListener('scroll', flushAll)
+      window.removeEventListener('resize', flushAll)
       clearInterval(interval)
       // Defensive: destroy all videos on provider unmount so they
       // don't outlive the React tree as orphan DOM nodes.

@@ -32,6 +32,10 @@ interface MomentVideoProps {
   /** Fired once every gateway has errored for the video (separate from
    *  poster errors). Parent can swap in a placeholder. */
   onAllError?: () => void
+  /** Above-the-fold hint — forwarded to the poster <img>. On video
+   *  moments the poster is the LCP candidate (the <video> doesn't paint
+   *  until metadata loads). */
+  priority?: boolean
 }
 
 /**
@@ -56,6 +60,7 @@ export function MomentVideo({
   controls,
   className,
   onAllError,
+  priority,
 }: MomentVideoProps) {
   const blurDataURL = useMemo(() => thumbhashToBlurDataURL(thumbhash), [thumbhash])
 
@@ -98,6 +103,7 @@ export function MomentVideo({
         skipProxy
         className={`absolute inset-0 ${className ?? ''}`.trim()}
         onAllError={() => setPosterFailed(true)}
+        priority={priority}
       />
     </>
   )

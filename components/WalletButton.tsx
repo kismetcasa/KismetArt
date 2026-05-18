@@ -118,7 +118,7 @@ export function WalletButton() {
           // disconnect / switch the actual wagmi-connected wallet, even
           // when the display label is showing their FC primary.
           onClick={() => isInMiniApp ? undefined : openAccountModal?.()}
-          className="text-[#888] hover:text-[#efefef] transition-colors"
+          className="text-dim hover:text-ink transition-colors"
           style={addressStyle}
         >
           {displayName ?? fcIdentity?.username ?? shortAddress(effectiveAddress)}

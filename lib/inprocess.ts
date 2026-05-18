@@ -3,6 +3,20 @@ import { USDC_BASE } from './zoraMint'
 
 export const INPROCESS_API = 'https://api.inprocess.world/api'
 
+/** Build an inprocess API URL. Pass `path` with leading slash; nullish param values are skipped. */
+export function inprocessUrl(
+  path: string,
+  params?: Record<string, string | number | undefined | null>,
+): string {
+  const url = new URL(`${INPROCESS_API}${path}`)
+  if (params) {
+    for (const [k, v] of Object.entries(params)) {
+      if (v != null) url.searchParams.set(k, String(v))
+    }
+  }
+  return url.toString()
+}
+
 // Default comment sent on collect when the user leaves the textarea blank.
 // Used by the collect route to filter out non-meaningful comments before storing
 // them on notifications. Defined here so frontend and backend share one source.
@@ -230,11 +244,12 @@ export async function fetchCollectionMoments(
 ): Promise<Moment[]> {
   const { revalidate = 60, limit = 50 } = options
   try {
-    const url = new URL(`${INPROCESS_API}/timeline`)
-    url.searchParams.set('collection', collectionAddress)
-    url.searchParams.set('limit', String(limit))
-    url.searchParams.set('chain_id', '8453')
-    const res = await fetch(url.toString(), {
+    const url = inprocessUrl('/timeline', {
+      collection: collectionAddress,
+      limit,
+      chain_id: '8453',
+    })
+    const res = await fetch(url, {
       headers: { Accept: 'application/json' },
       next: { revalidate },
     })
