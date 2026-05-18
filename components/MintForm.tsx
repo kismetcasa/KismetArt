@@ -28,6 +28,7 @@ import { registerCollectionWithBackoff } from '@/lib/registerCollection'
 import { USDC_BASE } from '@/lib/zoraMint'
 import { toastError } from '@/lib/toast'
 import { useFarcaster } from '@/providers/FarcasterProvider'
+import { hapticNotifySuccess } from '@/lib/farcasterHaptics'
 
 const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL ?? 'https://kismet.art').replace(/\/$/, '')
 const KISMET_CHANNEL_KEY = 'kismet'
@@ -606,6 +607,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
         }
         setStep('done')
         toast.success('Minted!', { id: 'mint', description: `Token #${data.tokenId}` })
+        if (isInMiniApp) hapticNotifySuccess()
 
       } else {
         // media mode — ensure session once (cookie cached, no re-prompt)
@@ -791,6 +793,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
         }
         setStep('done')
         toast.success('Minted!', { id: 'mint', description: `Token #${data.tokenId}` })
+        if (isInMiniApp) hapticNotifySuccess()
       }
     } catch (err) {
       setStep('idle')
@@ -823,6 +826,9 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
       // the compose sheet — that's an explicit "no", so no success toast.
       if (composed?.cast) {
         toast.success('Cast shared to /kismet!', { id: 'share' })
+        // Inside handleShareToKismet we already know we're in a Mini App
+        // (the button gating render-time on isInMiniApp), so no gate here.
+        hapticNotifySuccess()
       }
     } catch (err) {
       toastError('Share', err, { id: 'share' })

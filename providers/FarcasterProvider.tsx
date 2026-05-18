@@ -185,6 +185,22 @@ export function FarcasterProvider({ children }: { children: ReactNode }) {
         await sdk.actions.ready()
         if (cancelled) return
 
+        // Wire the host's back control (swipe-from-edge on iOS, hardware
+        // back on Android, header button on web) to the browser's
+        // navigation history. Without this, the host's default behavior
+        // is to dismiss the entire Mini App on a back gesture — which
+        // breaks the user's expectation when they're mid-flow inside
+        // Kismet (e.g. mint → moment detail → back). The SDK uses the
+        // modern Navigation API where available and falls back to
+        // History API otherwise. Silent fallback for older hosts that
+        // don't expose the back capability at all.
+        try {
+          await sdk.back.enableWebNavigation()
+        } catch {
+          // Older host — leave default close-on-swipe gestures in place.
+        }
+        if (cancelled) return
+
         // Wire the host wallet through wagmi. If reconnect-on-mount
         // already connected, wagmi's connect() is a no-op for an
         // already-connected connector. The ref guard makes us idempotent

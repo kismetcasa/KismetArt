@@ -20,6 +20,8 @@ import { useCollectionsPermissions } from '@/hooks/useCollectionsPermissions'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
 import { toastError } from '@/lib/toast'
+import { useFarcaster } from '@/providers/FarcasterProvider'
+import { hapticNotifySuccess } from '@/lib/farcasterHaptics'
 
 interface Payment {
   id: string
@@ -162,6 +164,7 @@ export function ProfileView({ address }: ProfileViewProps) {
   const { address: connectedAddress } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { signMessageAsync } = useSignMessage()
+  const { isInMiniApp } = useFarcaster()
   const { isCurator } = useAdmin()
 
   const isOwner = connectedAddress?.toLowerCase() === address.toLowerCase()
@@ -414,6 +417,9 @@ export function ProfileView({ address }: ProfileViewProps) {
       setFollowing(!wasFollowing)
       setFollowerCount((c) => c === null ? null : wasFollowing ? c - 1 : c + 1)
       toast.success(wasFollowing ? 'Unfollowed!' : 'Followed!', { id: 'follow' })
+      // Haptic only on follow (the positive engagement signal), not on
+      // unfollow — buzz-on-removal would feel wrong.
+      if (!wasFollowing && isInMiniApp) hapticNotifySuccess()
     } catch (err) {
       toastError(following ? 'Unfollow' : 'Follow', err, { id: 'follow' })
     } finally {
