@@ -7,8 +7,9 @@ import { NextResponse } from 'next/server'
 // touching code. When FARCASTER_HEADER/PAYLOAD/SIGNATURE are unset the
 // manifest still serves (preview tool works, embeds render) — but the
 // app won't be indexed in the Farcaster directory and can't send
-// notifications until the accountAssociation is signed via:
-//   https://farcaster.xyz/~/developers/mini-apps/manifest?domain=kismet.art
+// notifications until the accountAssociation is signed via Farcaster's
+// Mini App Manifest tool at https://farcaster.xyz/~/developers/new
+// (enter `kismet.art` as the domain).
 //
 // Spec: https://miniapps.farcaster.xyz/docs/specification#manifest
 // Publishing guide: https://miniapps.farcaster.xyz/docs/guides/publishing
@@ -37,11 +38,6 @@ export async function GET() {
     name: envOrDefault('NEXT_PUBLIC_FARCASTER_APP_NAME', 'Kismet Art'),
     iconUrl: envOrDefault('NEXT_PUBLIC_FARCASTER_ICON_URL', `${SITE_URL}/icon.png`),
     homeUrl: SITE_URL,
-    imageUrl: envOrDefault(
-      'NEXT_PUBLIC_FARCASTER_EMBED_IMAGE_URL',
-      `${SITE_URL}/embed-default.png`,
-    ),
-    buttonTitle: envOrDefault('NEXT_PUBLIC_FARCASTER_BUTTON_TITLE', 'Open Kismet'),
     splashImageUrl: envOrDefault(
       'NEXT_PUBLIC_FARCASTER_SPLASH_URL',
       `${SITE_URL}/splash.png`,
@@ -60,10 +56,19 @@ export async function GET() {
     // Base only — matches lib/wagmi.ts. Hosts that don't support Base will
     // refuse to render rather than failing mid-transaction.
     requiredChains: ['eip155:8453'],
-    // Hard requirements; without these the app cannot function. Optional
-    // capabilities (composeCast, swapToken, sendToken, haptics) are not
-    // declared so the app still renders on hosts that lack them.
-    requiredCapabilities: ['actions.signIn', 'wallet.getEthereumProvider'],
+    // Hosts that don't support wallet.getEthereumProvider can't render
+    // Kismet at all (mint/collect both need a wallet), so declaring it
+    // required is correct — they refuse upfront rather than crash on
+    // first interaction. Quick Auth lives at sdk.quickAuth.* and isn't
+    // a declarable capability; sdk.actions.signin is intentionally
+    // omitted because we use Quick Auth (not the signin action), so
+    // declaring it would only cause hosts that lack it to wrongly
+    // refuse our app.
+    requiredCapabilities: ['wallet.getEthereumProvider'],
+    // Manifest-level imageUrl and buttonTitle are deprecated as of SDK
+    // 0.0.35 (April 2025) — per-page embeds (see lib/farcasterEmbed.ts
+    // + each page's generateMetadata) carry the image and button text
+    // at the embed level instead.
   }
 
   return NextResponse.json(accountAssociation ? { accountAssociation, miniapp } : { miniapp })
