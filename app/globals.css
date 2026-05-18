@@ -14,7 +14,11 @@ html {
 body {
   background-color: #0d0d0d;
   color: #efefef;
+  /* 100vh on iOS Safari includes the collapsible URL bar — the layout
+   * jumps when the bar shows/hides. 100dvh tracks the visible viewport;
+   * the 100vh line is the fallback for older engines that don't know dvh. */
   min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* scrollbar */
