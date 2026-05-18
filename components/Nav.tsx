@@ -64,24 +64,19 @@ export function Nav() {
               aria-label="Kismet"
               className="flex items-center gap-2 text-sm font-mono tracking-widest uppercase"
             >
-              <span className="flex items-center justify-center w-8 h-8 rounded-full bg-white">
-                <Image
-                  src="/logo.png"
-                  alt=""
-                  width={22}
-                  height={22}
-                  className="object-contain"
-                  priority
-                />
-              </span>
+              <Image
+                src="/logo.png"
+                alt=""
+                width={36}
+                height={36}
+                className="object-contain"
+                priority
+              />
               {/* Wordmark visibility:
-                   - Mini App: always hidden — user is implicitly signed in,
-                     real estate is at a premium, the logo carries the brand.
-                   - Mobile web logged-in: hidden so the avatar/notif row
-                     doesn't get clipped at narrow widths.
-                   - Mobile web signed-out: shown — first-time visitors
-                     need the wordmark for orientation.
-                   - Desktop: always shown. */}
+               *   Mini App: always hidden — implicit sign-in, tight space.
+               *   Mobile web + signed-in: hidden so the avatar/notif row
+               *     doesn't get clipped at narrow widths.
+               *   Mobile web signed-out + desktop (any state): shown. */}
               {!isInMiniApp && (
                 <span className={`accent-grad${effectiveSignedIn ? ' hidden sm:inline' : ''}`}>
                   Kismet
