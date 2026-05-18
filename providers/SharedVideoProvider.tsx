@@ -141,12 +141,11 @@ const RELEASE_GRACE_MS = 1000
 const IDLE_EVICT_MS = 5 * 60 * 1000
 
 // Hard cap on pool size. Past this, idle entries get evicted on next acquire.
-// Smaller on purpose — every pool entry holds a decoder + buffered range cache,
-// and Safari is memory-sensitive under sustained autoplay. With lazy-acquire
-// releasing slots as soon as a card scrolls beyond the IO margin, idle entries
-// accumulate quickly during long scrolls; a tighter cap means they get reclaimed
-// faster instead of sitting around for IDLE_EVICT_MS.
-const MAX_POOL_SIZE = 5
+// Larger pool = more decoder warmth on scroll-back (currentTime + buffered
+// ranges survive across the in-pool window). Per-element memory cost is real
+// but well within budget on modern hardware, and Safari's actual bottleneck
+// is concurrent playback / connection contention rather than idle pool size.
+const MAX_POOL_SIZE = 12
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
