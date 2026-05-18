@@ -108,7 +108,11 @@ input[type='number'] {
     #ffb375 100%
   );
   border-color: transparent;
-  color: white;
+  /* Dark foreground on the pastel gradient — every stop is at L≈0.75
+   * so #0d0d0d gives 6:1+ contrast across the full sweep. White text
+   * (the old hover color over solid dark purple) drops to ~1.75:1 at
+   * the orange end and becomes unreadable. */
+  color: #0d0d0d;
 }
 
 .btn-accent:disabled {

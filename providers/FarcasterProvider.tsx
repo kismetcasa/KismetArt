@@ -203,11 +203,18 @@ export function FarcasterProvider({ children }: { children: ReactNode }) {
         //   safeAreaInsets) over the bridge.
         // /api/me: server-side primary-address resolution (Redis cached
         //   after first hit). The interceptor we just installed injects
-        //   the Quick Auth JWT.
+        //   the Quick Auth JWT. Wrapped in a 3s timeout so a hung
+        //   backend can't pin the splash forever — falls through with
+        //   no address (visible profile link + bell stay deferred
+        //   until a later retry) and the rest of the identity still
+        //   paints from sdk.context.user.
+        const meController = new AbortController()
+        const meTimeout = setTimeout(() => meController.abort(), 3000)
         const [ctx, meResponse] = await Promise.all([
           sdk.context,
-          fetch('/api/me').catch(() => null),
+          fetch('/api/me', { signal: meController.signal }).catch(() => null),
         ])
+        clearTimeout(meTimeout)
         if (cancelled) return
 
         // Build the identity from host context + the resolved primary
