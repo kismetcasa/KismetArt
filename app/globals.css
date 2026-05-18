@@ -14,6 +14,21 @@
   --safe-bottom: 0px;
   --safe-left: 0px;
   --safe-right: 0px;
+  /* Brand gradient — sampled directly from public/logo.png (clockwise
+   * petal sweep). Stops trace the hues that read across the logo
+   * left-to-right: violet (top-left petal) → cyan (top) → pink/magenta
+   * (top-right) → coral (bottom-right) → orange (bottom-left). All five
+   * stops sit at L≈0.75 so contrast against the always-dark UI stays
+   * comfortably above 4.5:1. Single source so .accent-grad,
+   * .btn-accent, and .accent-grad-hover stay in lockstep. */
+  --accent-grad: linear-gradient(
+    to right,
+    #9692f6 0%,
+    #9bd6f5 25%,
+    #ff87ce 55%,
+    #ff7c80 80%,
+    #ffb375 100%
+  );
 }
 
 html {
@@ -61,37 +76,32 @@ input[type='number'] {
   -moz-appearance: textfield;
 }
 
-/* Brand gradient — sampled directly from public/logo.png (clockwise
- * petal sweep). The stops trace the same hues that read across the logo
- * left-to-right: violet (top-left petal) → cyan (top) → pink/magenta
- * (top-right) → coral (bottom-right) → orange (bottom-left). All five
- * stops sit at L≈0.75 so contrast against the always-dark UI stays
- * comfortably above 4.5:1.
- *
- * Applied to text via background-clip: text — used everywhere the old
- * solid purple text appeared (wordmark, prices, badges, checkmarks).
- * Single-color surfaces (borders / rings / opacity-tinted backgrounds)
- * use the tailwind `accent` token (#bf81f2 — first stop of this
- * gradient) since CSS can't render gradients in those properties. */
+/* Apply the brand gradient as TEXT via background-clip — used wherever
+ * the old solid purple text appeared (wordmark, prices, badges,
+ * checkmarks). Single-color surfaces (borders / rings / opacity-tinted
+ * backgrounds) use the tailwind `accent` token (#bf81f2 — first stop
+ * of the gradient) since CSS can't render gradients in those properties. */
 .accent-grad {
-  background: linear-gradient(
-    to right,
-    #9692f6 0%,
-    #9bd6f5 25%,
-    #ff87ce 55%,
-    #ff7c80 80%,
-    #ffb375 100%
-  );
+  background: var(--accent-grad);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
+/* Fill the element's background with the brand gradient on hover.
+ * Pair with a `border` on the resting state so the transition reads
+ * as a fill-reveal rather than a flicker. Dark foreground (#0d0d0d)
+ * gets 6:1+ contrast across every stop of the pastel gradient —
+ * white text drops to ~1.75:1 at the orange end. */
+.accent-grad-hover:not(:disabled):hover {
+  background: var(--accent-grad);
+  border-color: transparent;
+  color: #0d0d0d;
+}
+
 /* Outlined button. Resting state: violet (accent token) border + text
  * so it harmonizes with `border-accent`/`text-accent` surfaces. Hover
- * fills with the full brand gradient + white text for a strong reveal —
- * the gradient feels intentional on the active surface rather than as
- * stationary chrome. */
+ * fills with the full brand gradient + dark text. */
 .btn-accent {
   border: 1px solid #bf81f2;
   color: #bf81f2;
@@ -99,19 +109,8 @@ input[type='number'] {
 }
 
 .btn-accent:hover:not(:disabled) {
-  background: linear-gradient(
-    to right,
-    #9692f6 0%,
-    #9bd6f5 25%,
-    #ff87ce 55%,
-    #ff7c80 80%,
-    #ffb375 100%
-  );
+  background: var(--accent-grad);
   border-color: transparent;
-  /* Dark foreground on the pastel gradient — every stop is at L≈0.75
-   * so #0d0d0d gives 6:1+ contrast across the full sweep. White text
-   * (the old hover color over solid dark purple) drops to ~1.75:1 at
-   * the orange end and becomes unreadable. */
   color: #0d0d0d;
 }
 
