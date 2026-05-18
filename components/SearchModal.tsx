@@ -97,7 +97,7 @@ export function SearchModal({ onClose, initialQuery = '' }: SearchModalProps) {
 
   return (
     <div
-      className="fixed inset-0 z-[100] bg-black/75 backdrop-blur-sm flex items-start justify-center pt-16 sm:pt-24 px-4"
+      className="fixed inset-0 z-[100] bg-black/85 flex items-start justify-center pt-16 sm:pt-24 px-4"
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
     >
       <div className="w-full max-w-lg flex flex-col bg-[#161616] border border-line max-h-[70vh]">
