@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { useAccount } from 'wagmi'
 import { useEffect, useState } from 'react'
@@ -55,8 +56,23 @@ export function Nav() {
       >
         <div className="max-w-6xl mx-auto px-4 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3 sm:gap-8">
-            <Link href="/" className="text-sm font-mono tracking-widest uppercase accent-grad">
-              Kismet Art
+            <Link
+              href="/"
+              className="flex items-center gap-2 text-sm font-mono tracking-widest uppercase accent-grad"
+            >
+              {/* Brand mark, sized to match the wordmark's cap height. alt=""
+                  because the visible "Kismet" text is the accessibility label
+                  — the icon is decorative. priority because it's above-the-fold
+                  on every page and we don't want a blank slot during nav paint. */}
+              <Image
+                src="/logo.png"
+                alt=""
+                width={24}
+                height={24}
+                className="object-contain"
+                priority
+              />
+              <span>Kismet</span>
             </Link>
             <nav className="flex items-center gap-0.5 sm:gap-1">
               <Link
