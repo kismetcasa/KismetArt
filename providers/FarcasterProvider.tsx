@@ -1,6 +1,7 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
+import { useConnect } from 'wagmi'
 
 export type FarcasterIdentity = {
   /** Numeric Farcaster ID — comes from `sdk.context.user.fid` and the verified JWT. */
@@ -115,6 +116,17 @@ export function FarcasterProvider({ children }: { children: ReactNode }) {
     identity: null,
   })
 
+  // wagmi auto-reconnects to the Farcaster connector when it's first in
+  // the connectors array (see lib/wagmi.ts) and its `isAuthorized()`
+  // returns true. This explicit connect() is a safety net for the race
+  // where wagmi probes connectors before the SDK's postMessage round-trip
+  // to the host has resolved: if reconnect-on-mount missed it, we trigger
+  // a deterministic connect once ready() confirms the host is responsive.
+  // Guarded by a ref so it only fires once per mount even if wagmi
+  // re-renders us mid-bootstrap.
+  const { connect, connectors } = useConnect()
+  const hasAttemptedConnect = useRef(false)
+
   useEffect(() => {
     if (!isPotentialMiniAppEnv()) {
       // Regular web user — never load the Mini App SDK, never call ready().
@@ -145,6 +157,23 @@ export function FarcasterProvider({ children }: { children: ReactNode }) {
         // after first paint of the FarcasterProvider's children.
         await sdk.actions.ready()
         if (cancelled) return
+
+        // Wire the host wallet through wagmi. If reconnect-on-mount
+        // already connected, wagmi's connect() is a no-op for an
+        // already-connected connector. The ref guard makes us idempotent
+        // across React's effect re-runs.
+        if (!hasAttemptedConnect.current) {
+          hasAttemptedConnect.current = true
+          const fcConnector = connectors.find((c) => c.id === 'farcaster')
+          if (fcConnector) {
+            try {
+              connect({ connector: fcConnector })
+            } catch {
+              // Host wallet not available — Mint/Collect flows surface
+              // their own errors when they try to sign.
+            }
+          }
+        }
 
         // Install the fetch interceptor BEFORE any authenticated request
         // fires. sdk.quickAuth.getToken returns a cached, auto-refreshed
@@ -227,6 +256,13 @@ export function FarcasterProvider({ children }: { children: ReactNode }) {
       cancelled = true
       teardownFetch?.()
     }
+    // Mount-once bootstrap: dynamic SDK import, ready(), wagmi connect,
+    // and fetch interceptor install all need to run exactly once. The
+    // wagmi `connect` and `connectors` references are stable for the
+    // lifetime of WagmiProvider, so excluding them from deps is safe;
+    // including them would re-run the entire bootstrap on every wagmi
+    // re-render (which happens on every account state change).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   return (

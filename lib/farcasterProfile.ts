@@ -28,6 +28,9 @@ const FID_BY_ADDRESS_TTL = 60 * 60
 const FID_BY_ADDRESS_FAIL_TTL = 5 * 60
 
 const profileKey = (fid: number) => `kismetart:fc:profile:${fid}`
+const verificationsKey = (fid: number) => `kismetart:fc:verifications:${fid}`
+const VERIFICATIONS_TTL = 60 * 60          // 1h on hit
+const VERIFICATIONS_FAIL_TTL = 5 * 60      // 5m on miss
 // Sentinel value stored in the address→fid cache when an address has no
 // FC user attached. An empty string can't be a valid FID so it's
 // unambiguous. Avoids re-hitting the API for every anonymous address.
@@ -93,6 +96,56 @@ export async function getFarcasterProfileByFid(
     })
     .catch(() => {})
   return profile
+}
+
+/**
+ * Return every Ethereum address verified to a given FID — the FC user's
+ * full wallet set. Used by lib/addressUnion to unify activity across all
+ * of a user's wallets so e.g. a mint signed from one verified address
+ * appears on the profile page of any other verified address.
+ *
+ * Returns an empty array on lookup failure or for FIDs with no
+ * verifications. Cached in Redis with a 1h TTL — verifications are
+ * rare-write (user has to sign a verifyAddress claim on-chain for each
+ * one) so staleness within an hour is benign.
+ */
+export async function getVerifiedAddressesByFid(fid: number): Promise<string[]> {
+  const cacheKey = verificationsKey(fid)
+  const cached = await readCached<string[] | ''>(cacheKey)
+  if (cached !== undefined) return cached === '' ? [] : cached
+
+  let addresses: string[] = []
+  try {
+    // Public Farcaster API; no key required. Response shape (defensive
+    // against minor variations across the v1 → v2 transition):
+    //   { result: { verifications: [{ fid, address, timestamp, version }] } }
+    const res = await fetch(
+      `https://api.farcaster.xyz/v2/verifications?fid=${fid}`,
+      { headers: { Accept: 'application/json' } },
+    )
+    if (res.ok) {
+      const body = (await res.json()) as {
+        result?: { verifications?: { address?: string }[] }
+      }
+      addresses = (body.result?.verifications ?? [])
+        .map((v) => v.address)
+        .filter((a): a is string => typeof a === 'string' && /^0x[0-9a-fA-F]{40}$/.test(a))
+        .map((a) => a.toLowerCase())
+    }
+  } catch {
+    // Network failure — don't poison the cache.
+    return []
+  }
+
+  // Use sentinel '' for "no verifications" so cache differentiates from
+  // a genuine miss (undefined → re-fetch). Otherwise a user with zero
+  // verifications would hit the network on every request.
+  await redis
+    .set(cacheKey, addresses.length ? addresses : '', {
+      ex: addresses.length ? VERIFICATIONS_TTL : VERIFICATIONS_FAIL_TTL,
+    })
+    .catch(() => {})
+  return addresses
 }
 
 /**
