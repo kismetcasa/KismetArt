@@ -67,8 +67,8 @@ export async function getSessionContext(req: NextRequest): Promise<{ address: st
  */
 export async function slideSession(res: NextResponse, token: string): Promise<void> {
   setSessionCookie(res, token)
-  // No context — token is sensitive (it's the session identifier itself).
-  await bestEffort(redis.expire(key(token), SESSION_TTL_SECONDS), 'session.slide')
+  // No context — token is the session identifier itself, don't log it.
+  await redis.expire(key(token), SESSION_TTL_SECONDS).catch(bestEffort('session.slide'))
 }
 
 /**

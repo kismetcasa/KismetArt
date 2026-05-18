@@ -203,16 +203,8 @@ export async function proxyMintRequest(
 
       after(async () => {
         const tasks: Promise<unknown>[] = [
-          bestEffort(
-            markCreatedMint(contractAddress, tokenId),
-            'mint-proxy.markCreatedMint',
-            { contractAddress, tokenId },
-          ),
-          bestEffort(
-            setMomentMeta(contractAddress, tokenId, { creator: account, name: displayName }),
-            'mint-proxy.setMomentMeta',
-            { contractAddress, tokenId, account },
-          ),
+          markCreatedMint(contractAddress, tokenId).catch(bestEffort('mint-proxy.markCreatedMint', { contractAddress, tokenId })),
+          setMomentMeta(contractAddress, tokenId, { creator: account, name: displayName }).catch(bestEffort('mint-proxy.setMomentMeta', { contractAddress, tokenId, account })),
           writeNotification({
             type: 'mint',
             recipient: account,
@@ -228,13 +220,7 @@ export async function proxyMintRequest(
           }),
         ]
         if (tokenContent) {
-          tasks.push(
-            bestEffort(
-              setMomentContent(contractAddress, tokenId, tokenContent),
-              'mint-proxy.setMomentContent',
-              { contractAddress, tokenId },
-            ),
-          )
+          tasks.push(setMomentContent(contractAddress, tokenId, tokenContent).catch(bestEffort('mint-proxy.setMomentContent', { contractAddress, tokenId })))
         }
         if (splitsValidation.kind === 'ok' && splitsValidation.splits.length >= 2) {
           tasks.push(

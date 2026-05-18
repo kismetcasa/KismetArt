@@ -3,12 +3,7 @@ import { USDC_BASE } from './zoraMint'
 
 export const INPROCESS_API = 'https://api.inprocess.world/api'
 
-/**
- * Build an inprocess API URL with query params. Single choke point for the
- * `new URL(...) + searchParams.set(...)` pattern that used to live in
- * every route. Pass `path` with a leading slash. `undefined`/`null`
- * values are skipped so callers can pass optional query params inline.
- */
+/** Build an inprocess API URL. Pass `path` with leading slash; nullish param values are skipped. */
 export function inprocessUrl(
   path: string,
   params?: Record<string, string | number | undefined | null>,
@@ -16,7 +11,7 @@ export function inprocessUrl(
   const url = new URL(`${INPROCESS_API}${path}`)
   if (params) {
     for (const [k, v] of Object.entries(params)) {
-      if (v !== undefined && v !== null) url.searchParams.set(k, String(v))
+      if (v != null) url.searchParams.set(k, String(v))
     }
   }
   return url.toString()

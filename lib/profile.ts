@@ -38,11 +38,7 @@ export async function upsertProfile(
 
 export async function trackWallet(address: string): Promise<void> {
   if (!address || !/^0x[0-9a-fA-F]{40}$/.test(address)) return
-  await bestEffort(
-    redis.sadd(KEY_PROFILES, address.toLowerCase()),
-    'profile.trackWallet',
-    { address },
-  )
+  await redis.sadd(KEY_PROFILES, address.toLowerCase()).catch(bestEffort('profile.trackWallet', { address }))
 }
 
 export async function searchProfiles(query: string): Promise<Profile[]> {

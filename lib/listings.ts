@@ -214,11 +214,7 @@ export async function getListings({
     after(() => handleExpiredListings(expired))
   }
   if (ghosts.length > 0) {
-    bestEffort(
-      redis.zrem(KEY_ALL, ...ghosts),
-      'listings.sweepGhosts',
-      { count: ghosts.length },
-    )
+    redis.zrem(KEY_ALL, ...ghosts).catch(bestEffort('listings.sweepGhosts', { count: ghosts.length }))
   }
 
   const total = active.length

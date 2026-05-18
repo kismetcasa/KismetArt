@@ -31,12 +31,8 @@ type EnsClientLike = {
 } | undefined
 
 /**
- * Resolve an ENS name or 0x address to a lowercase 0x address. Returns
- * null when the input is neither a valid hex address nor a `.eth` name
- * that resolves on the mainnet client. Pass a wagmi mainnet
- * `usePublicClient({ chainId: mainnet.id })` as the client — when it's
- * undefined (mounting), `.eth` names fail-closed so callers don't push
- * an invalid entry.
+ * Resolve an ENS name or 0x address to a lowercase 0x. Returns null on
+ * unresolved .eth or unmounted client (caller surfaces a toast).
  */
 export async function resolveAddressOrEns(
   client: EnsClientLike,
