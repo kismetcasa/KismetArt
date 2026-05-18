@@ -191,16 +191,6 @@ function computeClipRect(ancestors: HTMLElement[]): DOMRect | null {
 
 export function SharedVideoProvider({ children }: { children: ReactNode }) {
   const poolRef = useRef<Map<string, ManagedVideo>>(new Map())
-  // Rotates which gateway a freshly-created <video> element starts on.
-  // Browsers cap connections at ~6 per host; without rotation every
-  // video on the homepage hits arweave.net first, queues past the
-  // limit, and the 7th+ video stalls in the HTTP queue waiting for an
-  // earlier one to finish (the "videos past first 6 don't load on
-  // Safari" symptom). Spreading the primary gateway across the pool
-  // gives ~6 connections per gateway × 4 gateways = 24 effective
-  // parallel slots without changing any single-video fallback chain
-  // (errors still walk through the rotated list in order).
-  const gatewayCursorRef = useRef(0)
 
   /** Read the slot + clipping-ancestor geometry in one pass. Split out
    *  so the batched scroll handler can do all reads before any writes
@@ -389,17 +379,12 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
   }
 
   function createVideo(src: string): ManagedVideo {
-    const baseGateways = gatewayUrls(src)
-    // Rotate the gateway order so each freshly-created video starts on
-    // a different host (see gatewayCursorRef comment above). Errors still
-    // walk forward through the rotated list, so resilience is unchanged.
-    const gateways =
-      baseGateways.length > 1
-        ? (() => {
-            const offset = gatewayCursorRef.current++ % baseGateways.length
-            return [...baseGateways.slice(offset), ...baseGateways.slice(0, offset)]
-          })()
-        : baseGateways
+    // gateways[0] is arweave.net (canonical, most reliable in practice);
+    // earlier rotation regressed Chrome because ~75% of videos started
+    // on a non-canonical gateway, and slow-but-not-failing alternates
+    // produced loading stalls that the <video> element's onerror
+    // handler can't detect.
+    const gateways = gatewayUrls(src)
     const el = document.createElement('video')
     el.autoplay = true
     el.muted = true

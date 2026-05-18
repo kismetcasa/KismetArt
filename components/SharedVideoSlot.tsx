@@ -131,21 +131,20 @@ export function SharedVideoSlot({
     if (controls) {
       doAcquire()
     } else {
-      // 1500px (~2 screen heights) is wide enough that Chrome can
-      // resume its eager pre-load behaviour — videos within ~2 screens
-      // of viewport start fetching metadata, so by the time the user
-      // scrolls to them the bytes are ready and play() is instant. At
-      // 300px the prior margin was too aggressive: it cut Chrome's
-      // pre-buffer to a thin sliver and introduced a perceptible
-      // fetch+decode delay on cards approaching the fold. Still
-      // bounded — pages a long way down the infinite-scroll feed
-      // don't fetch until they're within ~2 screens.
+      // 3000px (~4 screen heights) puts the lazy-acquire margin close
+      // to the pre-branch behaviour of "every card on the page
+      // pre-loaded on mount" without being unbounded — fast scrolls
+      // generally don't outpace this buffer, so by the time a card
+      // enters viewport its bytes are already cached. Narrower margins
+      // (300-1500px) left a visible "video catches up" delay vs. the
+      // original eager-everywhere baseline. Safari still benefits
+      // because pages 3+ of infinite scroll don't all acquire at once.
       acquireIo = new IntersectionObserver(
         ([entry]) => {
           if (entry.isIntersecting) doAcquire()
           else doRelease()
         },
-        { rootMargin: '1500px' },
+        { rootMargin: '3000px' },
       )
       acquireIo.observe(el)
     }
