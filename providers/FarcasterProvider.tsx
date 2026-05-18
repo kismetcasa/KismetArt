@@ -178,33 +178,123 @@ export function FarcasterProvider({ children }: { children: ReactNode }) {
         const confirmed = await sdk.isInMiniApp()
         if (cancelled || !confirmed) return
 
-        // CRITICAL: without this call the host shows its splash screen
-        // forever. Has to come after the rest of the React tree has
-        // rendered, which is guaranteed because this useEffect runs
-        // after first paint of the FarcasterProvider's children.
+        // Install the JWT interceptor up front so the /api/me fetch
+        // below picks up the Bearer token automatically. The token
+        // getter is lazy — getToken() returns the in-memory token
+        // when one is cached, otherwise acquires a fresh one.
+        teardownFetch = installFetchInterceptor(async () => {
+          try {
+            const result = await sdk.quickAuth.getToken()
+            return result?.token ?? null
+          } catch {
+            return null
+          }
+        })
+
+        // Parallelize everything we need before ready(). The host's
+        // splash screen is showing throughout this block — every ms
+        // saved here is invisible to the user, but every ms paid AFTER
+        // ready() is a visible "unidentified page" flash. Per the
+        // Quick Auth docs, the recommended pattern is to resolve the
+        // user, THEN call ready() so the splash dismisses to a
+        // fully-painted page.
+        //
+        // sdk.context: host posts user identity (fid, username, pfp,
+        //   safeAreaInsets) over the bridge.
+        // /api/me: server-side primary-address resolution (Redis cached
+        //   after first hit). The interceptor we just installed injects
+        //   the Quick Auth JWT.
+        const [ctx, meResponse] = await Promise.all([
+          sdk.context,
+          fetch('/api/me').catch(() => null),
+        ])
+        if (cancelled) return
+
+        // Build the identity from host context + the resolved primary
+        // address. If /api/me failed, identity still gets username/pfp
+        // from ctx — the UI degrades gracefully (no profile link until
+        // a later retry, but name + avatar still visible).
+        const ctxUser = ctx?.user
+        let resolvedAddress: string | null = null
+        if (meResponse?.ok) {
+          try {
+            const body = (await meResponse.json()) as { address?: string }
+            if (body.address) resolvedAddress = body.address
+          } catch {
+            // /api/me malformed — fall through with no address.
+          }
+        }
+        const hostIdentity: FarcasterIdentity | null = ctxUser
+          ? {
+              fid: ctxUser.fid,
+              username: ctxUser.username ?? null,
+              displayName: ctxUser.displayName ?? null,
+              pfpUrl: ctxUser.pfpUrl ?? null,
+              address: resolvedAddress,
+            }
+          : null
+
+        // Device chrome insets — notch, Dynamic Island, home indicator,
+        // curved edges. Written BEFORE ready() so the first frame after
+        // splash dismissal has the right paddings; otherwise the nav
+        // would briefly sit behind the notch and reflow once insets
+        // arrive. CSS env(safe-area-inset-*) is unreliable inside
+        // WebViews (the host controls the viewport, not us) — the host
+        // pushes exact pixel values via context instead.
+        const insets = ctx?.client?.safeAreaInsets
+        if (insets) {
+          const root = document.documentElement
+          root.style.setProperty('--safe-top', `${insets.top}px`)
+          root.style.setProperty('--safe-bottom', `${insets.bottom}px`)
+          root.style.setProperty('--safe-left', `${insets.left}px`)
+          root.style.setProperty('--safe-right', `${insets.right}px`)
+        }
+
+        // Set complete identity BEFORE dismissing the splash so the
+        // very first frame the user sees after the splash has the
+        // username, pfp, AND resolved address baked in. No "default
+        // avatar → resolved" flicker.
+        setState({
+          isInMiniApp: true,
+          ready: true,
+          identity: hostIdentity,
+        })
+
+        // Pre-fetch the FC pfp at native resolution so the <img> in
+        // ProfileAvatar resolves from disk cache the moment ready()
+        // dismisses the splash. Without this the browser only starts
+        // the request when React mounts the <img>, paying the network
+        // round-trip on the visible critical path.
+        if (hostIdentity?.pfpUrl) {
+          const preload = document.createElement('link')
+          preload.rel = 'preload'
+          preload.as = 'image'
+          preload.href = hostIdentity.pfpUrl
+          document.head.appendChild(preload)
+        }
+
+        // CRITICAL: without ready() the host shows its splash forever.
+        // Called LAST in the pre-paint phase so everything above has
+        // settled before the user sees the page.
         await sdk.actions.ready()
         if (cancelled) return
 
-        // Wire the host's back control (swipe-from-edge on iOS, hardware
-        // back on Android, header button on web) to the browser's
-        // navigation history. Without this, the host's default behavior
-        // is to dismiss the entire Mini App on a back gesture — which
-        // breaks the user's expectation when they're mid-flow inside
-        // Kismet (e.g. mint → moment detail → back). The SDK uses the
-        // modern Navigation API where available and falls back to
-        // History API otherwise. Silent fallback for older hosts that
-        // don't expose the back capability at all.
+        // --- Post-paint bootstrap (everything below runs while the
+        //     user already sees a fully identified page) ---
+
+        // Wire the host's back control to browser history. Silent
+        // fallback for older hosts that don't expose the capability.
         try {
           await sdk.back.enableWebNavigation()
         } catch {
           // Older host — leave default close-on-swipe gestures in place.
         }
-        if (cancelled) return
 
         // Wire the host wallet through wagmi. If reconnect-on-mount
         // already connected, wagmi's connect() is a no-op for an
-        // already-connected connector. The ref guard makes us idempotent
-        // across React's effect re-runs.
+        // already-connected connector. Doesn't affect first paint —
+        // identity above already gives us name/pfp; this just unlocks
+        // transactions (mint, follow, etc).
         if (!hasAttemptedConnect.current) {
           hasAttemptedConnect.current = true
           const fcConnector = connectors.find((c) => c.id === 'farcaster')
@@ -218,76 +308,10 @@ export function FarcasterProvider({ children }: { children: ReactNode }) {
           }
         }
 
-        // Install the fetch interceptor BEFORE any authenticated request
-        // fires. sdk.quickAuth.getToken returns a cached, auto-refreshed
-        // JWT (~1h lifetime) so calling it on every request is cheap
-        // after the first.
-        teardownFetch = installFetchInterceptor(async () => {
-          try {
-            const result = await sdk.quickAuth.getToken()
-            return result?.token ?? null
-          } catch {
-            return null
-          }
-        })
-
-        // Pre-warm the JWT so the first authenticated fetch doesn't pay
-        // an ~auth-server round-trip on the critical render path.
-        let jwt: string | null = null
-        try {
-          const result = await sdk.quickAuth.getToken()
-          jwt = result?.token ?? null
-        } catch {
-          // Quick Auth unavailable — UI still renders, just unauthenticated.
-        }
-        if (cancelled) return
-
-        // `sdk.context` is itself a Promise (the host posts it over the
-        // bridge); since isInMiniApp() already resolved true, this is
-        // guaranteed to resolve.
-        const ctx = await sdk.context
-        const ctxUser = ctx?.user
-        const hostIdentity: FarcasterIdentity | null = ctxUser
-          ? {
-              fid: ctxUser.fid,
-              username: ctxUser.username ?? null,
-              displayName: ctxUser.displayName ?? null,
-              pfpUrl: ctxUser.pfpUrl ?? null,
-              address: null,
-            }
-          : null
-
-        // Set partial identity immediately so UI can paint with username +
-        // pfp from host context. The address comes from a server round-trip
-        // (FID → primary address resolution) and is filled in below.
-        setState({
-          isInMiniApp: true,
-          ready: true,
-          identity: hostIdentity,
-        })
-
-        // Device chrome insets — notch, Dynamic Island, home indicator,
-        // curved edges. The host pushes exact pixel values via context
-        // because CSS env(safe-area-inset-*) is unreliable inside WebViews
-        // (the host controls the viewport, not us). Setting them as CSS
-        // custom properties on :root means every consumer (Nav, layout
-        // <main>, NotificationModal) reads them via var() without prop
-        // drilling or re-renders. Defaults stay at 0 in globals.css for
-        // web users — those `var()`s evaluate to 0 and nothing shifts.
-        const insets = ctx?.client?.safeAreaInsets
-        if (insets) {
-          const root = document.documentElement
-          root.style.setProperty('--safe-top', `${insets.top}px`)
-          root.style.setProperty('--safe-bottom', `${insets.bottom}px`)
-          root.style.setProperty('--safe-left', `${insets.left}px`)
-          root.style.setProperty('--safe-right', `${insets.right}px`)
-        }
-
         // addMiniApp prompt: only on the user's 2nd confirmed open, and
         // only when they haven't already added or enabled notifications.
         // Fires as a non-modal sonner toast so it can't interfere with
-        // any in-flight action (mint, follow, etc). The host's own
-        // consent sheet handles the actual permission ask.
+        // any in-flight action.
         const added = ctx?.client?.added === true
         const notificationsEnabled = !!ctx?.client?.notificationDetails
         if (!added && !notificationsEnabled) {
@@ -305,31 +329,6 @@ export function FarcasterProvider({ children }: { children: ReactNode }) {
                 },
               },
             })
-          }
-        }
-
-        // Resolve the address server-side. We can't do this from the
-        // client (the JWT carries only the FID, not the address) and we
-        // wouldn't want to anyway — the server already caches the
-        // FID→address lookup in Redis.
-        if (jwt) {
-          try {
-            const me = await fetch('/api/me')
-            if (me.ok) {
-              const body = (await me.json()) as { address?: string }
-              if (!cancelled && body.address && hostIdentity) {
-                const address = body.address
-                setState((prev) => ({
-                  ...prev,
-                  isInMiniApp: true,
-                  ready: true,
-                  identity: { ...hostIdentity, address },
-                }))
-              }
-            }
-          } catch {
-            // Network or auth failure — identity stays without an address;
-            // unauthenticated UI paths still work.
           }
         }
       } catch (err) {
