@@ -45,6 +45,7 @@ export interface NotificationToken {
 const keyTokens = (fid: number) => `kismetart:fc:tokens:${fid}`
 const keyPushTypes = (fid: number) => `kismetart:fc:push-types:${fid}`
 const keyPushMaster = (fid: number) => `kismetart:fc:push-master:${fid}`
+const keyPushSeeded = (fid: number) => `kismetart:fc:push-seeded:${fid}`
 const keyIdempotency = (fid: number, notificationId: string) =>
   `kismetart:fc:notif-sent:${fid}:${notificationId}`
 
@@ -52,6 +53,19 @@ const IDEMPOTENCY_TTL_SECS = 24 * 60 * 60
 const TOKENS_TTL_SECS = 365 * 24 * 60 * 60
 const PUSH_TYPES_TTL_SECS = 365 * 24 * 60 * 60
 const PUSH_MASTER_TTL_SECS = 365 * 24 * 60 * 60
+const PUSH_SEEDED_TTL_SECS = 5 * 365 * 24 * 60 * 60
+
+// Per the canonical sendNotificationRequestSchema (@farcaster/miniapp-core,
+// schemas/notifications): tokens: z.string().array().max(100). One FID
+// realistically has 1-3 tokens, but chunking defends against schema
+// rejections on any future host that strictly validates.
+const MAX_TOKENS_PER_REQUEST = 100
+
+// Host POST timeout. Spec doesn't define one, but a hung notification
+// endpoint would otherwise leak connections from the writeNotification
+// fire-and-forget. 10s comfortably covers a slow host while bounding
+// resource use on a stuck one.
+const SEND_TIMEOUT_MS = 10_000
 
 // Master toggle: 'on' | 'off' | (absent = default off). Default-off is
 // the conservative posture asked for in design — no surprise pushes.
@@ -71,26 +85,19 @@ const DEFAULT_ENABLED_PUSH_TYPES: ReadonlySet<NotificationType> = new Set(['coll
  * Persist a notification token for an FID. Idempotent — duplicate (url, token)
  * pairs are stored once.
  *
- * First-registration seeding:
+ * One-shot seeding (gated on kismetart:fc:push-seeded:<fid>):
  *   - Per-type opt-in set: seeded with DEFAULT_ENABLED_PUSH_TYPES ({collect})
  *     so the prompt's "collect alerts" promise is honored.
- *   - Master toggle: set to 'on' ONLY when the FID has zero prior tokens AND
- *     no explicit master setting. After that, the user's Kismet-level
- *     master setting (if any) is respected through add/remove churn.
+ *   - Master toggle: set to 'on' so push starts working immediately.
+ *
+ * The seeded flag means: a user who explicitly turned EVERY push type off,
+ * then disabled OS notifications (which clears tokens), then re-enabled,
+ * keeps their "all off" state. Without the flag, scard(push-types)==0 would
+ * look identical to "never seeded" and we'd re-add {collect} unbidden. The
+ * flag stamps once on the user's first-ever grant and is preserved through
+ * any number of disable/enable cycles.
  */
 export async function registerToken(fid: number, details: NotificationToken): Promise<void> {
-  // Check first-registration state BEFORE the SADD that would change it.
-  // SCARD on a missing key returns 0 — distinguishes truly-new from
-  // existing-but-empty.
-  let isFirstRegistration = false
-  try {
-    isFirstRegistration = (await redis.scard(keyTokens(fid))) === 0
-  } catch {
-    // If we can't tell, conservatively assume NOT a first registration
-    // so we don't auto-enable master for an existing user on a hiccup.
-    isFirstRegistration = false
-  }
-
   const member = JSON.stringify({ url: details.url, token: details.token })
   await redis
     .multi()
@@ -98,37 +105,54 @@ export async function registerToken(fid: number, details: NotificationToken): Pr
     .expire(keyTokens(fid), TOKENS_TTL_SECS)
     .exec()
 
-  if (!isFirstRegistration) return
-
-  // Seed per-type defaults only when the user has nothing on record yet.
+  // Has this FID ever been seeded? If yes, skip seed regardless of the
+  // current per-type / master state — those are the user's explicit choices.
+  let alreadySeeded = false
   try {
-    const existing = await redis.scard(keyPushTypes(fid))
-    if (existing === 0) {
-      const defaults = [...DEFAULT_ENABLED_PUSH_TYPES]
-      if (defaults.length > 0) {
-        const [first, ...rest] = defaults
-        await redis
-          .multi()
-          .sadd(keyPushTypes(fid), first, ...rest)
-          .expire(keyPushTypes(fid), PUSH_TYPES_TTL_SECS)
-          .exec()
-      }
+    alreadySeeded = (await redis.get<string>(keyPushSeeded(fid))) === '1'
+  } catch {
+    // Read failure: conservatively assume seeded so we don't double-seed
+    // an existing user during a Redis blip.
+    alreadySeeded = true
+  }
+  if (alreadySeeded) return
+
+  // Seed per-type defaults.
+  try {
+    const defaults = [...DEFAULT_ENABLED_PUSH_TYPES]
+    if (defaults.length > 0) {
+      const [first, ...rest] = defaults
+      await redis
+        .multi()
+        .sadd(keyPushTypes(fid), first, ...rest)
+        .expire(keyPushTypes(fid), PUSH_TYPES_TTL_SECS)
+        .exec()
     }
   } catch {
     // Best-effort — if seed fails the user just has zero push types until
     // they toggle one on, which is a safe degradation.
   }
 
-  // Auto-enable master on first registration only when the user has
-  // never explicitly set it. Existing 'off' settings are preserved.
+  // Auto-enable master on the first registration so the prompt's promise
+  // works without the user detouring to settings. Subsequent grants
+  // (disable→re-enable) won't reach this block because the seeded flag
+  // short-circuits above; if the user explicitly turned master off, we
+  // never overwrite that.
   try {
-    const current = (await redis.get<string>(keyPushMaster(fid))) as MasterState
-    if (current !== 'on' && current !== 'off') {
-      await redis.set(keyPushMaster(fid), 'on', { ex: PUSH_MASTER_TTL_SECS })
-    }
+    await redis.set(keyPushMaster(fid), 'on', { ex: PUSH_MASTER_TTL_SECS })
   } catch {
     // Non-critical — falls through to default-off, which the user can
     // flip on themselves in settings.
+  }
+
+  // Stamp the seeded flag LAST so a partial-failure seed doesn't claim
+  // success. Long TTL (5y) because we never want to re-seed an existing
+  // user; we'd rather lose this flag than over-seed.
+  try {
+    await redis.set(keyPushSeeded(fid), '1', { ex: PUSH_SEEDED_TTL_SECS })
+  } catch {
+    // If the flag set fails, next registerToken will re-seed (idempotent
+    // operations above mean re-seed is safe — just sets the same values).
   }
 }
 
@@ -426,17 +450,35 @@ async function sendOne(
   body: string,
   targetUrl: string,
 ): Promise<HostResponse | null> {
+  // AbortController-based timeout so a hung host endpoint can't pin a
+  // connection forever. Push is fire-and-forget at the writeNotification
+  // call site, so the loss is just this one push.
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), SEND_TIMEOUT_MS)
   try {
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ notificationId, title, body, targetUrl, tokens }),
+      signal: controller.signal,
     })
     if (!res.ok) return null
     return (await res.json()) as HostResponse
   } catch {
+    // AbortError, network error, JSON parse error — collapse to null so
+    // the caller treats this as "delivery uncertain" without GC-ing tokens.
     return null
+  } finally {
+    clearTimeout(timeout)
   }
+}
+
+/** Chunk an array into pieces of at most `size`. */
+function chunk<T>(arr: T[], size: number): T[][] {
+  if (arr.length <= size) return [arr]
+  const out: T[][] = []
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size))
+  return out
 }
 
 /**
@@ -517,24 +559,29 @@ export async function dispatchFarcasterPush(n: Notification): Promise<void> {
     }
 
     await Promise.all(
-      [...byUrl.entries()].map(async ([url, urlTokens]) => {
-        const result = await sendOne(
-          url,
-          urlTokens,
-          n.id,
-          composed.title,
-          composed.body,
-          composed.targetUrl,
-        )
-        if (!result?.result?.invalidTokens?.length) return
-        // Garbage-collect tokens the host rejected. Match by (url, token)
-        // so a token revoked on one client doesn't drop the same string
-        // if it happens to be reused on another (shouldn't happen, but
-        // tokens are opaque so we don't assume).
-        await Promise.all(
-          result.result.invalidTokens.map((tok) => unregisterToken(fid, { url, token: tok })),
-        )
-      }),
+      [...byUrl.entries()].flatMap(([url, urlTokens]) =>
+        // Schema caps each request at 100 tokens; chunk for safety even
+        // though a single FID realistically has <5. A larger-than-max
+        // request would 400 host-side and lose the whole batch.
+        chunk(urlTokens, MAX_TOKENS_PER_REQUEST).map(async (batch) => {
+          const result = await sendOne(
+            url,
+            batch,
+            n.id,
+            composed.title,
+            composed.body,
+            composed.targetUrl,
+          )
+          if (!result?.result?.invalidTokens?.length) return
+          // Garbage-collect tokens the host rejected. Match by (url, token)
+          // so a token revoked on one client doesn't drop the same string
+          // if it happens to be reused on another (shouldn't happen, but
+          // tokens are opaque so we don't assume).
+          await Promise.all(
+            result.result.invalidTokens.map((tok) => unregisterToken(fid, { url, token: tok })),
+          )
+        }),
+      ),
     )
   } catch {
     // Push is non-critical infrastructure — never let it surface errors.

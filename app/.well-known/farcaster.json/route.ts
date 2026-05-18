@@ -70,6 +70,13 @@ export async function GET() {
     // Host POSTs a JFS-signed payload — see app/api/farcaster/webhook
     // for signature verification + token storage.
     webhookUrl: `${SITE_URL}/api/farcaster/webhook`,
+    // Disambiguates kismet.art from any reachable subdomain (most
+    // commonly www.). Per the publishing guide, "the `www.` prefix is
+    // treated as a subdomain like any other" and the two would otherwise
+    // be separate Mini Apps with separate notification token pools.
+    // Declaring canonicalDomain points hosts at the apex regardless of
+    // which variant the user landed on. Format: no scheme, no path.
+    canonicalDomain: new URL(SITE_URL).hostname,
     // Manifest-level imageUrl and buttonTitle are deprecated as of SDK
     // 0.0.35 (April 2025) — per-page embeds (see lib/farcasterEmbed.ts
     // + each page's generateMetadata) carry the image and button text
