@@ -1,6 +1,6 @@
 import { redis } from './redis'
 import { PLATFORM_COLLECTION } from './config'
-import { INPROCESS_API } from './inprocess'
+import { inprocessUrl } from './inprocess'
 import { getHiddenCollectionsSet } from './hiddenCollections'
 import { memoize } from './memoCache'
 
@@ -181,10 +181,8 @@ export async function getCollectionsByArtist(
 // shipped. 5min upstream cache bounds the per-search fan-out.
 async function fetchInprocessCollectionImage(address: string): Promise<string | undefined> {
   try {
-    const url = new URL(`${INPROCESS_API}/collection`)
-    url.searchParams.set('collectionAddress', address)
-    url.searchParams.set('chainId', '8453')
-    const res = await fetch(url.toString(), {
+    const url = inprocessUrl('/collection', { collectionAddress: address, chainId: '8453' })
+    const res = await fetch(url, {
       headers: { Accept: 'application/json' },
       next: { revalidate: 300 },
     })

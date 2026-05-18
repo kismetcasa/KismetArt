@@ -68,11 +68,11 @@ export function CollectionRow({ collection, priority }: CollectionRowProps) {
     //     2 directly below it, 3 top of the next column, etc.).
     // SharedVideoProvider's clip-path keeps the position:fixed video
     // elements from painting past the horizontal scroller's edges on <lg.
-    <article className="flex border border-[#2a2a2a] bg-[#161616] overflow-hidden">
-      <div className="flex-shrink-0 w-32 lg:w-64 xl:w-72 lg:flex lg:flex-col lg:border-r lg:border-[#2a2a2a]">
+    <article className="flex border border-line bg-[#161616] overflow-hidden">
+      <div className="flex-shrink-0 w-32 lg:w-64 xl:w-72 lg:flex lg:flex-col lg:border-r lg:border-line">
         <Link
           href={`/collection/${c.contractAddress}`}
-          className="relative aspect-square w-full block overflow-hidden bg-[#111] group/img"
+          className="relative aspect-square w-full block overflow-hidden bg-surface group/img"
         >
           {isAdmin && (
             <button
@@ -82,7 +82,7 @@ export function CollectionRow({ collection, priority }: CollectionRowProps) {
                 toggleFeaturedCollection(c.contractAddress)
               }}
               className={`absolute top-2 left-2 z-10 p-1 transition-colors ${
-                isFeatured ? 'text-yellow-400' : 'text-[#333] hover:text-[#888]'
+                isFeatured ? 'text-yellow-400' : 'text-faint hover:text-dim'
               }`}
               title={isFeatured ? 'Unfeature' : 'Feature'}
             >
@@ -103,34 +103,34 @@ export function CollectionRow({ collection, priority }: CollectionRowProps) {
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center">
-              <span className="text-[#2a2a2a] font-mono text-xs">no preview</span>
+              <span className="text-line font-mono text-xs">no preview</span>
             </div>
           )}
           {/* <lg name overlay: the info section is hidden on smaller
               screens, so the collection still needs a label inside the row. */}
-          <span className="lg:hidden absolute inset-x-0 bottom-0 px-2 py-1 text-[10px] font-mono text-[#efefef] bg-gradient-to-t from-[#0d0d0d]/95 to-transparent truncate">
+          <span className="lg:hidden absolute inset-x-0 bottom-0 px-2 py-1 text-[10px] font-mono text-ink bg-gradient-to-t from-[#0d0d0d]/95 to-transparent truncate">
             {name}
           </span>
         </Link>
 
         <div className="hidden lg:flex flex-col gap-1 p-4 min-w-0 flex-1">
-          <h3 className="text-base font-mono text-[#efefef] truncate">{name}</h3>
+          <h3 className="text-base font-mono text-ink truncate">{name}</h3>
           {creatorLabel && (
             <Link
               href={adminAddr ? `/profile/${adminAddr}` : '#'}
-              className="text-xs font-mono text-[#555] hover:text-[#888] transition-colors w-fit"
+              className="text-xs font-mono text-muted hover:text-dim transition-colors w-fit"
             >
               {creatorLabel}
             </Link>
           )}
           {description && (
-            <p className="text-xs font-mono text-[#555] mt-1 line-clamp-3">{description}</p>
+            <p className="text-xs font-mono text-muted mt-1 line-clamp-3">{description}</p>
           )}
 
           <div className="flex flex-col gap-2 mt-auto pt-3">
             <Link
               href={`/collection/${c.contractAddress}`}
-              className="w-full px-3 py-1.5 text-center text-xs font-mono border border-[#2a2a2a] text-[#888] hover:border-[#555] hover:text-[#efefef] transition-colors"
+              className="w-full px-3 py-1.5 text-center text-xs font-mono border border-line text-dim hover:border-muted hover:text-ink transition-colors"
             >
               view collection
             </Link>
@@ -148,7 +148,7 @@ export function CollectionRow({ collection, priority }: CollectionRowProps) {
       <div className="flex-1 min-w-0 overflow-x-auto flex gap-2 p-2 snap-x snap-mandatory [-webkit-overflow-scrolling:touch] lg:overflow-visible lg:flex-none lg:grid lg:grid-cols-5 lg:grid-rows-2 lg:[grid-auto-flow:column] lg:gap-2 lg:p-3 lg:snap-none">
         {c.moments.length === 0 ? (
           <div className="flex-1 lg:col-span-full lg:row-span-full flex items-center justify-center min-h-[160px]">
-            <span className="text-xs font-mono text-[#555]">no moments yet</span>
+            <span className="text-xs font-mono text-muted">no moments yet</span>
           </div>
         ) : (
           c.moments.map((m, idx) => (

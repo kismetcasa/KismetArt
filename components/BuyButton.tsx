@@ -127,7 +127,7 @@ export function BuyButton({ listing, onBought, className = '' }: BuyButtonProps)
       if (!nonceRes.ok) throw new Error('Could not fetch nonce')
       const { nonce } = (await nonceRes.json().catch(() => ({}))) as { nonce?: string }
       if (!nonce) throw new Error('Could not fetch nonce')
-      const message = `Mark Kismet Art listing filled\nListing: ${listing.id}\nBuyer: ${address.toLowerCase()}\nNonce: ${nonce}`
+      const message = `Mark Kismet listing filled\nListing: ${listing.id}\nBuyer: ${address.toLowerCase()}\nNonce: ${nonce}`
       const signature = await signMessageAsync({ message })
 
       await fetch(`/api/listings/${listing.id}`, {
@@ -152,8 +152,8 @@ export function BuyButton({ listing, onBought, className = '' }: BuyButtonProps)
       disabled={loading || bought}
       className={`text-xs font-mono tracking-wider uppercase px-4 py-2.5 border transition-colors disabled:opacity-50 ${loading ? 'cursor-not-allowed' : ''} ${
         bought
-          ? 'border-[#8B5CF6] text-[#8B5CF6] bg-[#8B5CF6]/10'
-          : 'border-[#2a2a2a] text-[#888] hover:border-[#8B5CF6] hover:text-[#8B5CF6]'
+          ? 'border-accent text-accent bg-accent/10'
+          : 'border-line text-dim hover:border-accent hover:text-accent'
       } ${className}`}
     >
       {bought ? 'bought' : loading ? 'buying…' : `buy ${priceLabel}`}

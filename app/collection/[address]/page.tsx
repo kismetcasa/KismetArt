@@ -2,7 +2,7 @@ import type { Metadata } from 'next'
 import { cookies } from 'next/headers'
 import { notFound, redirect } from 'next/navigation'
 import { isAddress } from '@/lib/address'
-import { INPROCESS_API, shortAddress } from '@/lib/inprocess'
+import { inprocessUrl, shortAddress } from '@/lib/inprocess'
 import { shareImageUrl } from '@/lib/media/shareImage'
 import { CollectionView } from '@/components/CollectionView'
 import { getCollectionMeta as getKvCollectionMeta, getUserCollections } from '@/lib/kv'
@@ -39,10 +39,8 @@ async function fetchCollectionDetail(address: string): Promise<CollectionDetail 
   // collection detail page; the plural endpoint already powers the
   // lightweight metadata fetch below.
   try {
-    const url = new URL(`${INPROCESS_API}/collection`)
-    url.searchParams.set('collectionAddress', address)
-    url.searchParams.set('chainId', '8453')
-    const res = await fetch(url.toString(), {
+    const url = inprocessUrl('/collection', { collectionAddress: address, chainId: '8453' })
+    const res = await fetch(url, {
       headers: { Accept: 'application/json' },
       next: { revalidate: 120 },
     })
@@ -58,10 +56,8 @@ async function fetchCollectionMeta(
   address: string
 ): Promise<{ name?: string; image?: string; description?: string; kismet_thumbhash?: string } | null> {
   try {
-    const url = new URL(`${INPROCESS_API}/collections`)
-    url.searchParams.set('address', address)
-    url.searchParams.set('chain_id', '8453')
-    const res = await fetch(url.toString(), {
+    const url = inprocessUrl('/collections', { address, chain_id: '8453' })
+    const res = await fetch(url, {
       headers: { Accept: 'application/json' },
       next: { revalidate: 120 },
     })
@@ -93,11 +89,8 @@ async function loadKvFallback(
 // than 404, so the user never hits a dead URL on a brand-new wrapper.
 async function findFirstMomentTokenId(address: string): Promise<string | null> {
   try {
-    const url = new URL(`${INPROCESS_API}/timeline`)
-    url.searchParams.set('collection', address)
-    url.searchParams.set('limit', '1')
-    url.searchParams.set('chain_id', '8453')
-    const res = await fetch(url.toString(), {
+    const url = inprocessUrl('/timeline', { collection: address, limit: 1, chain_id: '8453' })
+    const res = await fetch(url, {
       headers: { Accept: 'application/json' },
       next: { revalidate: 60 },
     })
@@ -119,14 +112,14 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   ])
   const meta = kvMeta ?? inprocessMeta
   const name = meta?.name || `Collection ${shortAddress(address)}`
-  const description = meta?.description || 'View collection on Kismet Art'
+  const description = meta?.description || 'View collection on Kismet'
   // Text-mint auto-deploy stores an SVG data URI as the cover (works
   // in-app, not in share crawlers) — shareImageUrl drops those. ar:// /
   // ipfs:// routes through /api/img for the multi-gateway-raced edge
   // cache; https:// passes through.
   const imageUrl = shareImageUrl(meta?.image)
   return {
-    title: `${name} — Kismet Art`,
+    title: `${name} — Kismet`,
     description,
     openGraph: {
       title: name,
@@ -215,7 +208,7 @@ export default async function CollectionPage({ params }: Props) {
   if (hidden && !isCreator) {
     return (
       <div className="max-w-4xl mx-auto px-4 py-24 text-center">
-        <p className="text-sm font-mono text-[#888]">
+        <p className="text-sm font-mono text-dim">
           this collection has been hidden by the creator
         </p>
       </div>

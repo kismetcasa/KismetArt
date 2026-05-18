@@ -1,6 +1,7 @@
 import { cache } from 'react'
-import { INPROCESS_API, type MomentDetail } from './inprocess'
+import { inprocessUrl, type MomentDetail } from './inprocess'
 import { isMomentHidden } from './hiddenMoments'
+import { getMomentMeta } from './notifications'
 
 /**
  * Server-side moment detail fetch shared by the canonical page and the
@@ -18,12 +19,9 @@ export const fetchMomentDetail = cache(async (
   tokenId: string,
 ): Promise<MomentDetail | null> => {
   try {
-    const url = new URL(`${INPROCESS_API}/moment`)
-    url.searchParams.set('collectionAddress', address)
-    url.searchParams.set('tokenId', tokenId)
-    url.searchParams.set('chainId', '8453')
+    const url = inprocessUrl('/moment', { collectionAddress: address, tokenId, chainId: '8453' })
     const [res, hidden] = await Promise.all([
-      fetch(url.toString(), { next: { revalidate: 60 } }),
+      fetch(url, { next: { revalidate: 60 } }),
       isMomentHidden(address, tokenId),
     ])
     if (!res.ok) return null
@@ -31,5 +29,23 @@ export const fetchMomentDetail = cache(async (
     return { ...data, hidden }
   } catch {
     return null
+  }
+})
+
+/**
+ * EOA recorded by mint-proxy at mint time. Inprocess /moment returns the
+ * platform smart wallet as creator.address for Kismet-minted moments, and
+ * Kismet profiles are keyed by EOA — without this fallthrough the creator
+ * chip would stay stuck on a shortAddress.
+ */
+export const getKvCreatorAddress = cache(async (
+  address: string,
+  tokenId: string,
+): Promise<string | undefined> => {
+  try {
+    const meta = await getMomentMeta(address, tokenId)
+    return meta?.creator
+  } catch {
+    return undefined
   }
 })

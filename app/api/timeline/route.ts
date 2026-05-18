@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getTrackedCollectionsByScope, getCreatedMintsSet, type CollectionScope } from '@/lib/kv'
-import { INPROCESS_API } from '@/lib/inprocess'
-import { redis, FEATURED_KEY } from '@/lib/redis'
+import { inprocessUrl } from '@/lib/inprocess'
+import { redis, FEATURED_KEY, TRENDING_KEY } from '@/lib/redis'
 import { getCollectedMembers } from '@/lib/collected'
 import { getHiddenMomentsSet } from '@/lib/hiddenMoments'
 import { getHiddenCollectionsSet } from '@/lib/hiddenCollections'
@@ -9,12 +9,9 @@ import { getSessionAddress } from '@/lib/session'
 import { getMomentMetaBatch } from '@/lib/notifications'
 
 async function fetchCollection(collection: string, limit: number): Promise<unknown[]> {
-  const url = new URL(`${INPROCESS_API}/timeline`)
-  url.searchParams.set('collection', collection)
-  url.searchParams.set('limit', String(limit))
-  url.searchParams.set('chain_id', '8453')
+  const url = inprocessUrl('/timeline', { collection, limit, chain_id: '8453' })
   try {
-    const res = await fetch(url.toString(), { headers: { Accept: 'application/json' }, next: { revalidate: 30 } })
+    const res = await fetch(url, { headers: { Accept: 'application/json' }, next: { revalidate: 30 } })
     const text = await res.text()
     const data = JSON.parse(text)
     return Array.isArray(data.moments) ? data.moments : []
@@ -238,7 +235,7 @@ export async function GET(req: NextRequest) {
     // (every collect is an unbounded ZINCRBY). Moments past the cap fall back
     // to score 0 via scoreMap.get's undefined → 0 coalesce below, putting them
     // at the bottom of trending sort — same effective ordering as fetching all.
-    const raw = (await redis.zrange('kismetart:trending', 0, 9999, {
+    const raw = (await redis.zrange(TRENDING_KEY, 0, 9999, {
       rev: true,
       withScores: true,
     })) as (string | number)[]

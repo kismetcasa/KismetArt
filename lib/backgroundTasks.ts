@@ -1,5 +1,6 @@
-import { redis } from './redis'
+import { redis, TRENDING_KEY } from './redis'
 import { sweepExpiredListings } from './listings'
+import { KEY_PROFILES } from './profile'
 
 /**
  * Periodic Redis cleanup tasks. Per-task try/catch isolates failures;
@@ -54,7 +55,7 @@ async function runTask(name: string, fn: () => Promise<void>): Promise<void> {
 // low-activity users accumulated old entries indefinitely.
 async function trimNotifications(): Promise<void> {
   const cutoff = Math.floor(Date.now() / 1000) - NOTIF_TTL_SECONDS
-  const profiles = (await redis.smembers('kismetart:profiles')) as string[]
+  const profiles = (await redis.smembers(KEY_PROFILES)) as string[]
   await Promise.all(
     profiles.map((addr) =>
       redis.zremrangebyscore(`kismetart:notif:${addr.toLowerCase()}`, 0, cutoff).catch(() => 0),
@@ -66,5 +67,5 @@ async function trimNotifications(): Promise<void> {
 // /api/timeline reads only that many, so anything past is dead weight.
 async function trimTrending(): Promise<void> {
   // Range [0, -KEEP-1] removes every rank except the top KEEP.
-  await redis.zremrangebyrank('kismetart:trending', 0, -TRENDING_KEEP_TOP - 1)
+  await redis.zremrangebyrank(TRENDING_KEY, 0, -TRENDING_KEEP_TOP - 1)
 }

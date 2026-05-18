@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAddress, isValidTokenId } from '@/lib/address'
-import { INPROCESS_API } from '@/lib/inprocess'
+import { inprocessUrl } from '@/lib/inprocess'
+import { errorResponse } from '@/lib/apiResponse'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
@@ -10,25 +11,26 @@ export async function GET(req: NextRequest) {
   const offset = searchParams.get('offset') ?? '0'
 
   if (!collectionAddress || !tokenId) {
-    return NextResponse.json({ error: 'collectionAddress and tokenId required' }, { status: 400 })
+    return errorResponse(400, 'collectionAddress and tokenId required')
   }
   if (!isAddress(collectionAddress)) {
-    return NextResponse.json({ error: 'Invalid collectionAddress' }, { status: 400 })
+    return errorResponse(400, 'Invalid collectionAddress')
   }
   if (!isValidTokenId(tokenId)) {
-    return NextResponse.json({ error: 'Invalid tokenId' }, { status: 400 })
+    return errorResponse(400, 'Invalid tokenId')
   }
   if (!/^\d+$/.test(offset)) {
-    return NextResponse.json({ error: 'Invalid offset' }, { status: 400 })
+    return errorResponse(400, 'Invalid offset')
   }
 
-  const url = new URL(`${INPROCESS_API}/moment/comments`)
-  url.searchParams.set('collectionAddress', collectionAddress)
-  url.searchParams.set('tokenId', tokenId)
-  url.searchParams.set('chainId', chainId)
-  if (offset !== '0') url.searchParams.set('offset', offset)
+  const url = inprocessUrl('/moment/comments', {
+    collectionAddress,
+    tokenId,
+    chainId,
+    offset: offset !== '0' ? offset : undefined,
+  })
 
-  const res = await fetch(url.toString(), {
+  const res = await fetch(url, {
     headers: { Accept: 'application/json' },
     next: { revalidate: 30 },
   })
@@ -38,7 +40,7 @@ export async function GET(req: NextRequest) {
   try {
     data = JSON.parse(text)
   } catch {
-    return NextResponse.json({ error: 'upstream error' }, { status: 502 })
+    return errorResponse(502, 'upstream error')
   }
   return NextResponse.json(data, { status: res.status })
 }

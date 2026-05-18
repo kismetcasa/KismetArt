@@ -1,12 +1,10 @@
-import { cache } from 'react'
 import { cookies } from 'next/headers'
 import { notFound } from 'next/navigation'
 import { EyeOff } from 'lucide-react'
 import { isAddress, isValidTokenId } from '@/lib/address'
-import { fetchMomentDetail } from '@/lib/momentDetail'
+import { fetchMomentDetail, getKvCreatorAddress } from '@/lib/momentDetail'
 import { pickFirstNonOperatorAdmin } from '@/lib/momentAuthz'
 import { SESSION_COOKIE, verifySession } from '@/lib/session'
-import { getMomentMeta as getKvMomentMeta } from '@/lib/notifications'
 import { MomentDetailView } from '@/components/MomentDetailView'
 import { ModalOverlay } from '@/components/ModalOverlay'
 
@@ -39,25 +37,6 @@ async function resolveViewer(): Promise<string | null> {
   return sessionToken ? await verifySession(sessionToken) : null
 }
 
-// EOA address recorded by the mint proxy in KV at mint time. The
-// inprocess /moment response often returns the platform smart wallet
-// as creator.address for Kismet-minted moments, and Kismet profiles
-// are keyed by EOA — without this fallthrough, MomentDetailView would
-// look up the wrong address and the creator chip would stay stuck on
-// shortAddress instead of the user's display name. The canonical
-// page hydrates the same value; the overlay needs it too for parity.
-const getKvCreatorAddress = cache(async (
-  address: string,
-  tokenId: string,
-): Promise<string | undefined> => {
-  try {
-    const meta = await getKvMomentMeta(address, tokenId)
-    return meta?.creator
-  } catch {
-    return undefined
-  }
-})
-
 export default async function ModalMomentPage({ params }: Props) {
   const { address, tokenId } = await params
   if (!isAddress(address) || !isValidTokenId(tokenId)) notFound()
@@ -89,7 +68,7 @@ export default async function ModalMomentPage({ params }: Props) {
       <ModalOverlay>
         <div className="max-w-4xl mx-auto flex flex-col items-center justify-center gap-3 py-24 px-6">
           <EyeOff size={20} className="text-[#444]" />
-          <p className="text-sm font-mono text-[#888]">
+          <p className="text-sm font-mono text-dim">
             this moment has been hidden by the creator
           </p>
         </div>

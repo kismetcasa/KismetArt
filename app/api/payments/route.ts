@@ -1,20 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { isAddress } from '@/lib/address'
-import { INPROCESS_API } from '@/lib/inprocess'
+import { inprocessUrl } from '@/lib/inprocess'
+import { errorResponse } from '@/lib/apiResponse'
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const artist = searchParams.get('artist')
 
   if (artist && !isAddress(artist)) {
-    return NextResponse.json({ error: 'Invalid artist address' }, { status: 400 })
+    return errorResponse(400, 'Invalid artist address')
   }
 
-  const url = new URL(`${INPROCESS_API}/payments`)
-  if (artist) url.searchParams.set('artist', artist)
+  // `?artist=` (empty value) and missing param should both omit the upstream
+  // filter, matching the original `if (artist) set(...)` behavior.
+  const url = inprocessUrl('/payments', { artist: artist || undefined })
 
   try {
-    const res = await fetch(url.toString(), {
+    const res = await fetch(url, {
       headers: { Accept: 'application/json' },
       next: { revalidate: 60 },
     })
@@ -30,6 +32,6 @@ export async function GET(req: NextRequest) {
     }
     return NextResponse.json(data, { status: res.status })
   } catch {
-    return NextResponse.json({ error: 'upstream error' }, { status: 502 })
+    return errorResponse(502, 'upstream error')
   }
 }

@@ -1,5 +1,6 @@
 import { redis } from './redis'
 import { getFollowers, isFollowing } from './follows'
+import { KEY_PROFILES } from './profile'
 import { randomUUID } from 'crypto'
 
 export const ALL_NOTIFICATION_TYPES = [
@@ -67,7 +68,6 @@ const keyLastRead = (a: string) => `kismetart:notif-last-read:${a.toLowerCase()}
 const keyReadIds = (a: string) => `kismetart:notif-read-ids:${a.toLowerCase()}`
 const keyMuted = (a: string) => `kismetart:notif-muted:${a.toLowerCase()}`
 const keyMutedTypes = (a: string) => `kismetart:notif-muted-types:${a.toLowerCase()}`
-const KEY_PROFILES = 'kismetart:profiles'
 
 const keyMomentMeta = (addr: string, tokenId: string) =>
   `kismetart:moment-meta:${addr.toLowerCase()}:${tokenId}`
