@@ -72,6 +72,27 @@ input[type='number'] {
   background-clip: text;
 }
 
+/* Wordmark gradient — sampled directly from public/logo.png (clockwise
+ * petal sweep). The stops trace the same hues that read across the logo
+ * left-to-right: violet (top-left petal) → cyan (top) → pink/magenta
+ * (top-right) → coral (bottom-right) → orange (bottom-left). All five
+ * stops sit at L≈0.75 so contrast against the always-dark nav stays
+ * comfortably above 4.5:1. Kept separate from .accent-grad so the
+ * rainbow doesn't bleed onto price labels, checkmarks, etc. */
+.brand-grad {
+  background: linear-gradient(
+    to right,
+    #9692f6 0%,
+    #9bd6f5 25%,
+    #ff87ce 55%,
+    #ff7c80 80%,
+    #ffb375 100%
+  );
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
 .btn-accent {
   border: 1px solid #6B3FA0;
   color: #6B3FA0;

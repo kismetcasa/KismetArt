@@ -62,7 +62,7 @@ export function Nav() {
             <Link
               href="/"
               aria-label="Kismet"
-              className="flex items-center gap-2 text-sm font-mono tracking-widest uppercase accent-grad"
+              className="flex items-center gap-2 text-sm font-mono tracking-widest uppercase"
             >
               <span className="flex items-center justify-center w-8 h-8 rounded-full bg-white">
                 <Image
@@ -83,7 +83,7 @@ export function Nav() {
                      need the wordmark for orientation.
                    - Desktop: always shown. */}
               {!isInMiniApp && (
-                <span className={effectiveSignedIn ? 'hidden sm:inline' : ''}>
+                <span className={`brand-grad${effectiveSignedIn ? ' hidden sm:inline' : ''}`}>
                   Kismet
                 </span>
               )}
