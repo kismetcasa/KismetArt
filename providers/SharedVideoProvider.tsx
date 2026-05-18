@@ -82,6 +82,10 @@ interface Slot {
 }
 
 interface ManagedVideo {
+  /** Canonical src this entry is keyed by in the pool. Carried on the
+   *  entry so destroyVideo can write to currentTimeMemory without a
+   *  reverse-lookup against the pool map. */
+  src: string
   el: HTMLVideoElement
   /** All currently-registered slots for this src, most-recently-mounted
    *  first. The 0th entry is the "active" slot the element is positioned
@@ -97,6 +101,12 @@ interface ManagedVideo {
   gatewayIndex: number
   loaded: boolean
   lastActiveAt: number
+  /** Set on loadedmetadata when reported duration exceeds the long-form
+   *  threshold. Drives preload strategy, IO margin, idle retention, and
+   *  LRU eviction order. Undefined until metadata arrives — call sites
+   *  must treat "unknown" as short-loop (the safer default for tight
+   *  resource budgets). */
+  isLongForm: boolean
   /** Set true by destroyVideo so the event listeners can bail if they
    *  fire after teardown (the AbortSignal removes them but a queued
    *  event may still be dispatched). */
@@ -137,13 +147,39 @@ export function useSharedVideoContext(): ContextValue {
 // to claim the element on a route transition without re-creating it.
 const RELEASE_GRACE_MS = 1000
 
-// Pool entries with no active slot for this long get destroyed.
-const IDLE_EVICT_MS = 5 * 60 * 1000
+// Idle-eviction windows. Short loops cycle fast and re-fetch cheaply,
+// so the original 5min is enough. Long-form videos cost minutes of
+// buffered bytes; evicting them mid-session means the user re-pays
+// that download to scroll back, which is the loudest complaint the
+// feed has about long content.
+const SHORT_LOOP_IDLE_EVICT_MS = 5 * 60 * 1000
+const LONG_FORM_IDLE_EVICT_MS = 30 * 60 * 1000
 
 // Hard cap on pool size. Past this, idle entries get evicted on next
 // acquire. Larger pool = more decoder warmth on scroll-back (currentTime
 // and buffered ranges survive while the entry is pooled).
-const MAX_POOL_SIZE = 12
+const MAX_POOL_SIZE = 18
+
+// A video is treated as "long-form" once metadata reports duration past
+// this threshold. Long-form entries get preload="auto", a wide IO
+// margin so they don't pause/resume on scroll-past, longer idle
+// retention, and last-chance status in the over-cap LRU eviction.
+const LONG_FORM_DURATION_THRESHOLD_S = 60
+
+// IntersectionObserver rootMargin per tier. Short loops keep a tight
+// margin so a grid of cards doesn't pile up concurrent decoders;
+// long-form gets a wide margin so scroll-past doesn't translate to
+// pause→buffer-flush→re-fetch when the user scrolls back.
+const IO_ROOT_MARGIN_SHORT = '150px'
+const IO_ROOT_MARGIN_LONG = '200%'
+
+// Module-level memory of playback position by canonical src. Outlives
+// pool eviction so that an evict→re-acquire round-trip (long feed,
+// scroll-back after the 30min window or past the cap) resumes where
+// the user left off instead of replaying from byte 0. Survives only
+// for the page session — intentional; cross-session resume would
+// surprise users.
+const currentTimeMemory = new Map<string, number>()
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
@@ -228,10 +264,11 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     el.style.zIndex = String(slot.zIndex)
     el.style.pointerEvents = slot.controls ? 'auto' : 'none'
     el.controls = slot.controls
-    // preload="auto" on committed-viewing surfaces (detail page, lightbox)
-    // so the browser buffers aggressively; "metadata" on previews so a
-    // grid of cards doesn't saturate bandwidth simultaneously.
-    el.preload = slot.controls ? 'auto' : 'metadata'
+    // Preload is decided in activateSlot (once per slot change) rather
+    // than here (once per scroll frame). The browser ignores no-op
+    // writes, but pulling the policy decision out of the hot path also
+    // keeps long-form detection — which mutates preload mid-life — in
+    // one place.
 
     // Clip the element to its nearest clipping ancestor. position:fixed
     // ignores the ancestor's overflow, so a slot inside a horizontal
@@ -269,6 +306,44 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     applySlotGeometry(video, slot, rect, clip)
   }
 
+  /** Rebuild the IntersectionObserver for an active slot. Split from
+   *  activateSlot so it can also be called from loadedmetadata when a
+   *  video is reclassified as long-form — long-form wants a much wider
+   *  margin so scroll-past doesn't fire pause→buffer-flush. */
+  function setupIntersectionObserver(video: ManagedVideo, slot: Slot) {
+    video.observer?.disconnect()
+    video.observer = null
+    // Controlled surfaces (detail page, lightbox) skip IO entirely —
+    // the user owns play/pause there.
+    if (slot.controls) return
+    const rootMargin = video.isLongForm
+      ? IO_ROOT_MARGIN_LONG
+      : IO_ROOT_MARGIN_SHORT
+    const io = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          video.el.play().catch(() => {})
+        } else {
+          video.el.pause()
+        }
+      },
+      { threshold: 0.01, rootMargin },
+    )
+    io.observe(slot.ref)
+    video.observer = io
+  }
+
+  /** Apply the tier-appropriate preload attribute. preload="auto" on
+   *  long-form so the browser keeps the body buffered through scroll
+   *  past + back; "metadata" on short loops so a grid of cards doesn't
+   *  saturate bandwidth on first paint; "auto" on controls (detail /
+   *  lightbox) regardless of tier since committed viewing always wants
+   *  aggressive buffering. */
+  function applyPreload(video: ManagedVideo, slot: Slot) {
+    video.el.preload =
+      slot.controls || video.isLongForm ? 'auto' : 'metadata'
+  }
+
   function activateSlot(video: ManagedVideo, slot: Slot) {
     if (video.releaseTimer !== null) {
       clearTimeout(video.releaseTimer)
@@ -300,28 +375,34 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
       video.el.style.transition = 'none'
     }
     positionElement(video, slot)
+    applyPreload(video, slot)
 
-    // Replace any prior IntersectionObserver. Controlled surfaces
-    // (detail page, lightbox) skip IO — the user owns play/pause there.
-    video.observer?.disconnect()
-    video.observer = null
-    if (!slot.controls) {
-      const io = new IntersectionObserver(
-        ([entry]) => {
-          if (entry.isIntersecting) {
-            video.el.play().catch(() => {})
-          } else {
-            video.el.pause()
-          }
-        },
-        // Tight margin keeps the simultaneous-decoder count close to
-        // "what's actually visible" — wider values let WebKit pile up
-        // concurrent decoders fast enough to jank scroll.
-        { threshold: 0.01, rootMargin: '50px' },
-      )
-      io.observe(slot.ref)
-      video.observer = io
+    // Re-acquire path for an already-loaded long-form video where the
+    // pool entry survived but the browser flushed buffered bytes while
+    // offscreen (WebKit does this aggressively to paused, hidden
+    // <video>s). currentTime on the element itself usually survives,
+    // but if a prior eviction cycle left a stale value in
+    // currentTimeMemory and the element was destroyed and recreated,
+    // restore from there. seek-while-buffering is cheap; the only
+    // visible cost is a brief Range-fetch round-trip at the saved
+    // position.
+    if (video.isLongForm) {
+      const saved = currentTimeMemory.get(video.src)
+      if (
+        saved !== undefined &&
+        saved > 0 &&
+        Math.abs(video.el.currentTime - saved) > 0.5
+      ) {
+        try {
+          video.el.currentTime = saved
+        } catch {
+          // Some browsers reject seek before loadedmetadata; the
+          // metadata handler will retry once duration is known.
+        }
+      }
     }
+
+    setupIntersectionObserver(video, slot)
   }
 
   function deactivate(video: ManagedVideo) {
@@ -332,6 +413,17 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
   }
 
   function destroyVideo(video: ManagedVideo) {
+    // Preserve playback position for long-form before tearing down.
+    // The next acquire of this src re-creates the element and seeks
+    // here, so the user's "scroll back to that 4-minute video"
+    // resumes instead of replaying from byte 0. Short loops don't
+    // get this treatment — they have no meaningful position to
+    // restore, and the loop semantic makes "from 0" the expected
+    // outcome anyway.
+    if (video.isLongForm && !video.destroyed) {
+      const t = video.el.currentTime
+      if (Number.isFinite(t) && t > 0) currentTimeMemory.set(video.src, t)
+    }
     video.destroyed = true
     video.observer?.disconnect()
     if (video.releaseTimer !== null) clearTimeout(video.releaseTimer)
@@ -345,12 +437,20 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
 
   function evictIdleIfOverCap() {
     if (poolRef.current.size <= MAX_POOL_SIZE) return
-    const candidates: Array<{ src: string; video: ManagedVideo }> = []
+    // Two-pass LRU. Short loops cycle fast and rebuild cheaply;
+    // long-form costs minutes of buffered bytes to re-fetch. So we
+    // exhaust idle short-loop entries before touching long-form,
+    // and only fall through to long-form if every idle slot in the
+    // pool is long-form (the rare all-long-form feed case).
+    const shortIdle: Array<{ src: string; video: ManagedVideo }> = []
+    const longIdle: Array<{ src: string; video: ManagedVideo }> = []
     poolRef.current.forEach((video, src) => {
-      if (video.slots.length === 0) candidates.push({ src, video })
+      if (video.slots.length !== 0) return
+      ;(video.isLongForm ? longIdle : shortIdle).push({ src, video })
     })
-    candidates.sort((a, b) => a.video.lastActiveAt - b.video.lastActiveAt)
-    const oldest = candidates[0]
+    const tier = shortIdle.length > 0 ? shortIdle : longIdle
+    tier.sort((a, b) => a.video.lastActiveAt - b.video.lastActiveAt)
+    const oldest = tier[0]
     if (oldest) {
       destroyVideo(oldest.video)
       poolRef.current.delete(oldest.src)
@@ -380,6 +480,7 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
 
     const abort = new AbortController()
     const video: ManagedVideo = {
+      src,
       el,
       slots: [],
       releaseTimer: null,
@@ -389,6 +490,7 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
       gatewayIndex: 0,
       loaded: false,
       lastActiveAt: Date.now(),
+      isLongForm: false,
       destroyed: false,
       abort,
       lastTop: NaN,
@@ -408,12 +510,49 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
         // callbacks (which set videoFailed=true → unmount the slot →
         // release()) find an empty list and bail harmlessly. Then
         // tear down the orphaned element so it doesn't sit in body
-        // for IDLE_EVICT_MS.
+        // for the idle window.
         const slotsToNotify = video.slots
         video.slots = []
         slotsToNotify.forEach((s) => s.onError?.())
         destroyVideo(video)
         poolRef.current.delete(src)
+      }
+    }, { signal: abort.signal })
+
+    el.addEventListener('loadedmetadata', () => {
+      if (video.destroyed) return
+      // Promote to long-form once we know duration. Drives preload
+      // upgrade (metadata → auto), IO margin widening, and the
+      // longer idle-retention window.
+      const duration = el.duration
+      if (
+        Number.isFinite(duration) &&
+        duration > LONG_FORM_DURATION_THRESHOLD_S &&
+        !video.isLongForm
+      ) {
+        video.isLongForm = true
+        const active = video.slots[0]
+        if (active) {
+          applyPreload(video, active)
+          // Rebuild the IO with the wider long-form margin so the
+          // video doesn't pause-and-flush the moment the user
+          // scrolls a finger-flick past it.
+          setupIntersectionObserver(video, active)
+        }
+      }
+      // Restore saved position if a prior eviction cycle stashed one.
+      // currentTime assignment is valid post-loadedmetadata, so this
+      // is the canonical seek point even if a synchronous attempt in
+      // activateSlot was rejected.
+      const saved = currentTimeMemory.get(src)
+      if (
+        saved !== undefined &&
+        saved > 0 &&
+        Number.isFinite(el.duration) &&
+        saved < el.duration - 0.5 &&
+        Math.abs(el.currentTime - saved) > 0.5
+      ) {
+        try { el.currentTime = saved } catch { /* noop */ }
       }
     }, { signal: abort.signal })
 
@@ -520,7 +659,11 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     const interval = window.setInterval(() => {
       const now = Date.now()
       pool.forEach((video, src) => {
-        if (video.slots.length === 0 && now - video.lastActiveAt > IDLE_EVICT_MS) {
+        if (video.slots.length !== 0) return
+        const window_ = video.isLongForm
+          ? LONG_FORM_IDLE_EVICT_MS
+          : SHORT_LOOP_IDLE_EVICT_MS
+        if (now - video.lastActiveAt > window_) {
           destroyVideo(video)
           pool.delete(src)
         }
