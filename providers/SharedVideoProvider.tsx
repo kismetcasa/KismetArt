@@ -97,17 +97,14 @@ interface ManagedVideo {
    *  the element in transitioning state after the second one finishes. */
   transitionTimer: number | null
   observer: IntersectionObserver | null
-  /** Latest intersection state reported by the IO observer (or null
-   *  before the first callback). Drives flushAll's skip gate: an
-   *  off-screen video doesn't need its transform updated every scroll
-   *  RAF, because we explicitly hide it on the offscreen transition.
-   *  Stays null on controlled surfaces (detail page) where no IO runs,
-   *  so they bypass the gate and always update. */
+  /** Latest IO intersection state, or null before first fire / on
+   *  controlled surfaces (no IO runs). Drives flushAll's skip gate;
+   *  the offscreen IO branch sets visibility:hidden so a non-updated
+   *  transform on a skipped frame doesn't matter. */
   isIntersecting: boolean | null
-  /** Debounce handle for IO play/pause hysteresis. On fast scroll a
-   *  card can cross the threshold twice in <200ms; without debounce
-   *  that's a play()→pause() storm with real decoder cost. The
-   *  trailing-edge timer captures the latest intent and fires once. */
+  /** Trailing-edge debounce handle for IO play/pause. Fast scroll can
+   *  cross the threshold twice in <200ms; without debounce each pair
+   *  triggers a play()→pause() round-trip with real decoder cost. */
   intentTimer: number | null
   gateways: string[]
   gatewayIndex: number
@@ -325,16 +322,14 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
   function setupIntersectionObserver(video: ManagedVideo, slot: Slot) {
     video.observer?.disconnect()
     video.observer = null
-    // A pending debounce from the previous observer captured the prior
-    // slot's identity; firing it against the new observer's state would
-    // race the fresh first-callback. Clear before re-arming.
+    // Clear any stale debounce — its captured slot would race the new
+    // observer's first fire.
     if (video.intentTimer !== null) {
       clearTimeout(video.intentTimer)
       video.intentTimer = null
     }
     // Controlled surfaces (detail page, lightbox) skip IO entirely —
-    // the user owns play/pause there. isIntersecting stays null so the
-    // flushAll skip gate treats them as always-update.
+    // the user owns play/pause there.
     if (slot.controls) return
     const rootMargin = video.isLongForm
       ? IO_ROOT_MARGIN_LONG
@@ -342,38 +337,24 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     const io = new IntersectionObserver(
       ([entry]) => {
         if (!entry) return
-        // Trailing-edge debounce: the latest IO fire wins. On fast
-        // scroll, IO can fire entering→leaving within ~100ms; without
-        // this, each pair triggers a play()→pause() round-trip with
-        // real decoder cost. With it, transient crossings cost only a
-        // setTimeout + clearTimeout.
         if (video.intentTimer !== null) clearTimeout(video.intentTimer)
         const targetIntersecting = entry.isIntersecting
         video.intentTimer = window.setTimeout(() => {
           video.intentTimer = null
           if (video.destroyed) return
-          // Identity check: the slot the timer was set against may have
-          // been released or replaced by a higher-priority acquire
-          // during the debounce window. Acting on a stale slot would
-          // position the element against a detached ref. deactivate()
-          // already clears intentTimer, but the closure-captured slot
-          // can also become non-active via a fresh acquire pushing onto
-          // video.slots — this guard covers that path too.
+          // Slot may have been pre-empted by a new acquire during the
+          // debounce window — bail if no longer active to avoid
+          // positioning against a stale ref.
           if (video.slots[0] !== slot) return
           if (targetIntersecting) {
             video.isIntersecting = true
-            // Slot likely moved during the debounce window. Re-read
-            // its rect and re-apply transform/clip before play() so
-            // the first paint after un-hide is at the right place.
+            // Slot moved during debounce; re-position before un-hide.
             positionElement(video, slot)
             video.el.play().catch(() => {})
           } else {
             video.isIntersecting = false
-            // Hide explicitly: the flushAll skip gate that fires next
-            // would leave the element at its last (now stale, possibly
-            // mid-viewport) transform without this. position:fixed
-            // means a non-updated element doesn't follow scroll, so
-            // without hiding it would appear "stuck" in the viewport.
+            // Hide before flushAll starts skipping: a non-updated
+            // position:fixed element would appear stuck mid-viewport.
             video.el.style.visibility = 'hidden'
             video.el.pause()
           }
@@ -429,20 +410,9 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     positionElement(video, slot)
     applyPreload(video, slot)
 
-    // Force mute on uncontrolled surfaces (feed cards, modals). The
-    // muted attribute survives in the pool — if the user unmutes via
-    // native controls on the detail page and then navigates back, the
-    // element re-acquires on a feed slot and would otherwise play
-    // audio out of a card UI that shows no audio affordance.
-    // Controlled surfaces keep whatever the user set so unmute
-    // persists across pause/resume within the same viewing session.
+    // Pool elements retain muted=false from a prior detail-page unmute;
+    // feed cards have no audio control, so force mute on re-acquire.
     if (!slot.controls) video.el.muted = true
-
-    // currentTime restoration is handled exclusively by the
-    // loadedmetadata handler, which fires on fresh createVideo and on
-    // gateway-fallback src reassignment. Restoring here would rewind
-    // the user when a re-acquire happens on an already-playing pool
-    // element (stale currentTimeMemory vs. live el.currentTime).
 
     setupIntersectionObserver(video, slot)
   }
@@ -450,10 +420,8 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
   function deactivate(video: ManagedVideo) {
     video.observer?.disconnect()
     video.observer = null
-    // Cancel any pending IO debounce: without this, a timer captured
-    // against the just-released slot would fire its action (positionElement
-    // against a detached ref → transform reset to 0,0, or play() on a
-    // video we're trying to quiesce).
+    // Cancel any pending debounce — would otherwise fire against a
+    // detached slot ref.
     if (video.intentTimer !== null) {
       clearTimeout(video.intentTimer)
       video.intentTimer = null
@@ -556,13 +524,8 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
       if (video.destroyed) return
       const next = video.gatewayIndex + 1
       if (next < video.gateways.length) {
-        // Mid-stream gateway fallback: assigning el.src resets
-        // currentTime to 0, so on a long video that errored after
-        // minutes of playback the user would silently restart from
-        // the beginning. Snapshot first; the loadedmetadata handler
-        // for the new gateway will pick up the saved value and seek
-        // back. Only persist meaningful positions — a zero or
-        // pre-metadata read is just noise.
+        // el.src= resets currentTime to 0; snapshot before fallback so
+        // loadedmetadata restores. Skip 0/pre-metadata reads.
         if (video.isLongForm) {
           const t = el.currentTime
           if (Number.isFinite(t) && t > 0) currentTimeMemory.set(src, t)
@@ -595,10 +558,8 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
         !video.isLongForm
       ) {
         video.isLongForm = true
-        // loop=true is the right default for short ambient clips; for
-        // a multi-minute video it overwrites the natural "ended"
-        // state and re-pollutes currentTimeMemory with 0 on the next
-        // eviction cycle, defeating the resume-on-scroll-back work.
+        // loop=true would re-pollute currentTimeMemory with 0 on the
+        // next eviction, defeating long-form resume.
         el.loop = false
         const active = video.slots[0]
         if (active) {
@@ -609,12 +570,10 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
           setupIntersectionObserver(video, active)
         }
       }
-      // Consume any saved position from a prior eviction or
-      // gateway-fallback cycle. Deleted after read so a subsequent
-      // loadedmetadata (next gateway fallback during this same
-      // playback) doesn't re-restore over the user's live progress.
-      // The error handler re-writes the entry if another fallback
-      // happens, so the round-trip stays correct.
+      // Consume the saved position from a prior eviction or
+      // gateway-fallback. Deleted after read so a subsequent
+      // loadedmetadata in the same playback can't re-restore over
+      // live progress — the error handler re-writes if needed.
       const saved = currentTimeMemory.get(src)
       if (
         saved !== undefined &&
@@ -717,14 +676,9 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
         pool.forEach((video) => {
           const slot = video.slots[0]
           if (!slot) return
-          // Skip the per-frame getBoundingClientRect for entries the IO
-          // observer reports as offscreen. The offscreen branch of the
-          // IO callback already set visibility:hidden so the element
-          // isn't visually contributing — its transform doesn't need
-          // updating until it returns to the viewport, at which point
-          // the intersecting branch re-positions before un-hiding.
-          // Controlled surfaces (isIntersecting stays null) bypass this
-          // gate since they don't run an IO observer.
+          // Skip offscreen entries — IO callback hid them on the false
+          // transition and re-positions on the true transition before
+          // un-hide. Controls slots fall through (no IO, no flag set).
           if (!slot.controls && video.isIntersecting === false) return
           const { rect, clip } = readSlotGeometry(slot)
           updates.push({ video, slot, rect, clip })
@@ -737,14 +691,9 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     window.addEventListener('scroll', flushAll, { passive: true })
     window.addEventListener('resize', flushAll)
 
-    // Pause every active video when the tab backgrounds; re-play the
-    // ones whose IO would otherwise have them playing (slot is
-    // intersected, no controls) when the tab returns. Browser
-    // background-tab handling is inconsistent (Chrome throttles, iOS
-    // Safari sometimes pauses, Firefox varies) — explicit handling
-    // makes the behaviour predictable, frees mobile decoders during
-    // backgrounding, and prevents queued IO play() resolutions from
-    // resuming audio underneath whatever the user navigated to.
+    // Browser background-tab handling is inconsistent across engines.
+    // Explicit pause-on-hide / resume-on-return normalises behaviour
+    // and frees mobile decoders during backgrounding.
     const onVisibilityChange = () => {
       if (document.hidden) {
         pool.forEach((video) => {
@@ -752,10 +701,8 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
         })
         return
       }
-      // Resume only entries with an active slot whose IO would have
-      // had them playing. Controlled surfaces don't autoplay back —
-      // the user owns play/pause there and we don't want to fight a
-      // deliberate pause they left in place before backgrounding.
+      // Skip controlled surfaces — user owns play/pause and may have
+      // left a deliberate pause before backgrounding.
       pool.forEach((video) => {
         const slot = video.slots[0]
         if (!slot || slot.controls) return
@@ -766,11 +713,8 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
           rect.top < window.innerHeight &&
           rect.left < window.innerWidth
         if (intersecting) {
-          // Manually re-sync state the IO observer wouldn't fire for:
-          // if isIntersecting was already true when the tab hid, the
-          // IO doesn't re-fire on return (no change in state from its
-          // perspective), but flushAll's skip gate still trusts the
-          // stored flag — so we re-position and unhide explicitly.
+          // IO doesn't re-fire on tab return if state was already true;
+          // sync the flag and re-position before play().
           video.isIntersecting = true
           positionElement(video, slot)
           video.el.play().catch(() => {})
@@ -802,8 +746,7 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
       pool.forEach((video) => destroyVideo(video))
       pool.clear()
     }
-    // All closures captured here read poolRef.current (stable) — same
-    // pattern as the context value above. Effect runs once on mount.
+    // Closures here all read poolRef.current (stable); mount-once.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
