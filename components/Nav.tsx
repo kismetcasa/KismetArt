@@ -22,9 +22,9 @@ import { useFarcaster } from '@/providers/FarcasterProvider'
 // sits at the bottom of the mobile dropdown when it isn't the
 // current page.
 const NAV_PAGES = [
-  { id: 'enjoy',  label: 'Discover', mobileLabel: 'Enjoy',  href: '/' },
-  { id: 'mint',   label: 'Mint',     mobileLabel: 'Create', href: '/mint' },
-  { id: 'market', label: 'Market',   mobileLabel: 'Trade',  href: '/market' },
+  { id: 'enjoy',  label: 'Discover', mobileLabel: 'Collect',  href: '/' },
+  { id: 'mint',   label: 'Mint',     mobileLabel: 'Create',   href: '/mint' },
+  { id: 'market', label: 'Market',   mobileLabel: 'Converge', href: '/market' },
 ] as const
 
 type NavPageId = (typeof NAV_PAGES)[number]['id']
