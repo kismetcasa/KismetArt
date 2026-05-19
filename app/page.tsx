@@ -6,7 +6,9 @@ import { MomentCard } from '@/components/MomentCard'
 import { CollectionCard, type CollectionDisplay } from '@/components/CollectionCard'
 import { FeaturedFeed } from '@/components/FeaturedFeed'
 import { PaginatedGrid } from '@/components/PaginatedGrid'
+import { ViewModeToggle } from '@/components/ViewModeToggle'
 import { useFinePointer } from '@/hooks/useFinePointer'
+import { useViewMode } from '@/hooks/useViewMode'
 import type { Moment } from '@/lib/inprocess'
 import { useAdmin } from '@/contexts/AdminContext'
 
@@ -118,27 +120,54 @@ function MomentFeed({
   apiUrl,
   emptyMessage = 'nothing here yet',
   header,
+  withViewToggle = false,
 }: {
   apiUrl: string
   emptyMessage?: string
   header?: React.ReactNode
+  /**
+   * When true, hoists `useViewMode` and renders a `<ViewModeToggle>`
+   * inline with `header`. Pass-through to PaginatedGrid's `viewMode` so
+   * the card layout (feed grid vs horizontal swiper) follows the toggle.
+   */
+  withViewToggle?: boolean
 }) {
+  const [viewMode, setViewMode] = useViewMode()
+  const activeMode = withViewToggle ? viewMode : 'feed'
+
+  // Toggle sits to the left of any caller-supplied filter pills. Wrapped
+  // even when header is null so the toggle still gets a flex container.
+  const headerWithToggle = withViewToggle ? (
+    <div className="flex items-center gap-3 flex-wrap">
+      <ViewModeToggle mode={viewMode} onChange={setViewMode} />
+      {header}
+    </div>
+  ) : header
+
   return (
     <PaginatedGrid<Moment>
       apiUrl={apiUrl}
       itemsKey="moments"
       getKey={(m) => `${m.address}-${m.token_id}`}
-      renderItem={(m, { index }) => (
-        // First row at lg+ is 3 cards; prioritize those so their hero image
-        // skips lazy-loading and gets fetchpriority=high on the gateway round-trip.
-        <MomentCard key={`${m.address}-${m.token_id}`} moment={m} priority={index < 3} />
+      viewMode={activeMode}
+      renderItem={(m, { index, viewMode: vm }) => (
+        // Feed: 3 visible above-the-fold on lg+ — prioritize first 3.
+        // Grid: 6-8 visible above-the-fold on lg+/xl — prioritize first 6
+        // so the swiper paints its initial frame without lazy-loading.
+        <MomentCard
+          key={`${m.address}-${m.token_id}`}
+          moment={m}
+          compact={vm === 'grid'}
+          showCreator={vm === 'grid'}
+          priority={vm === 'grid' ? index < 6 : index < 3}
+        />
       )}
       empty={
         <div className="border border-line p-8 sm:p-16 text-center">
           <p className="text-sm font-mono text-muted">{emptyMessage}</p>
         </div>
       }
-      header={header}
+      header={headerWithToggle}
     />
   )
 }
@@ -248,6 +277,7 @@ function MainFeed() {
       apiUrl={apiUrl}
       emptyMessage="no moments yet — be the first to mint"
       header={subTabBar}
+      withViewToggle
     />
   )
 }
@@ -326,6 +356,7 @@ export default function DiscoverPage() {
           <MomentFeed
             apiUrl="/api/timeline?sort=trending&scope=standalone"
             emptyMessage="no collects recorded yet — trending appears as mints are collected"
+            withViewToggle
           />
         )}
 
