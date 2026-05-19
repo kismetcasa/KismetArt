@@ -343,63 +343,21 @@ export async function GET(req: NextRequest) {
   }
 
   const start = (page - 1) * limit
-  const page_moments = merged.slice(start, start + limit)
+  const moments = merged.slice(start, start + limit)
   const total_pages = Math.max(1, Math.ceil(merged.length / limit))
 
-  // Enrich each returned moment with its saleConfig so MomentCard can
-  // skip the per-card /api/moment round-trip. On a 20-moment page that
-  // eliminates 20 client → server requests; server-side fan-out below
-  // runs in parallel against inprocess with the Next.js fetch cache
-  // deduplicating across concurrent users + revalidate windows, so the
-  // added latency here is dominated by the slowest single call
-  // (~50-200ms warm cache), not the sum.
-  //
-  // Fan-out only applies to the sliced page (≤ limit items), NOT to
-  // the full merged set — we don't waste calls on moments outside the
-  // window the client will actually render.
-  //
-  // Every per-moment fetch is wrapped in a try/catch that swallows
-  // errors → the moment falls back to its un-enriched shape and
-  // MomentCard's own /api/moment fetch (still present, just usually
-  // a no-op now) covers the gap. No upstream blip can break the
-  // timeline response itself.
-  // Per-call timeout bound — 2.5s matches the per-collection budget
-  // used in lib/search.ts. inprocess /moment with a warm cache returns
-  // in ~50-200ms; cold ~500ms. 2.5s gives comfortable headroom for
-  // legitimately-slow calls while bounding the worst case so a single
-  // hung upstream can't pin the whole timeline response.
-  const ENRICH_TIMEOUT_MS = 2500
-  const moments = await Promise.all(
-    page_moments.map(async (m: unknown) => {
-      const moment = m as { address?: string; token_id?: string }
-      if (!moment.address || !moment.token_id) return m
-      const controller = new AbortController()
-      const timer = setTimeout(() => controller.abort(), ENRICH_TIMEOUT_MS)
-      try {
-        const url = inprocessUrl('/moment', {
-          collectionAddress: moment.address,
-          tokenId: moment.token_id,
-          chainId: '8453',
-        })
-        const res = await fetch(url, {
-          headers: { Accept: 'application/json' },
-          next: { revalidate: 60 },
-          signal: controller.signal,
-        })
-        if (!res.ok) return m
-        const detail = (await res.json()) as { saleConfig?: unknown }
-        if (!detail.saleConfig) return m
-        return { ...(m as object), saleConfig: detail.saleConfig }
-      } catch {
-        // AbortError, network error, JSON parse error — all collapse
-        // to "return moment unchanged". MomentCard's per-card fetch
-        // covers the gap on the client.
-        return m
-      } finally {
-        clearTimeout(timer)
-      }
-    }),
-  )
+  // Note: an earlier version of this route stitched saleConfig into
+  // each moment server-side (one fan-out fetch to inprocess /moment
+  // per returned moment) to eliminate the per-card client fetch in
+  // MomentCard. Reverted because the cold-cache server latency
+  // (~1-2s for the slowest of 20 parallel calls) stacked onto JS
+  // parse + hydration on slow mobile CPUs and was producing 5-10s
+  // perceived first-open times. MomentCard's per-card /api/moment
+  // fetch path is the canonical price-loading path again — it runs
+  // async after the card mounts, so it doesn't block the main thread
+  // (cards still render with un-set price state and fill in as
+  // fetches resolve, which is the "popcorn" UX users tolerate well
+  // when measured against full-feed wait).
 
   // Visibility for "empty feed" reports — lets us tell at a glance whether
   // the issue is fan-out (no tracked collections), upstream (inprocess
