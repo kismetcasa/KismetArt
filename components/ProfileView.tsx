@@ -22,6 +22,7 @@ import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
 import { toastError } from '@/lib/toast'
 import { useFarcaster } from '@/providers/FarcasterProvider'
 import { hapticNotifySuccess } from '@/lib/farcasterHaptics'
+import { useFinePointer } from '@/hooks/useFinePointer'
 import { WalletsPanel } from './WalletsPanel'
 
 interface Payment {
@@ -167,6 +168,10 @@ export function ProfileView({ address }: ProfileViewProps) {
   const { signMessageAsync } = useSignMessage()
   const { isInMiniApp, identity: fcIdentity } = useFarcaster()
   const { isCurator } = useAdmin()
+  // Section reordering is desktop-only — HTML5 draggable breaks tap on
+  // touch (taps to expand/collapse a section register seconds late, if
+  // at all). See hooks/useFinePointer.
+  const allowDrag = useFinePointer()
 
   // Owner via wagmi (web + Mini App) OR via FC identity (Mini App users
   // whose wagmi wallet is currently a different sibling). Without the
@@ -836,19 +841,19 @@ export function ProfileView({ address }: ProfileViewProps) {
         {(showCurate ? [...sectionOrder, 'curate' as const] : sectionOrder).map((section, idx) => {
           const isCollapsed = sectionCollapsed[section] ?? false
           const count = sectionCount[section]
-          const draggable = section !== 'curate'
+          const sectionDraggable = section !== 'curate' && allowDrag
           return (
             <div
               key={section}
-              onDragOver={draggable ? (e) => onDragOver(e, idx) : undefined}
+              onDragOver={sectionDraggable ? (e) => onDragOver(e, idx) : undefined}
               className={`border-t border-line transition-opacity duration-150 ${draggingSection === section ? 'opacity-40' : 'opacity-100'}`}
             >
               <div
-                draggable={draggable}
-                onDragStart={draggable ? () => onDragStart(idx) : undefined}
-                onDragEnd={draggable ? onDragEnd : undefined}
+                draggable={sectionDraggable}
+                onDragStart={sectionDraggable ? () => onDragStart(idx) : undefined}
+                onDragEnd={sectionDraggable ? onDragEnd : undefined}
                 onClick={() => toggleCollapsed(section)}
-                className={`flex items-center gap-2 py-4 select-none ${draggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
+                className={`flex items-center gap-2 py-4 select-none ${sectionDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
               >
                 <ChevronRight
                   size={12}
