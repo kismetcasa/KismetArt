@@ -337,6 +337,18 @@ export function DiscoverPage({ isMobile }: { isMobile: boolean }) {
   const { isAdmin, hasSession, startSession, featuredKeys, featuredCollectionAddrs } = useAdmin()
   const [order, setOrder] = useState<TabId[]>(DRAGGABLE)
   const [active, setActive] = useState<TabId>(DRAGGABLE[0])
+  // Defer the first tab-content render until we've reconciled with
+  // localStorage. Without the gate, we'd mount whatever DRAGGABLE[0]
+  // points at, fire its PaginatedGrid useQuery, then immediately
+  // unmount it once the effect below flips `active` to the saved
+  // tab. That wasted fetch races the real tab's fetches against the
+  // Mini App webview's already-constrained connection pool and
+  // delays time-to-content. One paint cycle of "loading…" is the
+  // cost; mobile / Mini App clears synchronously enough that no
+  // skeleton swap is visible (drag-reorder is desktop-only, and the
+  // only mobile pathway that writes the active-tab key is also a
+  // tap that re-uses the same active state).
+  const [hydrated, setHydrated] = useState(false)
 
   // Hydrate from localStorage after mount. Order + last-active tab are
   // independent keys so reordering doesn't reset the active tab and vice
@@ -346,6 +358,7 @@ export function DiscoverPage({ isMobile }: { isMobile: boolean }) {
     const savedOrder = loadOrder()
     setOrder(savedOrder)
     setActive(loadActiveTab(savedOrder))
+    setHydrated(true)
   }, [])
 
   function handleReorder(next: TabId[]) {
@@ -383,7 +396,10 @@ export function DiscoverPage({ isMobile }: { isMobile: boolean }) {
       />
 
       <div className="mt-2">
-        {active === 'featured' && (
+        {!hydrated && (
+          <div className="py-8 text-center text-xs font-mono text-muted">loading…</div>
+        )}
+        {hydrated && active === 'featured' && (
           <>
             {isAdmin && !hasSession && (
               <div className="flex items-center justify-between py-4 border-b border-line mb-2">
@@ -409,7 +425,7 @@ export function DiscoverPage({ isMobile }: { isMobile: boolean }) {
           </>
         )}
 
-        {active === 'trending' && (
+        {hydrated && active === 'trending' && (
           <MomentFeed
             apiUrl="/api/timeline?sort=trending&scope=standalone"
             emptyMessage="no collects recorded yet — trending appears as mints are collected"
@@ -417,9 +433,9 @@ export function DiscoverPage({ isMobile }: { isMobile: boolean }) {
           />
         )}
 
-        {active === 'main' && <MainFeed />}
+        {hydrated && active === 'main' && <MainFeed />}
 
-        {active === 'roster' && <RosterFeed />}
+        {hydrated && active === 'roster' && <RosterFeed />}
       </div>
     </div>
     </LazyMountCtx.Provider>
