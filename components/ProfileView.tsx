@@ -245,8 +245,12 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
   // Tier the cold-load burst so above-the-fold data (profile, mints)
   // isn't queued behind below-the-fold fetches on the Mini App's
   // ~6-connection-per-host pool. Tier 1 fires on mount, Tier 2 one rAF
-  // later, Tier 3 on idle.
+  // later, Tier 3 on idle. Effects use the derived booleans below as
+  // deps (not `tier`), so a 2 → 3 transition doesn't re-fire tier-2
+  // fetches.
   const [tier, setTier] = useState<1 | 2 | 3>(1)
+  const tier2 = tier >= 2
+  const tier3 = tier >= 3
   useEffect(() => {
     const rafId = requestAnimationFrame(() => setTier((t) => (t < 2 ? 2 : t)))
     type Ric = (cb: IdleRequestCallback, opts?: IdleRequestOptions) => number
@@ -299,16 +303,16 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
 
   // Tier 2 — visible just below the header.
   useEffect(() => {
-    if (tier < 2) return
+    if (!tier2) return
     if (!connectedAddress || isOwner) { setFollowing(false); return }
     fetch(`/api/follow/${address}?follower=${connectedAddress}`)
       .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setFollowing(d.following === true))
       .catch(() => {})
-  }, [address, connectedAddress, isOwner, tier])
+  }, [address, connectedAddress, isOwner, tier2])
 
   useEffect(() => {
-    if (tier < 2) return
+    if (!tier2) return
     fetch(`/api/follow/${address}?count=1`)
       .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => {
@@ -316,53 +320,53 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
         setFollowerCount(d.followerCount ?? 0)
       })
       .catch(() => { setFollowingCount(0); setFollowerCount(0) })
-  }, [address, tier])
+  }, [address, tier2])
 
   useEffect(() => {
-    if (tier < 2) return
+    if (!tier2) return
     fetch(`/api/timeline?collector=${address}&limit=50`)
       .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setCollected(Array.isArray(d.moments) ? d.moments : []))
       .catch(() => setCollected([]))
       .finally(() => setLoadingCollected(false))
-  }, [address, tier])
+  }, [address, tier2])
 
   useEffect(() => {
-    if (tier < 2) return
+    if (!tier2) return
     fetch(`/api/collections?artist=${address}`)
       .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setArtistCollections(Array.isArray(d.collections) ? d.collections : []))
       .catch(() => setArtistCollections([]))
       .finally(() => setLoadingCollections(false))
-  }, [address, tier])
+  }, [address, tier2])
 
   // Tier 3 — below the fold, usually empty for non-artist profiles.
   useEffect(() => {
-    if (tier < 3) return
+    if (!tier3) return
     fetch(`/api/listings?seller=${address}&limit=50`)
       .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setListings(Array.isArray(d.listings) ? d.listings.filter((l: Listing) => l.status === 'active') : []))
       .catch(() => setListings([]))
       .finally(() => setLoadingListings(false))
-  }, [address, tier])
+  }, [address, tier3])
 
   useEffect(() => {
-    if (tier < 3) return
+    if (!tier3) return
     fetch(`/api/payments?artist=${address}`)
       .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setPayments(Array.isArray(d.payments) ? d.payments : []))
       .catch(() => setPayments([]))
       .finally(() => setLoadingPayments(false))
-  }, [address, tier])
+  }, [address, tier3])
 
   useEffect(() => {
-    if (tier < 3) return
+    if (!tier3) return
     fetch(`/api/airdrops?artist_address=${address}`)
       .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setAirdrops(Array.isArray(d.airdrops) ? d.airdrops : []))
       .catch(() => setAirdrops([]))
       .finally(() => setLoadingAirdrops(false))
-  }, [address, tier])
+  }, [address, tier3])
 
   // ─── section drag / collapse ──────────────────────────────────────────────
 

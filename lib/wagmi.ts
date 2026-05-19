@@ -43,12 +43,13 @@ export const wagmiConfig = createConfig({
   // and a feed mount fires dozens of useReadContract calls in the same tick.
   client({ chain }) {
     if (chain.id === base.id) {
+      // wait defaults to 0 at both layers — microtask-batches the mount
+      // burst without adding latency to isolated reads. Setting wait > 0
+      // here stacks: multicall waits, then the http batcher waits again.
       return createClient({
         chain,
-        transport: http(process.env.NEXT_PUBLIC_BASE_RPC_URL, {
-          batch: { batchSize: 1024, wait: 16 },
-        }),
-        batch: { multicall: { batchSize: 1024, wait: 16 } },
+        transport: http(process.env.NEXT_PUBLIC_BASE_RPC_URL, { batch: true }),
+        batch: { multicall: true },
       })
     }
     // Mainnet is only used for client-side ENS resolution via useEnsName.

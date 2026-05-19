@@ -8,6 +8,7 @@ import { FeaturedFeed } from '@/components/FeaturedFeed'
 import { PaginatedGrid } from '@/components/PaginatedGrid'
 import { ViewModeToggle } from '@/components/ViewModeToggle'
 import { useFinePointer } from '@/hooks/useFinePointer'
+import { useHydrated } from '@/hooks/useHydrated'
 import { useViewMode } from '@/hooks/useViewMode'
 import type { Moment } from '@/lib/inprocess'
 import { useAdmin } from '@/contexts/AdminContext'
@@ -321,13 +322,12 @@ export function DiscoverPage({ isMobile }: { isMobile: boolean }) {
   // Gate first tab-content render on the localStorage reconcile so we
   // don't mount the default tab only to immediately unmount it for the
   // saved one — the discarded mount's fetches stay in flight.
-  const [hydrated, setHydrated] = useState(false)
+  const hydrated = useHydrated()
 
   useEffect(() => {
     const saved = loadOrder()
     setOrder(saved)
     setActive(saved[0])
-    setHydrated(true)
   }, [])
 
   function handleReorder(next: TabId[]) {
