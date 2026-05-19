@@ -5,6 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { NotificationRow } from './NotificationRow'
 import { useUploadSession } from '@/hooks/useUploadSession'
+import { useLongPressDrag } from '@/hooks/useLongPressDrag'
 import { fetchCreatorProfile } from '@/lib/profileCache'
 import { humanError } from '@/lib/toast'
 import { NON_MUTEABLE_TYPES, type Notification, type NotificationType } from '@/lib/notifications'
@@ -64,39 +65,12 @@ function loadOrder(): NotificationType[] {
 }
 
 const POLL_INTERVAL_MS = 30_000
-// Drag thresholds — see DiscoverPage/ProfileView for the matching tab
-// and section drag patterns. Keep these in sync; long-press feel
-// shouldn't differ between reorderable surfaces.
-const NOTIF_LONG_PRESS_MS = 250
-const NOTIF_SCROLL_INTENT_PX = 8
-const NOTIF_MOUSE_DRAG_THRESHOLD_PX = 5
-
-interface FilterDragState {
-  pointerId: number
-  startFilter: NotificationType
-  startX: number
-  startY: number
-  anchorX: number
-  longPressTimer: number | null
-  phase: 'pending' | 'dragging'
-}
 
 export function NotificationFeed() {
   const { ensureSession } = useUploadSession()
   const [typeFilter, setTypeFilter] = useState<TypeFilter>('all')
   const [filterOrder, setFilterOrder] = useState<NotificationType[]>(() => loadOrder())
-  const filterOrderRef = useRef(filterOrder)
-  filterOrderRef.current = filterOrder
-  // Pointer-events drag state. Mirrors the tab-bar pattern: a "pending"
-  // window after pointerdown that either commits to drag (long-press
-  // on touch / 5px movement on mouse) or resolves as a tap. HTML5
-  // draggable was avoided here for the same reason as the discover
-  // tab bar — it hijacks tap-and-hold on touch and breaks the click
-  // path that switches filters.
   const filterContainerRef = useRef<HTMLDivElement>(null)
-  const filterDragRef = useRef<FilterDragState | null>(null)
-  const [draggingFilter, setDraggingFilter] = useState<NotificationType | null>(null)
-  const [filterDragOffsetX, setFilterDragOffsetX] = useState(0)
   const [page, setPage] = useState(1)
   const [items, setItems] = useState<Notification[]>([])
   const [total, setTotal] = useState(0)
@@ -115,106 +89,18 @@ export function NotificationFeed() {
     try { localStorage.setItem(ORDER_KEY, JSON.stringify(next)) } catch {}
   }
 
-  // ─── filter drag (long-press on touch, immediate on mouse) ────────────────
-
-  function startFilterDrag() {
-    const state = filterDragRef.current
-    if (!state) return
-    state.phase = 'dragging'
-    setDraggingFilter(state.startFilter)
-    if ('vibrate' in navigator) {
-      try { navigator.vibrate(10) } catch {}
-    }
-  }
-
-  function endFilterDrag(asTap: boolean) {
-    const state = filterDragRef.current
-    if (!state) return
-    if (state.longPressTimer) clearTimeout(state.longPressTimer)
-    if (asTap && state.phase === 'pending') setTypeFilter(state.startFilter)
-    setDraggingFilter(null)
-    setFilterDragOffsetX(0)
-    filterDragRef.current = null
-  }
-
-  function handleFilterPointerDown(e: React.PointerEvent<HTMLButtonElement>, filter: NotificationType) {
-    if (e.pointerType === 'mouse' && e.button !== 0) return
-    e.currentTarget.setPointerCapture(e.pointerId)
-    filterDragRef.current = {
-      pointerId: e.pointerId,
-      startFilter: filter,
-      startX: e.clientX,
-      startY: e.clientY,
-      anchorX: e.clientX,
-      longPressTimer: e.pointerType === 'touch'
-        ? window.setTimeout(startFilterDrag, NOTIF_LONG_PRESS_MS)
-        : null,
-      phase: 'pending',
-    }
-  }
-
-  function handleFilterPointerMove(e: React.PointerEvent<HTMLButtonElement>) {
-    const state = filterDragRef.current
-    if (!state || e.pointerId !== state.pointerId) return
-
-    if (state.phase === 'pending') {
-      const dx = e.clientX - state.startX
-      const dy = e.clientY - state.startY
-      if (e.pointerType === 'touch') {
-        // Pre-commit movement → user is scrolling the filter row
-        // horizontally or the page vertically. Bail so the browser
-        // owns the gesture.
-        if (Math.abs(dx) > NOTIF_SCROLL_INTENT_PX || Math.abs(dy) > NOTIF_SCROLL_INTENT_PX) {
-          if (state.longPressTimer) clearTimeout(state.longPressTimer)
-          filterDragRef.current = null
-        }
-        return
-      }
-      if (Math.abs(dx) < NOTIF_MOUSE_DRAG_THRESHOLD_PX && Math.abs(dy) < NOTIF_MOUSE_DRAG_THRESHOLD_PX) return
-      startFilterDrag()
-    }
-
-    if (state.phase !== 'dragging') return
-    e.preventDefault()
-    setFilterDragOffsetX(e.clientX - state.anchorX)
-
-    // Find the target draggable filter by midpoint crossing. 'all' is
-    // pinned at index 0 in the rendered tabs and is excluded from the
-    // sortable range here.
-    const container = filterContainerRef.current
-    if (!container) return
-    const draggableEls = Array.from(
-      container.querySelectorAll<HTMLButtonElement>('[data-filter][data-draggable="true"]'),
-    )
-    const currentOrder = filterOrderRef.current
-    const currentIdx = currentOrder.indexOf(state.startFilter)
-    if (currentIdx < 0) return
-    let targetIdx = currentIdx
-    for (let i = 0; i < draggableEls.length; i++) {
-      const rect = draggableEls[i].getBoundingClientRect()
-      const center = rect.left + rect.width / 2
-      if (e.clientX < center) { targetIdx = i; break }
-      targetIdx = i
-    }
-    if (targetIdx !== currentIdx) {
-      const next = [...currentOrder]
-      const [moved] = next.splice(currentIdx, 1)
-      next.splice(targetIdx, 0, moved)
-      handleReorder(next)
-      state.anchorX = e.clientX
-      setFilterDragOffsetX(0)
-    }
-  }
-
-  function handleFilterPointerEnd(e: React.PointerEvent<HTMLButtonElement>) {
-    if (!filterDragRef.current || e.pointerId !== filterDragRef.current.pointerId) return
-    endFilterDrag(/* asTap */ true)
-  }
-
-  function handleFilterPointerCancel(e: React.PointerEvent<HTMLButtonElement>) {
-    if (!filterDragRef.current || e.pointerId !== filterDragRef.current.pointerId) return
-    endFilterDrag(/* asTap */ false)
-  }
+  // Filter drag-to-reorder — 'all' is pinned at index 0 (selector-
+  // excluded from the swap-target loop) and rendered with a plain
+  // onClick instead of the pointer-tap path.
+  const { draggingId: draggingFilter, dragOffset: filterDragOffsetX, bindItem: bindFilter } =
+    useLongPressDrag<NotificationType>({
+      axis: 'x',
+      order: filterOrder,
+      onReorder: handleReorder,
+      onTap: (filter) => setTypeFilter(filter),
+      containerRef: filterContainerRef,
+      itemSelector: '[data-filter][data-draggable="true"]',
+    })
 
   const hasMore = items.length < total
 
@@ -401,15 +287,9 @@ export function NotificationFeed() {
                 key={tab}
                 data-filter={tab}
                 data-draggable={isDraggable ? 'true' : 'false'}
-                onPointerDown={isDraggable ? (e) => handleFilterPointerDown(e, tab as NotificationType) : undefined}
-                onPointerMove={isDraggable ? handleFilterPointerMove : undefined}
-                onPointerUp={isDraggable ? handleFilterPointerEnd : undefined}
-                onPointerCancel={isDraggable ? handleFilterPointerCancel : undefined}
-                // 'all' is not reorderable — keep the click path. Reorderable
-                // tabs fire setTypeFilter from handleFilterPointerEnd when
-                // the gesture resolves as a tap, so onClick is omitted to
-                // avoid racing the pointer-tap path on touch's synthetic click.
-                onClick={isDraggable ? undefined : () => setTypeFilter(tab)}
+                {...(isDraggable
+                  ? bindFilter(tab as NotificationType)
+                  : { onClick: () => setTypeFilter(tab) })}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') {
                     e.preventDefault()
