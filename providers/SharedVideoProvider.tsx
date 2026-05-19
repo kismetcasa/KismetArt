@@ -174,7 +174,7 @@ const LONG_FORM_IDLE_EVICT_MS = 30 * 60 * 1000
 // cards go blank" symptom. The provider takes an `isMobile` prop and
 // picks the mobile cap when set, leaving desktop unchanged.
 const MAX_POOL_SIZE_DESKTOP = 18
-const MAX_POOL_SIZE_MOBILE = 10
+const MAX_POOL_SIZE_MOBILE = 6
 
 // A video is treated as "long-form" once metadata reports duration past
 // this threshold. Long-form entries get preload="auto", a wide IO
