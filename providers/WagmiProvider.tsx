@@ -11,7 +11,7 @@ import { SharedVideoProvider } from '@/providers/SharedVideoProvider'
 
 import '@rainbow-me/rainbowkit/styles.css'
 
-export function Providers({ children }: { children: React.ReactNode }) {
+export function Providers({ children, isMobile = false }: { children: React.ReactNode; isMobile?: boolean }) {
   const [queryClient] = useState(() => new QueryClient())
 
   return (
@@ -31,7 +31,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
           })}
         >
           <AdminProvider>
-            <SharedVideoProvider>{children}</SharedVideoProvider>
+            <SharedVideoProvider isMobile={isMobile}>{children}</SharedVideoProvider>
           </AdminProvider>
         </RainbowKitProvider>
       </QueryClientProvider>

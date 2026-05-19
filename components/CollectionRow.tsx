@@ -63,17 +63,77 @@ export function CollectionRow({ collection, priority, isMobile }: CollectionRowP
     })
   }, [adminAddr, initialUsername])
 
+  const coverCard = (
+    <article className="flex flex-col bg-[#161616] border border-line overflow-hidden h-full">
+      <Link
+        href={`/collection/${c.contractAddress}`}
+        className="relative aspect-square w-full block overflow-hidden bg-surface group/img"
+      >
+        {isAdmin && (
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              toggleFeaturedCollection(c.contractAddress)
+            }}
+            className={`absolute top-1.5 left-1.5 z-10 min-w-10 min-h-10 flex items-center justify-center transition-colors ${
+              isFeatured ? 'text-yellow-400' : 'text-faint hover:text-dim'
+            }`}
+            title={isFeatured ? 'Unfeature' : 'Feature'}
+          >
+            <Star size={16} fill={isFeatured ? 'currentColor' : 'none'} strokeWidth={1.5} />
+          </button>
+        )}
+        {c.metadata?.image && !imgFailed ? (
+          <MomentImage
+            src={c.metadata.image}
+            alt={name}
+            fill
+            className="object-contain transition-transform duration-500 group-hover/img:scale-105"
+            sizes="(max-width: 1024px) 320px, 288px"
+            onAllError={() => setImgFailed(true)}
+            priority={priority}
+            preferProxy
+            thumbhash={c.metadata.kismet_thumbhash}
+          />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <span className="text-line font-mono text-xs">no preview</span>
+          </div>
+        )}
+      </Link>
+      <div className="flex flex-col gap-2 p-3 flex-1">
+        <h3 className="text-sm font-mono text-ink truncate">{name}</h3>
+        <Link
+          href={`/collection/${c.contractAddress}`}
+          className="w-full px-3 py-1.5 text-center text-xs font-mono border border-line text-dim hover:border-muted hover:text-ink transition-colors"
+        >
+          view collection
+        </Link>
+        <CollectAllAction
+          collectionAddress={c.contractAddress}
+          ethEligibleTokenIds={c.ethEligibleTokenIds}
+          ethEligibleTotalWei={c.ethEligibleTotalWei}
+          usdcEligibleTokenIds={c.usdcEligibleTokenIds}
+          usdcEligibleTotalUsdc={c.usdcEligibleTotalUsdc}
+        />
+      </div>
+    </article>
+  )
+
   return (
     // Two layouts share a single tree, picked by responsive utilities:
-    //   <lg: stacked — full-width cover, view-collection + collect-all
-    //     stacked underneath, then a horizontal-scrolling row of
-    //     full-feature moment cards (320px each, ~1.3 visible on phone).
+    //   <lg: a single horizontal-scrolling row — the cover-card (cover
+    //     image + name + view + collect-all) sits leftmost, followed by
+    //     ~320px moment cards. Reads as "this collection's contents" in
+    //     one swipeable surface rather than a stacked header + carousel.
     //   lg+: side-by-side — cover + info column on the left, 5×2 column-
     //     major grid of compact moment cards on the right.
     // SharedVideoProvider's clip-path keeps position:fixed video elements
     // from painting past the horizontal scroller's edges on <lg.
     <article className="flex flex-col lg:flex-row border border-line bg-[#161616] overflow-hidden">
-      <div className="flex flex-col lg:flex-shrink-0 lg:w-64 xl:w-72 lg:border-r lg:border-line">
+      {/* lg+ left column — cover + info + actions */}
+      <div className="hidden lg:flex flex-col lg:flex-shrink-0 lg:w-64 xl:w-72 lg:border-r lg:border-line">
         <Link
           href={`/collection/${c.contractAddress}`}
           className="relative aspect-square w-full block overflow-hidden bg-surface group/img"
@@ -99,7 +159,7 @@ export function CollectionRow({ collection, priority, isMobile }: CollectionRowP
               alt={name}
               fill
               className="object-contain transition-transform duration-500 group-hover/img:scale-105"
-              sizes="(max-width: 1024px) 100vw, 288px"
+              sizes="288px"
               onAllError={() => setImgFailed(true)}
               priority={priority}
               preferProxy
@@ -110,33 +170,9 @@ export function CollectionRow({ collection, priority, isMobile }: CollectionRowP
               <span className="text-line font-mono text-xs">no preview</span>
             </div>
           )}
-          {/* <lg name overlay — desktop has a full info section below the
-              cover so the overlay is redundant there. */}
-          <span className="lg:hidden absolute inset-x-0 bottom-0 px-3 py-1.5 text-xs font-mono text-ink bg-gradient-to-t from-[#0d0d0d]/95 to-transparent truncate">
-            {name}
-          </span>
         </Link>
 
-        {/* Mobile-only minimal action stack — view-collection button on top,
-            price chip + collect-all on the row beneath it. */}
-        <div className="flex flex-col gap-2 p-3 lg:hidden">
-          <Link
-            href={`/collection/${c.contractAddress}`}
-            className="w-full px-3 py-1.5 text-center text-xs font-mono border border-line text-dim hover:border-muted hover:text-ink transition-colors"
-          >
-            view collection
-          </Link>
-          <CollectAllAction
-            collectionAddress={c.contractAddress}
-            ethEligibleTokenIds={c.ethEligibleTokenIds}
-            ethEligibleTotalWei={c.ethEligibleTotalWei}
-            usdcEligibleTokenIds={c.usdcEligibleTokenIds}
-            usdcEligibleTotalUsdc={c.usdcEligibleTotalUsdc}
-          />
-        </div>
-
-        {/* lg+ info: name, creator, description, view + collect-all */}
-        <div className="hidden lg:flex flex-col gap-1 p-4 min-w-0 flex-1">
+        <div className="flex flex-col gap-1 p-4 min-w-0 flex-1">
           <h3 className="text-base font-mono text-ink truncate">{name}</h3>
           {creatorLabel && (
             <Link
@@ -168,10 +204,13 @@ export function CollectionRow({ collection, priority, isMobile }: CollectionRowP
         </div>
       </div>
 
-      {/* <lg moments — horizontal scroll, non-compact cards at ~320px so
-          the creator/collection chips and full action row fit, ~1.3
-          visible at once invites the scroll. */}
-      <div className="overflow-x-auto flex gap-3 p-3 snap-x snap-mandatory [-webkit-overflow-scrolling:touch] border-t border-line lg:hidden">
+      {/* <lg moments — single horizontal scroll: cover-card first, then
+          moment cards. snap-mandatory keeps swipes aligned to card
+          boundaries; ~1.3 cards visible on phone invites the scroll. */}
+      <div className="overflow-x-auto flex gap-3 p-3 snap-x snap-mandatory [-webkit-overflow-scrolling:touch] lg:hidden">
+        <div className="w-80 flex-shrink-0 snap-start">
+          {coverCard}
+        </div>
         {c.moments.length === 0 ? (
           <div className="flex-1 flex items-center justify-center min-h-[160px]">
             <span className="text-xs font-mono text-muted">no moments yet</span>
@@ -187,7 +226,7 @@ export function CollectionRow({ collection, priority, isMobile }: CollectionRowP
                   {() => <MomentCard moment={m} priority={false} />}
                 </LazyMount>
               ) : (
-                <MomentCard moment={m} priority={priority && idx === 0} />
+                <MomentCard moment={m} priority={false} />
               )}
             </div>
           ))

@@ -87,7 +87,12 @@ export function CollectionCard({ collection, priority, compact, showCreator }: C
     (c.usdcEligibleTokenIds && c.usdcEligibleTokenIds.length > 0)
 
   return (
-    <article className="flex flex-col bg-[#161616] border border-line overflow-hidden [content-visibility:auto] [contain-intrinsic-size:auto_500px]">
+    <article className="flex flex-col bg-[#161616] border border-line overflow-hidden">
+      {/* content-visibility:auto removed for the same reason as in
+          MomentCard — iOS WebKit's un-skip heuristic doesn't reliably
+          fire as cards scroll into view, producing long blank gaps on
+          Mini App webviews. The off-screen render savings on browsers
+          that honour the property aren't worth the breakage on iOS. */}
       <Link
         href={`/collection/${c.contractAddress}`}
         className="relative aspect-square bg-surface block overflow-hidden group/img"
