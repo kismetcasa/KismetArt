@@ -225,18 +225,26 @@ export function Nav() {
             </nav>
           </div>
 
-          <div className="flex items-center gap-3">
+          {/* Mobile order: name → avatar → bell → search (search/bell hug right).
+              Desktop order: bell → name → avatar (unchanged). */}
+          <div className="flex items-center gap-1 sm:gap-3">
             {/* Search icon on mobile */}
             <button
               onClick={() => { setModalQuery(''); setSearchOpen(true) }}
-              className="sm:hidden text-dim hover:text-ink transition-colors p-1"
+              className="sm:hidden order-4 text-dim hover:text-ink transition-colors p-1"
             >
               <Search size={18} />
             </button>
-            {effectiveSignedIn && effectiveAddress && <NotificationBell address={effectiveAddress} />}
-            <WalletButton />
             {effectiveSignedIn && effectiveAddress && (
-              <Link href={`/profile/${effectiveAddress}`} className="flex-shrink-0">
+              <div className="order-3 sm:order-1">
+                <NotificationBell address={effectiveAddress} />
+              </div>
+            )}
+            <div className="order-1 sm:order-2">
+              <WalletButton />
+            </div>
+            {effectiveSignedIn && effectiveAddress && (
+              <Link href={`/profile/${effectiveAddress}`} className="order-2 sm:order-3 flex-shrink-0">
                 <ProfileAvatar address={effectiveAddress} avatarUrl={avatarUrl} size={32} clickable />
               </Link>
             )}
