@@ -303,7 +303,13 @@ function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreato
             fill
             className="object-contain transition-transform duration-500 group-hover:scale-105"
             onAllError={() => setImgError(true)}
-            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
+            // Compact mode (profile grids, swiper grid view) packs cards
+            // 2-6 across — at ~16vw on desktop the default tuned for
+            // feed-mode (33vw) made the browser fetch 2x larger images
+            // than rendered. Each branch is the actual rendered width.
+            sizes={compact
+              ? '(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 16vw'
+              : '(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw'}
             mime={meta.content?.mime}
             thumbhash={meta.kismet_thumbhash}
             priority={priority}
@@ -340,6 +346,15 @@ function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreato
           </h3>
           {!compact && (
             <div className="flex-shrink-0 mt-0.5 flex items-center gap-2">
+              <button
+                onClick={handleCopyLink}
+                title="copy link"
+                className="text-[#444] hover:text-dim transition-colors flex items-center"
+              >
+                {linkCopied
+                  ? <Check size={11} className="text-[#6ee7b7]" />
+                  : <Copy size={11} />}
+              </button>
               {/* Hard-nav anchor so the click bypasses the @modal
                   intercepting route and lands on the canonical full-page
                   detail route — sibling to the copy affordance, same
@@ -351,15 +366,6 @@ function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreato
               >
                 <ArrowUpRight size={11} />
               </a>
-              <button
-                onClick={handleCopyLink}
-                title="copy link"
-                className="text-[#444] hover:text-dim transition-colors flex items-center"
-              >
-                {linkCopied
-                  ? <Check size={11} className="text-[#6ee7b7]" />
-                  : <Copy size={11} />}
-              </button>
             </div>
           )}
         </div>
