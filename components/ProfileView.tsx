@@ -23,6 +23,7 @@ import { toastError } from '@/lib/toast'
 import { useFarcaster } from '@/providers/FarcasterProvider'
 import { hapticNotifySuccess } from '@/lib/farcasterHaptics'
 import { useFinePointer } from '@/hooks/useFinePointer'
+import { MaybeLazy } from './LazyMount'
 import { WalletsPanel } from './WalletsPanel'
 
 interface Payment {
@@ -152,6 +153,14 @@ function FollowRow({ addr, onClose, onNameLoaded }: { addr: string; onClose: () 
 
 interface ProfileViewProps {
   address: string
+  /**
+   * Set by the server-component wrapper (app/profile/[address]/page.tsx)
+   * based on request UA. When true, MomentCard / MarketCard grids
+   * beyond EAGER_MOUNT_COUNT items defer mount via LazyMount.
+   * Default false — every desktop request and any legacy caller gets
+   * eager rendering exactly as before this prop existed.
+   */
+  isMobile?: boolean
 }
 
 interface Profile {
@@ -165,7 +174,7 @@ interface Profile {
   updatedAt: number
 }
 
-export function ProfileView({ address }: ProfileViewProps) {
+export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
   const { address: connectedAddress } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { signMessageAsync } = useSignMessage()
@@ -488,11 +497,18 @@ export function ProfileView({ address }: ProfileViewProps) {
   // with no scrollbar. `index` is passed to renderCard so callers can
   // flag the first row's worth of cards (one row at lg+ = 6 cards) as
   // priority loads — those are above the fold and shouldn't lazy-load.
+  // Each item is also wrapped in MaybeLazy so mobile UAs defer mount
+  // for items past the eager window — desktop renders are inline
+  // Fragments via MaybeLazy's lazy=false branch.
   function renderCardCollection<T>(items: T[], renderCard: (item: T, index: number) => React.ReactNode, getItemKey: (item: T) => string) {
     return (
       <div className={SCROLL_BOX_CLASSES}>
         <div className={GRID_CLASSES}>
-          {items.map((it, index) => <div key={getItemKey(it)}>{renderCard(it, index)}</div>)}
+          {items.map((it, index) => (
+            <MaybeLazy key={getItemKey(it)} index={index} lazy={isMobile}>
+              {() => renderCard(it, index)}
+            </MaybeLazy>
+          ))}
         </div>
       </div>
     )
