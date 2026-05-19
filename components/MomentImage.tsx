@@ -127,6 +127,17 @@ export function MomentImage({ src, onAllError, mime, preferProxy, thumbhash, pri
 
   return (
     <>
+      {/* Persistent CSS-background blur — survives iOS WebKit's decoded-
+          image eviction on scroll-off. next/image's placeholder="blur"
+          is removed on onLoad and leaves nothing underneath. Mirrors
+          MomentVideo's poster-layer pattern. */}
+      {blurDataURL && (
+        <span
+          aria-hidden
+          className="absolute inset-0 bg-cover bg-center pointer-events-none"
+          style={{ backgroundImage: `url(${blurDataURL})` }}
+        />
+      )}
       {/* Skeleton only when there's no thumbhash blur — the blur supersedes. */}
       {!loaded && !blurDataURL && (
         <span

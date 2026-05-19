@@ -164,10 +164,11 @@ const RELEASE_GRACE_MS = 1000
 const SHORT_LOOP_IDLE_EVICT_MS = 5 * 60 * 1000
 const LONG_FORM_IDLE_EVICT_MS = 30 * 60 * 1000
 
-// Hard cap on pool size. Past this, idle entries get evicted on next
-// acquire. Larger pool = more decoder warmth on scroll-back (currentTime
-// and buffered ranges survive while the entry is pooled).
-const MAX_POOL_SIZE = 18
+// Pool cap — past this, idle entries evict on next acquire. iOS WebKit's
+// hardware decoder budget (~4-8) is much smaller than Chromium's, so
+// mobile caps lower to avoid mid-scroll slot recycling.
+const MAX_POOL_SIZE_DESKTOP = 18
+const MAX_POOL_SIZE_MOBILE = 6
 
 // A video is treated as "long-form" once metadata reports duration past
 // this threshold. Long-form entries get preload="auto", a wide IO
@@ -232,8 +233,9 @@ function computeClipRect(ancestors: HTMLElement[]): DOMRect | null {
 
 // ─── Provider ────────────────────────────────────────────────────────
 
-export function SharedVideoProvider({ children }: { children: ReactNode }) {
+export function SharedVideoProvider({ children, isMobile = false }: { children: ReactNode; isMobile?: boolean }) {
   const poolRef = useRef<Map<string, ManagedVideo>>(new Map())
+  const maxPoolSize = isMobile ? MAX_POOL_SIZE_MOBILE : MAX_POOL_SIZE_DESKTOP
 
   /** Split from `applySlotGeometry` so the batched scroll handler can
    *  do every read across the pool before any write — fastdom pattern;
@@ -455,7 +457,7 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
   }
 
   function evictIdleIfOverCap() {
-    if (poolRef.current.size <= MAX_POOL_SIZE) return
+    if (poolRef.current.size <= maxPoolSize) return
     // Two-pass LRU. Short loops cycle fast and rebuild cheaply;
     // long-form costs minutes of buffered bytes to re-fetch. So we
     // exhaust idle short-loop entries before touching long-form,

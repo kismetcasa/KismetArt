@@ -347,10 +347,16 @@ export function DiscoverPage({ isMobile }: { isMobile: boolean }) {
   // reorder (long-press) can produce a saved order on either platform.
   const [hydrated, setHydrated] = useState(false)
 
-  // Hydrate from localStorage after mount. Order + last-active tab are
-  // independent keys so reordering doesn't reset the active tab and vice
-  // versa. If the saved active tab isn't in the (reconciled) order, fall
-  // back to the leftmost tab — handled inside loadActiveTab.
+  // Keep-alive: visited tabs stay mounted, hidden via `hidden` on
+  // switch (instant returns, scroll preserved). Set-during-render keeps
+  // the active tab in the set across the hydration flip without a
+  // follow-up effect; functional updater so concurrent-mode can't drop
+  // an active value if a render is interrupted and replayed.
+  const [visitedTabs, setVisitedTabs] = useState<Set<TabId>>(() => new Set([DRAGGABLE[0]]))
+  if (!visitedTabs.has(active)) {
+    setVisitedTabs((prev) => prev.has(active) ? prev : new Set([...prev, active]))
+  }
+
   useEffect(() => {
     const savedOrder = loadOrder()
     setOrder(savedOrder)
@@ -396,8 +402,8 @@ export function DiscoverPage({ isMobile }: { isMobile: boolean }) {
         {!hydrated && (
           <div className="py-8 text-center text-xs font-mono text-muted">loading…</div>
         )}
-        {hydrated && active === 'featured' && (
-          <>
+        {hydrated && visitedTabs.has('featured') && (
+          <div hidden={active !== 'featured'}>
             {isAdmin && !hasSession && (
               <div className="flex items-center justify-between py-4 border-b border-line mb-2">
                 <p className="text-xs font-mono text-muted">
@@ -419,20 +425,30 @@ export function DiscoverPage({ isMobile }: { isMobile: boolean }) {
               emptyMessage={isAdmin ? 'no featured mints or collections yet — click ★ on any mint or collection to feature it' : 'no featured mints or collections yet'}
               isMobile={isMobile}
             />
-          </>
+          </div>
         )}
 
-        {hydrated && active === 'trending' && (
-          <MomentFeed
-            apiUrl="/api/timeline?sort=trending&scope=standalone"
-            emptyMessage="no collects recorded yet — trending appears as mints are collected"
-            withViewToggle
-          />
+        {hydrated && visitedTabs.has('trending') && (
+          <div hidden={active !== 'trending'}>
+            <MomentFeed
+              apiUrl="/api/timeline?sort=trending&scope=standalone"
+              emptyMessage="no collects recorded yet — trending appears as mints are collected"
+              withViewToggle
+            />
+          </div>
         )}
 
-        {hydrated && active === 'main' && <MainFeed />}
+        {hydrated && visitedTabs.has('main') && (
+          <div hidden={active !== 'main'}>
+            <MainFeed />
+          </div>
+        )}
 
-        {hydrated && active === 'roster' && <RosterFeed />}
+        {hydrated && visitedTabs.has('roster') && (
+          <div hidden={active !== 'roster'}>
+            <RosterFeed />
+          </div>
+        )}
       </div>
     </div>
     </LazyMountCtx.Provider>
