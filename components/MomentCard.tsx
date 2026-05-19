@@ -336,7 +336,7 @@ function MomentCardImpl({ moment, hidePriceSupply, priority, compact }: MomentCa
                 title="open full details page"
                 className="text-[#444] hover:text-dim transition-colors flex items-center"
               >
-                <ArrowUpRight size={12} />
+                <ArrowUpRight size={11} />
               </a>
               <button
                 onClick={handleCopyLink}
