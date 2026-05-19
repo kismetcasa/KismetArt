@@ -517,7 +517,13 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
     window.addEventListener('scroll', flushAll, { passive: true })
     window.addEventListener('resize', flushAll)
 
-    const interval = window.setInterval(() => {
+    // Idle-eviction loop. Walks the video pool every 60s and tears
+    // down any element whose slot count hit zero more than IDLE_EVICT_MS
+    // ago. Skipped when the tab is hidden — no point recomputing
+    // eviction on a backgrounded Mini App, and the visibilitychange
+    // listener below catches up the moment the user returns.
+    const sweep = () => {
+      if (document.hidden) return
       const now = Date.now()
       pool.forEach((video, src) => {
         if (video.slots.length === 0 && now - video.lastActiveAt > IDLE_EVICT_MS) {
@@ -525,10 +531,16 @@ export function SharedVideoProvider({ children }: { children: ReactNode }) {
           pool.delete(src)
         }
       })
-    }, 60_000)
+    }
+    const interval = window.setInterval(sweep, 60_000)
+    // One immediate sweep on tab re-show so the user doesn't see stale
+    // video elements from a long backgrounded session.
+    const onVisibilityChange = () => { if (!document.hidden) sweep() }
+    document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
       window.removeEventListener('scroll', flushAll)
       window.removeEventListener('resize', flushAll)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
       clearInterval(interval)
       // Defensive: destroy all videos on provider unmount so they
       // don't outlive the React tree as orphan DOM nodes.
