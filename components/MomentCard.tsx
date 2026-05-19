@@ -3,7 +3,7 @@
 import { memo, useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Star, Copy, Check, EyeOff } from 'lucide-react'
+import { Star, Copy, Check, EyeOff, ArrowUpRight } from 'lucide-react'
 import { useAccount, useReadContract } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import {
@@ -326,15 +326,28 @@ function MomentCardImpl({ moment, hidePriceSupply, priority, compact }: MomentCa
             {meta.name ?? `#${moment.token_id}`}
           </h3>
           {!compact && (
-            <button
-              onClick={handleCopyLink}
-              title="copy link"
-              className="flex-shrink-0 mt-0.5 text-[#444] hover:text-dim transition-colors"
-            >
-              {linkCopied
-                ? <Check size={11} className="text-[#6ee7b7]" />
-                : <Copy size={11} />}
-            </button>
+            <div className="flex-shrink-0 mt-0.5 flex items-center gap-2">
+              {/* Hard-nav anchor so the click bypasses the @modal
+                  intercepting route and lands on the canonical full-page
+                  detail route — sibling to the copy affordance, same
+                  visual weight. */}
+              <a
+                href={`/moment/${moment.address}/${moment.token_id}`}
+                title="open full details page"
+                className="text-[#444] hover:text-dim transition-colors flex items-center"
+              >
+                <ArrowUpRight size={12} />
+              </a>
+              <button
+                onClick={handleCopyLink}
+                title="copy link"
+                className="text-[#444] hover:text-dim transition-colors flex items-center"
+              >
+                {linkCopied
+                  ? <Check size={11} className="text-[#6ee7b7]" />
+                  : <Copy size={11} />}
+              </button>
+            </div>
           )}
         </div>
         {!compact && (
