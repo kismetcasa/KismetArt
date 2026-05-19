@@ -314,6 +314,10 @@ function MomentFeed({
       getKey={(m) => `${m.address}-${m.token_id}`}
       viewMode={viewMode}
       lazy={lazy}
+      // Smaller page on mobile: fewer cards mounted per fetch means
+      // less initial fiber/decode/multicall work on the iframe's
+      // constrained connection pool. Desktop has capacity for 18.
+      pageLimit={lazy ? 12 : 18}
       renderItem={(m, { index }) => (
         <MomentCard
           key={`${m.address}-${m.token_id}`}
@@ -363,6 +367,7 @@ function CollectionsFeed({
       getKey={(c) => c.contractAddress}
       viewMode={viewMode}
       lazy={lazy}
+      pageLimit={lazy ? 12 : 18}
       renderItem={(c, { index }) => (
         <CollectionCard
           key={c.contractAddress}

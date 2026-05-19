@@ -145,7 +145,17 @@ export function MomentImage({ src, onAllError, mime, preferProxy, thumbhash: _th
         onError={handleError}
         onLoad={() => setLoaded(true)}
         decoding="async"
-        priority={priority}
+        // Force eager loading on iOS WebKit + iframe contexts. Native
+        // loading="lazy" has a documented WebKit bug (bug 200764) that
+        // fails to re-fetch/decode after scroll-back on Safari 15.4+,
+        // producing the "skeleton stays stuck on scroll-back" symptom.
+        // Use fetchPriority="auto" to avoid the high-priority side
+        // effect that next/image normally pairs with `priority` —
+        // we want eager loading without the LCP-boost (which would
+        // make every card compete for bandwidth equally and defeat
+        // first-row prioritisation).
+        priority={priority || skipDirectWalk}
+        fetchPriority={!priority && skipDirectWalk ? 'auto' : undefined}
         {...rest}
       />
     </>
