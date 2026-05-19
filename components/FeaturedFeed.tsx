@@ -22,27 +22,41 @@ interface FeaturedFeedProps {
 }
 
 export function FeaturedFeed({ emptyMessage, isMobile = false }: FeaturedFeedProps) {
-  const [moments, setMoments] = useState<Moment[]>([])
-  const [collections, setCollections] = useState<FeaturedCollectionRow[]>([])
-  const [loading, setLoading] = useState(true)
+  // null = still loading; [] = resolved-empty. Tracked per-endpoint so
+  // the faster /api/timeline?featured=1 can paint its moments grid the
+  // instant it returns, without waiting on /api/featured/collections-hydrated
+  // (which fans out 20 inprocess fetches + per-collection RPC reads
+  // server-side and is consistently the slower of the two on cold cache).
+  // Collection rows interleave in as a second pass — momentary layout
+  // shift is a fair trade for cutting time-to-first-content on mobile.
+  const [moments, setMoments] = useState<Moment[] | null>(null)
+  const [collections, setCollections] = useState<FeaturedCollectionRow[] | null>(null)
 
   useEffect(() => {
     let cancelled = false
-    Promise.all([
-      fetch('/api/timeline?featured=1')
-        .then((r) => (r.ok ? r.json() : { moments: [] }))
-        .catch(() => ({ moments: [] })),
-      fetch('/api/featured/collections-hydrated')
-        .then((r) => (r.ok ? r.json() : { collections: [] }))
-        .catch(() => ({ collections: [] })),
-    ]).then(([tl, fc]) => {
-      if (cancelled) return
-      setMoments(Array.isArray(tl?.moments) ? tl.moments : [])
-      setCollections(Array.isArray(fc?.collections) ? fc.collections : [])
-      setLoading(false)
-    })
+    fetch('/api/timeline?featured=1')
+      .then((r) => (r.ok ? r.json() : { moments: [] }))
+      .catch(() => ({ moments: [] }))
+      .then((tl) => {
+        if (cancelled) return
+        setMoments(Array.isArray(tl?.moments) ? tl.moments : [])
+      })
+    fetch('/api/featured/collections-hydrated')
+      .then((r) => (r.ok ? r.json() : { collections: [] }))
+      .catch(() => ({ collections: [] }))
+      .then((fc) => {
+        if (cancelled) return
+        setCollections(Array.isArray(fc?.collections) ? fc.collections : [])
+      })
     return () => { cancelled = true }
   }, [])
+
+  // Spinner only while moments is still in flight — once moments arrives,
+  // paint the grid even if collections is still loading. The interleave
+  // logic below will splice collection rows in once they arrive.
+  if (moments === null) {
+    return <div className="py-8 text-center text-xs font-mono text-muted">loading…</div>
+  }
 
   // Interleave: STRIDE moments → 1 collection → STRIDE moments → ...
   // Both lists arrive sorted by featuredAt desc, so the result is roughly
@@ -51,25 +65,25 @@ export function FeaturedFeed({ emptyMessage, isMobile = false }: FeaturedFeedPro
     | { kind: 'moments'; items: Moment[] }
     | { kind: 'collection'; row: FeaturedCollectionRow }
 
+  const safeCollections = collections ?? []
   const blocks: Block[] = []
   let mIdx = 0
   let cIdx = 0
-  while (mIdx < moments.length || cIdx < collections.length) {
+  while (mIdx < moments.length || cIdx < safeCollections.length) {
     const take = Math.min(STRIDE, moments.length - mIdx)
     if (take > 0) {
       blocks.push({ kind: 'moments', items: moments.slice(mIdx, mIdx + take) })
       mIdx += take
     }
-    if (cIdx < collections.length) {
-      blocks.push({ kind: 'collection', row: collections[cIdx++] })
+    if (cIdx < safeCollections.length) {
+      blocks.push({ kind: 'collection', row: safeCollections[cIdx++] })
     }
   }
 
-  if (loading) {
-    return <div className="py-8 text-center text-xs font-mono text-muted">loading…</div>
-  }
-
-  if (blocks.length === 0) {
+  // Only declare "empty" once BOTH endpoints have settled — otherwise the
+  // tab would flash an empty-state message in the gap between moments
+  // resolving empty and collections still loading.
+  if (blocks.length === 0 && collections !== null) {
     return <div className="py-8 text-center text-xs font-mono text-muted">{emptyMessage}</div>
   }
 
@@ -114,6 +128,7 @@ export function FeaturedFeed({ emptyMessage, isMobile = false }: FeaturedFeedPro
             key={`c-${b.row.contractAddress}`}
             collection={b.row}
             priority={i === 0}
+            isMobile={isMobile}
           />
         ),
       )}
