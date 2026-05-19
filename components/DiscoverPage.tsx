@@ -7,7 +7,6 @@ import { CollectionCard, type CollectionDisplay } from '@/components/CollectionC
 import { FeaturedFeed } from '@/components/FeaturedFeed'
 import { PaginatedGrid } from '@/components/PaginatedGrid'
 import { ViewModeToggle } from '@/components/ViewModeToggle'
-import { useFinePointer } from '@/hooks/useFinePointer'
 import { useViewMode } from '@/hooks/useViewMode'
 import type { Moment } from '@/lib/inprocess'
 import { useAdmin } from '@/contexts/AdminContext'
@@ -75,6 +74,29 @@ function loadActiveTab(order: TabId[]): TabId {
 
 // ─── tab bar ─────────────────────────────────────────────────────────────────
 
+// Long-press threshold for touch-initiated drag. Matches iOS / common
+// reorder UIs: 250ms is long enough that a deliberate hold registers
+// as "I'm reorganizing" but short enough that it doesn't feel laggy.
+const LONG_PRESS_MS = 250
+// Movement during the "pending" window that disqualifies a hold from
+// becoming a drag — the user is scrolling, not reordering.
+const SCROLL_INTENT_PX = 8
+// Mouse: skip the long-press entirely and pick up after this much
+// pointer movement. Matches HTML5 native drag latency.
+const MOUSE_DRAG_THRESHOLD_PX = 5
+
+interface DragState {
+  pointerId: number
+  startTab: TabId
+  // Tracks the pointer's last x in container coordinates so movement
+  // calc stays correct after a reorder repositions the tab DOM.
+  anchorX: number
+  startX: number
+  startY: number
+  longPressTimer: number | null
+  phase: 'pending' | 'dragging'
+}
+
 function TabBar({
   order,
   active,
@@ -86,46 +108,153 @@ function TabBar({
   onSelect: (t: TabId) => void
   onReorder: (o: TabId[]) => void
 }) {
-  const dragIdx = useRef<number | null>(null)
-  // Drag-to-reorder is desktop-only — see hooks/useFinePointer for
-  // rationale (HTML5 draggable breaks tap on touch).
-  const allowDrag = useFinePointer()
+  const containerRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<DragState | null>(null)
+  const orderRef = useRef(order)
+  orderRef.current = order
+  // Re-render-triggering state only — `dragRef` holds the
+  // high-frequency pointer data so move handlers don't thrash React.
+  const [draggingTab, setDraggingTab] = useState<TabId | null>(null)
+  const [dragOffsetX, setDragOffsetX] = useState(0)
 
-  function onDragStart(idx: number) {
-    dragIdx.current = idx
+  function startDrag() {
+    if (!dragRef.current) return
+    dragRef.current.phase = 'dragging'
+    setDraggingTab(dragRef.current.startTab)
+    // Best-effort haptic on devices that support it (Android Chrome,
+    // some Firefox); ignored elsewhere. Matches the "you picked it up"
+    // feel of the iOS Home-Screen edit mode.
+    if ('vibrate' in navigator) {
+      try { navigator.vibrate(10) } catch {}
+    }
   }
 
-  function onDragOver(e: React.DragEvent, idx: number) {
+  function endDrag(tapped: boolean) {
+    const state = dragRef.current
+    if (!state) return
+    if (state.longPressTimer) clearTimeout(state.longPressTimer)
+    if (tapped && state.phase === 'pending') onSelect(state.startTab)
+    setDraggingTab(null)
+    setDragOffsetX(0)
+    dragRef.current = null
+  }
+
+  function handlePointerDown(e: React.PointerEvent<HTMLButtonElement>, tab: TabId) {
+    // Left mouse only — middle/right click should not initiate drag.
+    if (e.pointerType === 'mouse' && e.button !== 0) return
+    // Capture so we still get move/up events if the pointer drifts off
+    // the button's bounding box mid-drag.
+    e.currentTarget.setPointerCapture(e.pointerId)
+    dragRef.current = {
+      pointerId: e.pointerId,
+      startTab: tab,
+      anchorX: e.clientX,
+      startX: e.clientX,
+      startY: e.clientY,
+      longPressTimer: e.pointerType === 'touch'
+        ? window.setTimeout(startDrag, LONG_PRESS_MS)
+        : null,
+      phase: 'pending',
+    }
+  }
+
+  function handlePointerMove(e: React.PointerEvent<HTMLButtonElement>) {
+    const state = dragRef.current
+    if (!state || e.pointerId !== state.pointerId) return
+
+    if (state.phase === 'pending') {
+      const dx = e.clientX - state.startX
+      const dy = e.clientY - state.startY
+      if (e.pointerType === 'touch') {
+        // Movement before the long-press fires → user is scrolling.
+        // Abandon so the browser can keep handling the scroll natively.
+        if (Math.abs(dx) > SCROLL_INTENT_PX || Math.abs(dy) > SCROLL_INTENT_PX) {
+          if (state.longPressTimer) clearTimeout(state.longPressTimer)
+          dragRef.current = null
+        }
+        return
+      }
+      // Mouse: pick up after a small drag delta — feels instant to
+      // users used to native HTML5 drag.
+      if (Math.abs(dx) < MOUSE_DRAG_THRESHOLD_PX && Math.abs(dy) < MOUSE_DRAG_THRESHOLD_PX) return
+      startDrag()
+    }
+
+    if (state.phase !== 'dragging') return
+    // Block page scroll / pull-to-refresh while we own the gesture.
     e.preventDefault()
-    if (dragIdx.current === null || dragIdx.current === idx) return
-    const next = [...order]
-    const [moved] = next.splice(dragIdx.current, 1)
-    next.splice(idx, 0, moved)
-    dragIdx.current = idx
-    onReorder(next)
+
+    setDragOffsetX(e.clientX - state.anchorX)
+
+    // Reorder on midpoint crossing — instant swap, no animation. Our
+    // visual anchor (the dragged tab's translateX) keeps the user's
+    // finger over the moving element, so the snap reads as "the slot
+    // moved under me" rather than "the tab teleported elsewhere".
+    const container = containerRef.current
+    if (!container) return
+    const currentOrder = orderRef.current
+    const currentIdx = currentOrder.indexOf(state.startTab)
+    if (currentIdx < 0) return
+    const tabEls = Array.from(container.querySelectorAll<HTMLButtonElement>('[data-tab]'))
+    let targetIdx = currentIdx
+    for (let i = 0; i < tabEls.length; i++) {
+      const rect = tabEls[i].getBoundingClientRect()
+      const center = rect.left + rect.width / 2
+      if (e.clientX < center) { targetIdx = i; break }
+      targetIdx = i
+    }
+    if (targetIdx !== currentIdx) {
+      const next = [...currentOrder]
+      const [moved] = next.splice(currentIdx, 1)
+      next.splice(targetIdx, 0, moved)
+      onReorder(next)
+      // Re-anchor so the offset visual stays small relative to the new
+      // slot — without this, after one swap the tab visually races
+      // way ahead of (or behind) the finger.
+      state.anchorX = e.clientX
+      setDragOffsetX(0)
+    }
   }
 
-  function onDragEnd() {
-    dragIdx.current = null
+  function handlePointerEnd(e: React.PointerEvent<HTMLButtonElement>) {
+    if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return
+    endDrag(/* tapped */ true)
+  }
+
+  function handlePointerCancel(e: React.PointerEvent<HTMLButtonElement>) {
+    if (!dragRef.current || e.pointerId !== dragRef.current.pointerId) return
+    endDrag(/* tapped */ false)
   }
 
   return (
-    <div className="flex items-end gap-0 border-b border-line">
-      {order.map((tab, idx) => {
+    <div ref={containerRef} className="flex items-end gap-0 border-b border-line">
+      {order.map((tab) => {
         const isActive = tab === active
+        const isDragging = tab === draggingTab
         return (
           <button
             key={tab}
-            draggable={allowDrag}
-            onDragStart={allowDrag ? () => onDragStart(idx) : undefined}
-            onDragOver={allowDrag ? (e) => onDragOver(e, idx) : undefined}
-            onDragEnd={allowDrag ? onDragEnd : undefined}
-            onClick={() => onSelect(tab)}
+            data-tab={tab}
+            onPointerDown={(e) => handlePointerDown(e, tab)}
+            onPointerMove={handlePointerMove}
+            onPointerUp={handlePointerEnd}
+            onPointerCancel={handlePointerCancel}
+            // Keyboard activation — `<button>` would otherwise synthesize
+            // a click on Enter/Space, but we deliberately don't bind
+            // onClick (it would race the pointer-tap handler in
+            // handlePointerEnd). Explicit handler keeps a11y intact.
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onSelect(tab)
+              }
+            }}
+            style={isDragging ? { transform: `translateX(${dragOffsetX}px)`, zIndex: 10 } : undefined}
             className={`
               relative px-4 py-2.5 text-xs font-mono tracking-wider uppercase
-              transition-colors select-none
+              transition-colors select-none touch-none
               ${isActive ? 'text-ink' : 'text-[#444] hover:text-dim'}
-              ${allowDrag ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
+              ${isDragging ? 'opacity-70 cursor-grabbing' : 'cursor-grab'}
             `}
           >
             {LABEL[tab]}
