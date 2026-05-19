@@ -381,6 +381,7 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
             // component unmounted in the interim (ref no longer in DOM).
             if (!video.slots.includes(slot)) {
               if (!slot.ref.isConnected) return
+              video.isIntersecting = true
               video.slots.unshift(slot)
               activateSlot(video, slot)
               return
@@ -482,6 +483,10 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
     if (video.intentTimer !== null) {
       clearTimeout(video.intentTimer)
       video.intentTimer = null
+    }
+    if (video.releaseHoldTimer !== null) {
+      clearTimeout(video.releaseHoldTimer)
+      video.releaseHoldTimer = null
     }
     video.el.style.visibility = 'hidden'
     video.el.pause()
