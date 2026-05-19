@@ -78,7 +78,16 @@ export function ModalOverlay({ children }: { children: ReactNode }) {
         onClick={dismiss}
         title="Close (Esc)"
         aria-label="Close"
-        className="fixed top-4 right-4 p-2 text-[#bbb] hover:text-white bg-black/50 backdrop-blur-sm hover:bg-black/70 transition-colors rounded-full"
+        // backdrop-blur dropped: same iOS-WebKit GPU-jank issue the
+        // SearchModal overlay had — recomputes the blur every scroll
+        // frame over the moment-detail video underneath. Solid /70 is
+        // visible enough.
+        // active:scale-95 gives touch users the same press feedback the
+        // ProfileAvatar uses.
+        // min-w/h=44 enforces the iOS HIG touch target on small icon
+        // buttons — without it the 18px X inside p-2 only gave a
+        // 34×34px hit area.
+        className="fixed top-4 right-4 min-w-[44px] min-h-[44px] flex items-center justify-center text-[#bbb] hover:text-white bg-black/70 hover:bg-black/90 transition-all active:scale-95 rounded-full"
         style={{ zIndex: Z_CHROME }}
       >
         <X size={18} />
