@@ -211,8 +211,8 @@ export function PaginatedGrid<T>({
   const error = firstError?.message ?? null
 
   // Eager up to EAGER_MOUNT_COUNT, then LazyMount past it when `lazy`
-  // is on. Single helper so the threshold stays consistent across any
-  // future layout split.
+  // is on. Inlining the lazy decision next to the render so the eager/
+  // lazy split is one obvious branch.
   const gridClass = viewMode === 'grid' ? GRID_GRID : GRID_FEED
   function renderEntry(item: T, index: number): ReactElement {
     const key = getKey(item)

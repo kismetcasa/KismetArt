@@ -476,13 +476,11 @@ export function DiscoverPage({ isMobile }: { isMobile: boolean }) {
   // localStorage. Without the gate, we'd mount whatever DRAGGABLE[0]
   // points at, fire its PaginatedGrid useQuery, then immediately
   // unmount it once the effect below flips `active` to the saved
-  // tab. That wasted fetch races the real tab's fetches against the
-  // Mini App webview's already-constrained connection pool and
-  // delays time-to-content. One paint cycle of "loading…" is the
-  // cost; mobile / Mini App clears synchronously enough that no
-  // skeleton swap is visible (drag-reorder is desktop-only, and the
-  // only mobile pathway that writes the active-tab key is also a
-  // tap that re-uses the same active state).
+  // order/active-tab. That wasted fetch races the real tab's fetches
+  // against the Mini App webview's already-constrained connection pool
+  // and delays time-to-content. One paint cycle of "loading…" is the
+  // cost — applies on both desktop and mobile now that touch drag-
+  // reorder (long-press) can produce a saved order on either platform.
   const [hydrated, setHydrated] = useState(false)
 
   // Hydrate from localStorage after mount. Order + last-active tab are

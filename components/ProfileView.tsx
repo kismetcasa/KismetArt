@@ -87,6 +87,14 @@ type SectionId = 'mints' | 'collected' | 'listings' | 'payments' | 'airdrops' | 
 const DEFAULT_ORDER: SectionId[] = ['mints', 'collected', 'listings', 'payments', 'airdrops']
 const SECTIONS_KEY = 'kismetart:profile-sections'
 
+// Section drag thresholds — see the same constants in DiscoverPage for
+// the matching tab-bar gesture. 250ms is the iOS-Home-Screen feel; 8px
+// of pre-drag movement on touch resolves to "user is scrolling, not
+// reordering"; 5px on mouse instantly commits to drag.
+const SECTION_LONG_PRESS_MS = 250
+const SECTION_SCROLL_INTENT_PX = 8
+const SECTION_MOUSE_DRAG_THRESHOLD_PX = 5
+
 interface SectionsConfig {
   order: SectionId[]
   collapsed: Partial<Record<SectionId, boolean>>
@@ -351,18 +359,12 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
     persistSections(sectionOrder, next)
   }
 
-  // --- Section drag-to-reorder (long-press on touch, immediate on mouse) ---
-  //
-  // Mirrors TabBar's gesture model: a "pending" window after pointerdown
-  // resolves either to a drag (long-press timer fires on touch / pointer
-  // moves past a small threshold on mouse) or to a tap (pointerup before
-  // committing → toggleCollapsed). HTML5 draggable was avoided here for
-  // the same reason as TabBar — it hijacks tap-and-hold and breaks the
-  // section collapse tap on touch.
-  const SECTION_LONG_PRESS_MS = 250
-  const SECTION_SCROLL_INTENT_PX = 8
-  const SECTION_MOUSE_DRAG_THRESHOLD_PX = 5
-
+  // Section drag-to-reorder — mirrors TabBar's gesture model: pointerdown
+  // opens a "pending" window that resolves to either a drag (long-press on
+  // touch / pointer moves past a small threshold on mouse) or a tap
+  // (pointerup before committing → toggleCollapsed). HTML5 draggable was
+  // avoided here for the same reason as TabBar — it hijacks tap-and-hold
+  // and breaks the section collapse tap on touch.
   function startSectionDrag() {
     const state = sectionDragRef.current
     if (!state) return
