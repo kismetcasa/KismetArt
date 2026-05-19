@@ -456,10 +456,10 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
 
   // Profile uses the compact card density everywhere — keeps each section
   // glance-able even when a user has hundreds of mints/collected/listings.
-  // Grid is 2/3/4/6 across breakpoints (mirrors CardSwiper's progression);
-  // max-h caps the section at roughly 3 rows tall and the remainder
-  // scrolls inside the box. Skeleton uses the same shell so the loading
-  // state doesn't visually flip when content arrives.
+  // Grid is 2/3/4/6 across breakpoints (same density PaginatedGrid uses
+  // for its grid view); max-h caps the section at roughly 3 rows tall
+  // and the remainder scrolls inside the box. Skeleton uses the same
+  // shell so the loading state doesn't visually flip when content arrives.
   const GRID_CLASSES = 'grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3'
   // ~3 rows worth of compact cards across breakpoints — a single value
   // is approximate (row height varies with card width) but lands close
