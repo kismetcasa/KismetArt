@@ -254,12 +254,10 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
   const sectionOrderRef = useRef(sectionOrder)
   sectionOrderRef.current = sectionOrder
 
-  // Tier the cold-load burst so above-the-fold data (profile, mints)
-  // isn't queued behind below-the-fold fetches on the Mini App's
-  // ~6-connection-per-host pool. Tier 1 fires on mount, Tier 2 one rAF
-  // later, Tier 3 on idle. Effects use the derived booleans below as
-  // deps (not `tier`), so a 2 → 3 transition doesn't re-fire tier-2
-  // fetches.
+  // Tier the cold-load fetches so the connection pool isn't saturated
+  // by below-the-fold sections. T1 fires on mount, T2 one rAF later,
+  // T3 on idle. Effects depend on the derived booleans, not `tier`
+  // itself, so a 2→3 transition doesn't re-fire T2 fetches.
   const [tier, setTier] = useState<1 | 2 | 3>(1)
   const tier2 = tier >= 2
   const tier3 = tier >= 3
