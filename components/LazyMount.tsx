@@ -5,10 +5,18 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 /**
  * How many items at the start of a list mount eagerly when lazy mode
  * is active. Cards beyond this index defer mount until their placeholder
- * enters the viewport. 6 covers two rows of three on desktop AND a few
- * viewport heights of scrollable content on mobile.
+ * enters the viewport.
+ *
+ * Only consulted on the lazy=true path (server-detected mobile UAs).
+ * Desktop runs with lazy=false and never instantiates LazyMount, so this
+ * constant is effectively a mobile-only knob — desktop stays unlimited-
+ * eager regardless of the value here.
+ *
+ * 4 ≈ one mobile viewport at the 2-col grid we use everywhere on phones.
+ * Lower than 4 starts producing visible placeholder pop-in on first paint;
+ * higher and we re-introduce the click-through pause on heavy feeds.
  */
-export const EAGER_MOUNT_COUNT = 6
+export const EAGER_MOUNT_COUNT = 4
 
 interface LazyMountProps {
   /** Render-prop: only invoked once the placeholder enters the IO window.

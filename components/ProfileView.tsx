@@ -482,32 +482,36 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
         <p className="text-muted font-mono text-xs">no collections yet</p>
       ) : (
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-          {artistCollections.map((c) => {
+          {artistCollections.map((c, i) => {
             const collectionName = c.metadata?.name || c.name
             return (
-              <div key={c.contractAddress} className="flex flex-col bg-[#161616] border border-line overflow-hidden">
-                <Link href={`/collection/${c.contractAddress}`} className="relative aspect-square bg-surface block overflow-hidden group/img">
-                  <CollectionPreviewImage src={c.metadata?.image} alt={collectionName} thumbhash={c.metadata?.kismet_thumbhash} />
-                </Link>
-                <div className="px-3 pt-3 pb-2 flex flex-col gap-0.5">
-                  <h3 className="text-sm text-ink font-mono truncate">{collectionName}</h3>
-                  <span className="text-[10px] font-mono text-muted">{shortAddress(c.contractAddress)}</span>
-                </div>
-                <div className="px-3 pb-3 flex flex-col gap-1.5">
-                  <Link
-                    href={`/collection/${c.contractAddress}`}
-                    className="w-full py-1.5 text-center text-xs font-mono border border-line text-dim hover:border-muted hover:text-ink transition-colors"
-                  >
-                    view collection
-                  </Link>
-                  <Link
-                    href={`/mint?collection=${c.contractAddress}&name=${encodeURIComponent(collectionName)}`}
-                    className="w-full py-1.5 text-center text-xs font-mono border border-accent/40 text-accent hover:border-accent hover:bg-accent/10 transition-colors"
-                  >
-                    mint all
-                  </Link>
-                </div>
-              </div>
+              <MaybeLazy key={c.contractAddress} index={i} lazy={isMobile}>
+                {() => (
+                  <div className="flex flex-col bg-[#161616] border border-line overflow-hidden">
+                    <Link href={`/collection/${c.contractAddress}`} className="relative aspect-square bg-surface block overflow-hidden group/img">
+                      <CollectionPreviewImage src={c.metadata?.image} alt={collectionName} thumbhash={c.metadata?.kismet_thumbhash} />
+                    </Link>
+                    <div className="px-3 pt-3 pb-2 flex flex-col gap-0.5">
+                      <h3 className="text-sm text-ink font-mono truncate">{collectionName}</h3>
+                      <span className="text-[10px] font-mono text-muted">{shortAddress(c.contractAddress)}</span>
+                    </div>
+                    <div className="px-3 pb-3 flex flex-col gap-1.5">
+                      <Link
+                        href={`/collection/${c.contractAddress}`}
+                        className="w-full py-1.5 text-center text-xs font-mono border border-line text-dim hover:border-muted hover:text-ink transition-colors"
+                      >
+                        view collection
+                      </Link>
+                      <Link
+                        href={`/mint?collection=${c.contractAddress}&name=${encodeURIComponent(collectionName)}`}
+                        className="w-full py-1.5 text-center text-xs font-mono border border-accent/40 text-accent hover:border-accent hover:bg-accent/10 transition-colors"
+                      >
+                        mint all
+                      </Link>
+                    </div>
+                  </div>
+                )}
+              </MaybeLazy>
             )
           })}
         </div>
