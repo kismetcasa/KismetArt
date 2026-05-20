@@ -10,6 +10,15 @@ export async function GET(req: NextRequest) {
   const allowed = await checkRateLimit(`admin-gate-get:${ip}`, 60, 60)
   if (!allowed) return errorResponse(429, 'Too many requests')
 
+  // Admin-only — matches every other /api/admin/* GET. The admin sub-pages
+  // (/admin/gate, /admin/pass) carry the HttpOnly session cookie which the
+  // browser auto-attaches on same-origin fetches, so the existing UI works
+  // without code changes. The previous unauth GET was a no-longer-justified
+  // hole left over from when /api/gate was a public read; that route is
+  // gone and no UI consumes this endpoint without admin context.
+  const auth = await verifyAdminSession()
+  if ('error' in auth) return errorResponse(auth.status, auth.error)
+
   const config = await getGateConfig()
   return NextResponse.json(config)
 }
