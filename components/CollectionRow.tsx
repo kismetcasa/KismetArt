@@ -138,7 +138,7 @@ export function CollectionRow({ collection, priority, isMobile }: CollectionRowP
     // moment cards). lg+: cover-left + grid-right. SharedVideoProvider's
     // clip-path keeps position:fixed videos inside the mobile scroller.
     <article className="flex flex-col lg:flex-row border border-line bg-[#161616] overflow-hidden">
-      <div className="hidden lg:flex flex-col lg:flex-shrink-0 lg:w-64 xl:w-72 lg:border-r lg:border-line">
+      <div className="hidden lg:flex flex-col lg:flex-shrink-0 lg:w-80 xl:w-96 lg:border-r lg:border-line">
         <Link
           href={`/collection/${c.contractAddress}`}
           className="relative aspect-square w-full block overflow-hidden bg-surface group/img"
@@ -164,7 +164,7 @@ export function CollectionRow({ collection, priority, isMobile }: CollectionRowP
               alt={name}
               fill
               className="object-contain transition-transform duration-500 group-hover/img:scale-105"
-              sizes="288px"
+              sizes="(min-width: 1280px) 384px, 320px"
               onAllError={() => setImgFailed(true)}
               priority={priority}
               preferProxy
@@ -235,10 +235,13 @@ export function CollectionRow({ collection, priority, isMobile }: CollectionRowP
         )}
       </div>
 
-      {/* lg+ moments — 5×2 column-major grid (top→bottom, then right). */}
-      <div className="hidden lg:flex-1 lg:min-w-0 lg:grid lg:grid-cols-5 lg:grid-rows-2 lg:[grid-auto-flow:column] lg:gap-2 lg:p-3">
+      {/* lg+ moments — 2 fixed rows that scroll horizontally so up to 20
+          moments fit alongside the cover card. Column-major flow means
+          items still read top→bottom then right, matching the mobile
+          single-row scroller's chronological order. */}
+      <div className="hidden lg:grid lg:flex-1 lg:min-w-0 lg:grid-rows-2 lg:[grid-auto-flow:column] lg:[grid-auto-columns:200px] lg:gap-2 lg:p-3 lg:overflow-x-auto">
         {displayMoments.length === 0 ? (
-          <div className="col-span-full row-span-full flex items-center justify-center min-h-[160px]">
+          <div className="row-span-2 flex items-center justify-center min-h-[160px]">
             <span className="text-xs font-mono text-muted">no moments yet</span>
           </div>
         ) : (
