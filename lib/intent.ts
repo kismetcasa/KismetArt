@@ -75,6 +75,8 @@ export const MINT_INTENT_TYPES = {
     { name: 'tokenURI', type: 'string' },
     { name: 'tokenContentHash', type: 'string' },
     { name: 'maxSupply', type: 'string' },
+    { name: 'mintToCreatorCount', type: 'string' },
+    { name: 'saleType', type: 'string' },
     { name: 'salePrice', type: 'string' },
     { name: 'saleCurrency', type: 'string' },
     { name: 'saleStart', type: 'string' },
@@ -93,6 +95,8 @@ interface MintIntentMessage {
   tokenURI: string
   tokenContentHash: string
   maxSupply: string
+  mintToCreatorCount: string
+  saleType: string
   salePrice: string
   saleCurrency: string
   saleStart: string
@@ -139,11 +143,15 @@ function asString(v: unknown): string {
  *
  * Bound: account, collection (resolved to address or new-deploy form),
  * tokenURI, tokenContent hash (so the writing body is bound by content
- * not just title), maxSupply, sale config (price + currency + window),
- * payoutRecipient, splits hash (canonical-sorted), nonce, expiresAt.
+ * not just title), maxSupply, mintToCreatorCount (so a tamperer can't
+ * inflate it to mint extra unwanted copies / blow past maxSupply), the
+ * full sales config (type + price + currency + window — type binding
+ * blocks a swap from erc20Mint to fixedPrice that would reinterpret
+ * the price as ETH instead of USDC), payoutRecipient, splits hash
+ * (canonical-sorted), nonce, expiresAt.
  *
- * Not bound: display name / title / comment / mintToCreatorCount.
- * createReferral is server-overwritten by mint-proxy regardless of body.
+ * Not bound: display name / title / comment. createReferral is
+ * server-overwritten by mint-proxy regardless of body.
  */
 export function buildMintIntent(
   body: MintBody,
@@ -156,10 +164,12 @@ export function buildMintIntent(
     tokenMetadataURI?: unknown
     tokenContent?: unknown
     maxSupply?: unknown
-    salesConfig?: { pricePerToken?: unknown; currency?: unknown; saleStart?: unknown; saleEnd?: unknown } | unknown
+    mintToCreatorCount?: unknown
+    salesConfig?: { type?: unknown; pricePerToken?: unknown; currency?: unknown; saleStart?: unknown; saleEnd?: unknown } | unknown
     payoutRecipient?: unknown
   }
   const salesConfig = (token.salesConfig ?? {}) as {
+    type?: unknown
     pricePerToken?: unknown
     currency?: unknown
     saleStart?: unknown
@@ -181,6 +191,8 @@ export function buildMintIntent(
     tokenURI: asString(token.tokenMetadataURI),
     tokenContentHash,
     maxSupply: asString(token.maxSupply),
+    mintToCreatorCount: asString(token.mintToCreatorCount),
+    saleType: asString(salesConfig.type),
     salePrice: asString(salesConfig.pricePerToken),
     saleCurrency: asString(salesConfig.currency),
     saleStart: asString(salesConfig.saleStart),
