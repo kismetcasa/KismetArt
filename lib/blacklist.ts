@@ -24,27 +24,6 @@ export async function isBlacklisted(address: string | null | undefined): Promise
   }
 }
 
-/** Batch check — returns the subset of `addresses` that are blacklisted.
- *  Useful for filtering arrays of moments / listings without N round-trips. */
-export async function getBlacklistedSet(
-  addresses: (string | null | undefined)[],
-): Promise<Set<string>> {
-  const lowered = addresses
-    .filter((a): a is string => typeof a === 'string' && a.length > 0)
-    .map((a) => a.toLowerCase())
-  if (lowered.length === 0) return new Set()
-  try {
-    // Read the whole blacklist once and intersect — avoids one round-trip
-    // per address. Blacklist is small (admin-curated); fetching it whole
-    // is cheap.
-    const all = (await redis.smembers(KEY)) as string[]
-    const set = new Set(all)
-    return new Set(lowered.filter((a) => set.has(a) && a !== ADMIN_ADDRESS))
-  } catch {
-    return new Set()
-  }
-}
-
 export async function addToBlacklist(address: string): Promise<void> {
   const lower = address.toLowerCase()
   if (ADMIN_ADDRESS && lower === ADMIN_ADDRESS) {
