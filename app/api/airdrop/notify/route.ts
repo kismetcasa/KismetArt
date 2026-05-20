@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server'
 import { isAddress } from '@/lib/address'
 import { recordAirdrop } from '@/lib/airdrops'
+import { consumeQuota } from '@/lib/airdrop-quota'
 import { recordCollected } from '@/lib/collected'
 import { getMomentMeta, writeNotification } from '@/lib/notifications'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
@@ -71,6 +72,32 @@ export async function POST(req: NextRequest) {
     .map((r) => r.toLowerCase())
   if (validRecipients.length === 0) {
     return errorResponse(400, 'No valid recipients')
+  }
+
+  // Debit the artist's daily/weekly airdrop ledger atomically. The
+  // AirdropForm pre-flights via GET /api/airdrop/quota to keep the
+  // submit button in sync, but the actual cap enforcement is here —
+  // two concurrent notify calls can't double-spend a remaining=1 slot
+  // because the underlying Lua check-and-INCRBY is serialized.
+  // Soft-enforcement caveat: the on-chain mint already landed by the
+  // time we get here (client signs first, calls this after). A 429
+  // response means the airdrop succeeded on-chain but is dropped from
+  // the activity log + recipient inbox. The pre-flight in the form is
+  // what saves the artist from the bad UX of seeing this 429 mid-flow.
+  const quota = await consumeQuota(sender, validRecipients.length)
+  if (!quota.ok) {
+    return NextResponse.json(
+      {
+        error:
+          quota.reason === 'day_cap'
+            ? 'Daily airdrop limit reached'
+            : 'Weekly airdrop limit reached',
+        reason: quota.reason,
+        limits: quota.limits,
+        used: quota.used,
+      },
+      { status: 429 },
+    )
   }
 
   // tokenName lookup is best-effort — kept off the critical path so a meta

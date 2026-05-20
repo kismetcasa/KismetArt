@@ -111,7 +111,32 @@ export function AdminDashboard() {
 
       <HideContentCard withSession={withSession} />
       <TokenGateCard />
+      <AirdropQuotaCard />
     </div>
+  )
+}
+
+/** Single-link card for the airdrop quota sub-page. Lives apart from the
+ *  token-gate card because the quota controls cohort throughput, not
+ *  access — same admin surface, different operational lever. */
+function AirdropQuotaCard() {
+  return (
+    <section className="border border-line bg-[#161616] p-4 flex flex-col gap-3">
+      <div>
+        <h2 className="text-ink font-mono text-sm">Airdrop quota</h2>
+        <p className="text-[11px] font-mono text-dim mt-1 leading-relaxed">
+          Per-artist daily cadence and weekly cap on airdrop mints. Defaults
+          to 1/day and 5/week; admin is always exempt.
+        </p>
+      </div>
+      <Link
+        href="/admin/airdrop-quota"
+        className="block border border-line bg-[#0a0a0a] px-3 py-2.5 hover:border-muted transition-colors"
+      >
+        <div className="text-xs font-mono text-ink uppercase tracking-wider">Quota config</div>
+        <div className="text-[10px] font-mono text-dim mt-1">edit the per-day and per-week limits.</div>
+      </Link>
+    </section>
   )
 }
 
