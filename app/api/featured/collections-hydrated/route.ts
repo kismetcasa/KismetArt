@@ -7,7 +7,7 @@ import { INPROCESS_API, type Moment } from '@/lib/inprocess'
 import { fetchEligibleTokens } from '@/lib/saleConfig'
 import { getHiddenCollectionsSet } from '@/lib/hiddenCollections'
 import { getHiddenMomentsSet } from '@/lib/hiddenMoments'
-import { getCollectionMeta, getCreatedMintsSet, getUserCollections } from '@/lib/kv'
+import { getCollectionMeta } from '@/lib/kv'
 import { enrichMomentsWithKismetMeta } from '@/lib/momentEnrichment'
 
 // Cache for 30s — sale-config eligibility depends on (now), and inner
@@ -55,7 +55,7 @@ interface HydratedFeaturedCollection {
 }
 
 export async function GET() {
-  const [raw, hiddenCollections, hiddenMoments, userCollections, createdMints] = await Promise.all([
+  const [raw, hiddenCollections, hiddenMoments] = await Promise.all([
     // Cap at the source so the Redis result + downstream Promise.all fanout
     // are bounded. Hidden-collection filtering can shrink the working set
     // below this; the dropped tail is just newest-N minus those hidden.
@@ -65,16 +65,7 @@ export async function GET() {
     }) as Promise<(string | number)[]>,
     getHiddenCollectionsSet(),
     getHiddenMomentsSet(),
-    // For inferring coverTokenId on collections registered before that
-    // field was persisted to CollectionMeta. A collection in the
-    // create-form set whose token-1 was marked as a created-mint at
-    // deploy time was deployed with cover-mint enabled → token 1 IS
-    // the cover. Both reads are memoized + cached so the cost is one
-    // SMEMBERS each per cache window, not per featured collection.
-    getUserCollections(),
-    getCreatedMintsSet(),
   ])
-  const userCollectionsSet = new Set(userCollections.map((a) => a.toLowerCase()))
 
   const refs: { address: string; featuredAt: number }[] = []
   for (let i = 0; i + 1 < raw.length; i += 2) {
@@ -148,25 +139,21 @@ export async function GET() {
           }
         }
 
-        // Resolve coverTokenId for the featured-row dedupe. Two paths:
-        //   * Explicit: persisted into CollectionMeta at deploy time by
-        //     /api/collections (collections registered after that change
-        //     ships).
-        //   * Inferred: for collections registered BEFORE the field was
-        //     persisted, the deploy-time markCreatedMint('addr:1') call
-        //     fires iff the create-form had mint-cover enabled. So a
-        //     create-form collection with `${addr}:1` in the created-
-        //     mints set deterministically had token 1 minted as its
-        //     cover, even though we never wrote coverTokenId for it.
-        const addrLower = ref.address.toLowerCase()
-        let coverTokenId: string | undefined = kvMeta?.coverTokenId
-        if (
-          !coverTokenId &&
-          userCollectionsSet.has(addrLower) &&
-          createdMints.has(`${addrLower}:1`)
-        ) {
-          coverTokenId = '1'
-        }
+        // coverTokenId from KV ONLY — explicitly persisted at deploy time
+        // by /api/collections when the user toggled "mint cover" on. We
+        // deliberately do NOT infer from the created-mints set: that set
+        // is also populated by every regular MintForm mint via mint-proxy,
+        // so "token-1 is in created-mints" can't distinguish a cover-mint
+        // from a creator who just happened to mint token #1 normally
+        // post-deploy. False-positive there would wrongly hide a regular
+        // mint from the featured row. For collections registered before
+        // coverTokenId was persisted (e.g. the Kismet Casa Rome 2026
+        // case), the URI + thumbhash signals in CollectionRow are the
+        // fallback — and they fire deterministically when the cover-mint
+        // setupAction reused contractURI as the cover token's tokenURI
+        // (CreateCollectionForm.tsx:562), which produces byte-identical
+        // metadata JSONs on the two sides of the comparison.
+        const coverTokenId: string | undefined = kvMeta?.coverTokenId
         const tlData = tlRes.ok ? await tlRes.json() : { moments: [] }
         const allPreviewMoments: Moment[] = Array.isArray(tlData.moments) ? tlData.moments : []
         // Strip individually-hidden moments inside the featured collection
