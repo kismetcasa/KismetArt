@@ -28,7 +28,7 @@ const MAX_EXPIRY_WINDOW = 10 * 60
 
 const intentNonceKey = (nonce: string) => `kismetart:intent-nonce:${nonce}`
 
-export interface IntentNonceIssue {
+interface IntentNonceIssue {
   nonce: string
   /** Unix seconds — client signs this exact value into the typed data. */
   expiresAt: number
@@ -41,7 +41,7 @@ export async function issueIntentNonce(): Promise<IntentNonceIssue> {
   return { nonce, expiresAt }
 }
 
-export type IntentVerifyResult =
+type IntentVerifyResult =
   | { ok: true }
   | { ok: false; error: string; status: number }
 

@@ -86,7 +86,7 @@ export const MINT_INTENT_TYPES = {
   ],
 } as const
 
-export interface MintIntentMessage {
+interface MintIntentMessage {
   action: IntentAction
   account: `0x${string}`
   collection: string

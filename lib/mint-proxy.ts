@@ -99,52 +99,47 @@ export async function proxyMintRequest(
 
   // Verify the caller actually controls body.account before any downstream
   // policy decisions key off it. Without this, the gate/blacklist/pause
-  // checks are bypassable by simply setting body.account = ADMIN_ADDRESS
-  // (which admin-bypasses every check) — and inprocess derives the
-  // executing smart wallet from this same field, so a successful spoof
-  // could mint Pass tokens via admin's smart wallet without the EOA's
-  // consent. The signature is verified against the same body-derived
-  // bindings the user signed, so any tampered field (price, splits,
-  // recipient, tokenURI, …) between client and server invalidates the
-  // signature.
-  if (account) {
-    const action: IntentAction = rateLimitKey === 'write' ? 'write' : 'mint'
-    const intentResult = await verifyIntent(
-      body.intent as IntentEnvelope | undefined,
-      action,
-      account,
-      body as MintBody,
-    )
-    if (!intentResult.ok) {
-      return NextResponse.json({ error: intentResult.error }, { status: intentResult.status })
-    }
+  // checks are bypassable by setting body.account = ADMIN_ADDRESS (which
+  // admin-bypasses every check) — and inprocess derives the executing
+  // smart wallet from this same field, so a successful spoof could mint
+  // Pass tokens via admin's smart wallet without the EOA's consent. The
+  // signature is verified against the same body-derived typed-data the
+  // user signed, so any tampered field (price, splits, recipient,
+  // tokenURI, …) between client and server invalidates the signature.
+  const action: IntentAction = rateLimitKey === 'write' ? 'write' : 'mint'
+  const intentResult = await verifyIntent(
+    body.intent as IntentEnvelope | undefined,
+    action,
+    account,
+    body as MintBody,
+  )
+  if (!intentResult.ok) {
+    return NextResponse.json({ error: intentResult.error }, { status: intentResult.status })
   }
 
-  // Platform-policy gates — only meaningful now that body.account is
-  // signature-bound above. Run in parallel; three independent reads.
-  // For new-deploy (hasNameAndUri without address) we use a sentinel zero
-  // target — the gate's pass-collection-target rejection branch doesn't
-  // fire there, so the check reduces to "does this caller have a valid Pass".
-  // Default-disabled: gate.enabled defaults false → hasGateAccess returns true.
-  if (account) {
-    const targetForGate =
-      typeof contractField?.address === 'string'
-        ? contractField.address
-        : '0x0000000000000000000000000000000000000000'
-    const [blocked, paused, gateOk] = await Promise.all([
-      isBlacklisted(account),
-      isPlatformPausedFor(account),
-      hasGateAccess(targetForGate, account),
-    ])
-    if (blocked) {
-      return NextResponse.json({ error: 'Address is blocked from minting' }, { status: 403 })
-    }
-    if (paused) {
-      return NextResponse.json({ error: 'Platform is temporarily paused', paused: true }, { status: 503 })
-    }
-    if (!gateOk) {
-      return NextResponse.json({ error: 'Kismet Creator pass required to mint' }, { status: 403 })
-    }
+  // Platform-policy gates — meaningful because body.account is signature-
+  // bound above. Three independent reads in parallel. For new-deploy
+  // (hasNameAndUri without address) we use a sentinel zero target so the
+  // gate's pass-collection-target rejection branch doesn't fire there;
+  // the check reduces to "does this caller have a valid Pass". Default-
+  // disabled: gate.enabled defaults false → hasGateAccess returns true.
+  const targetForGate =
+    typeof contractField?.address === 'string'
+      ? contractField.address
+      : '0x0000000000000000000000000000000000000000'
+  const [blocked, paused, gateOk] = await Promise.all([
+    isBlacklisted(account),
+    isPlatformPausedFor(account),
+    hasGateAccess(targetForGate, account),
+  ])
+  if (blocked) {
+    return NextResponse.json({ error: 'Address is blocked from minting' }, { status: 403 })
+  }
+  if (paused) {
+    return NextResponse.json({ error: 'Platform is temporarily paused', paused: true }, { status: 503 })
+  }
+  if (!gateOk) {
+    return NextResponse.json({ error: 'Kismet Creator pass required to mint' }, { status: 403 })
   }
 
   // body.name is our private hint for moment-meta; never forward to InProcess.
@@ -189,10 +184,8 @@ export async function proxyMintRequest(
   // a flaky read shouldn't deny a user whose state on chain is actually
   // fine. Inprocess remains the authoritative source on the call itself.
   const collectionAddress =
-    typeof (body?.contract as Record<string, unknown> | undefined)?.address === 'string'
-      ? ((body.contract as Record<string, unknown>).address as string)
-      : undefined
-  if (account && collectionAddress) {
+    typeof contractField?.address === 'string' ? (contractField.address as string) : undefined
+  if (collectionAddress) {
     const preflight = await checkSmartWalletAdmin(account, collectionAddress, [0n])
     if (preflight.status === 'unauthorized') {
       return NextResponse.json(
@@ -272,7 +265,7 @@ export async function proxyMintRequest(
     const tokenId = r.tokenId
     const txHash = r.hash
 
-    if (contractAddress && tokenId && account) {
+    if (contractAddress && tokenId) {
       // Only writing moments carry tokenContent; media mints forward
       // tokenMetadataURI instead.
       const tokenContent =

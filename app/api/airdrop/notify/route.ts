@@ -41,15 +41,16 @@ const IDEMPOTENCY_TTL_SECONDS = 30 * 24 * 60 * 60
 /**
  * Verify the on-chain receipt contains TransferSingle events from the
  * specified collection where `operator === sender` (the adminMint caller),
- * `from === 0x0` (real mint, not a re-transfer), `id === tokenId`, and
- * `to` covers every claimed recipient. Returns the SET of confirmed
- * recipients the caller is allowed to credit — any extra recipients in
- * the request that don't appear in the receipt are silently dropped, so
- * a partial-success airdrop (e.g. some recipients reverted) still
- * records the parts that succeeded.
+ * `from === 0x0` (real mint, not a re-transfer), and `id === tokenId`.
  *
- * Fail-closed on RPC, decode, or operator-mismatch — the request returns
- * 403 and no side effects run.
+ * Returns the FULL set of `to` addresses from matching logs as the
+ * authoritative recipient list. Fails when any claimed recipient is
+ * missing from the on-chain set (caller claim disagrees with reality),
+ * but extras present on-chain but not claimed are KEPT — the caller
+ * sees the full set so a race-grief attacker can't shrink the recipient
+ * list by POSTing first with a subset.
+ *
+ * Fail-closed on RPC, decode, receipt status, or operator-mismatch.
  */
 async function verifyAirdropOnChain(
   txHash: Hex,
