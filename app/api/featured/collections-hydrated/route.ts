@@ -16,9 +16,11 @@ import { enrichMomentsWithKismetMeta } from '@/lib/momentEnrichment'
 export const revalidate = 30
 
 const COLLECTION_PREVIEW_LIMIT = 20 // tokens fetched per featured collection
-// Up to 20 moments render inside the featured collection row — the desktop
-// grid scrolls horizontally so all of them fit in two rows of ~10 columns.
-const ROW_DISPLAY_LIMIT = 20
+// Up to 8 moments render inside the featured collection row — fills a
+// fixed 4×2 desktop grid alongside the cover card without scrolling.
+// Bump back toward COLLECTION_PREVIEW_LIMIT (and restore overflow-x-auto
+// in CollectionRow) when more moments should be visible per row.
+const ROW_DISPLAY_LIMIT = 8
 // Cap on featured collections hydrated per request. Bounds per-call cost
 // (inprocess fetches + RPC multicalls + total server-time) so latency
 // stays predictable as the curated set grows. zrange is featuredAt-desc,

@@ -52,13 +52,23 @@ interface MomentCardProps {
    * chip-free (the row's parent surface already shows the creator).
    */
   showCreator?: boolean
+  /**
+   * Opt-in: when set in compact mode, renders a "view" link in the
+   * action stack just above LIST/collect. Used by the featured-
+   * collection row so each mint card has a footer CTA mirroring the
+   * cover card's "view collection" — also incidentally fills the
+   * cell when the grid stretches cards to match the cover's height.
+   * Default = undefined (no view link rendered). Non-compact callers
+   * ignore this even when set.
+   */
+  viewLinkHref?: string
 }
 
 // Memoized — feeds render 18+ cards each doing 3-5 async lookups, so a
 // parent re-render would otherwise re-run them all. Default shallow
 // compare works: `moment` is stable across renders (held in parent
 // useState arrays); other props are primitives.
-function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreator }: MomentCardProps) {
+function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreator, viewLinkHref }: MomentCardProps) {
   // Default: creator chip follows compact mode (visible non-compact,
   // hidden compact). `showCreator` overrides either direction.
   const renderCreator = showCreator ?? !compact
@@ -441,6 +451,14 @@ function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreato
                     : maxSupply.toLocaleString()}
               </span>
             </div>
+          )}
+          {viewLinkHref && (
+            <Link
+              href={viewLinkHref}
+              className="w-full py-1 text-center text-[10px] font-mono tracking-wider uppercase border border-line text-dim hover:border-muted hover:text-ink transition-colors"
+            >
+              view
+            </Link>
           )}
           {owned > 0 ? (
             <ListButton
