@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getAddress, type Address } from 'viem'
 import { isValidTokenId } from '@/lib/address'
+import { canonicalMediaId } from '@/lib/media/canonicalMediaId'
 import { redis, FEATURED_COLLECTIONS_KEY } from '@/lib/redis'
 import { serverBaseClient } from '@/lib/rpc'
 import { INPROCESS_API, type Moment } from '@/lib/inprocess'
@@ -169,17 +170,35 @@ export async function GET() {
         // Filter to ETH- and USDC-eligible tokens in parallel. No `account`
         // here — the per-user "skip already-owned" pass runs client-side at
         // click time. Drop non-decimal token IDs first so BigInt() can't
-        // throw on a malformed inprocess response.
+        // throw on a malformed inprocess response. Eligibility runs against
+        // EVERY preview moment (not the visible-only set below) so the
+        // cover-mint is still counted in "collect all" totals.
         const tokenIds = previewMoments
           .map((m) => String(m.token_id))
           .filter(isValidTokenId)
           .map(BigInt)
+        // Filter the cover-mint OUT of the display list (but not the
+        // eligibility list above), so the slice that follows lands on
+        // ROW_DISPLAY_LIMIT visible moments. Without this, the cover would
+        // consume one of the 8 slice slots and a real mint at the tail
+        // (e.g. token #9 of a 9-token collection) would be invisibly
+        // dropped. Three OR'd signals — same as the historical client-side
+        // logic, just hoisted up so the slice math works.
+        const coverMediaId = canonicalMediaId(collection.metadata?.image)
+        const coverThumbhash = collection.metadata?.kismet_thumbhash?.trim() || undefined
+        const visibleMoments = previewMoments.filter((m) => {
+          if (coverTokenId && String(m.token_id) === coverTokenId) return false
+          if (coverMediaId && canonicalMediaId(m.metadata?.image) === coverMediaId) return false
+          const mt = m.metadata?.kismet_thumbhash?.trim()
+          if (coverThumbhash && mt && mt === coverThumbhash) return false
+          return true
+        })
         // Overlap the Redis MGETs in enrichMomentsWithKismetMeta with
         // the two RPC eligibility calls — they share no state.
         const [ethEligible, usdcEligible, displayMoments] = await Promise.all([
           tokenIds.length > 0 ? fetchEligibleTokens(client, address, tokenIds, 'eth') : [],
           tokenIds.length > 0 ? fetchEligibleTokens(client, address, tokenIds, 'usdc') : [],
-          enrichMomentsWithKismetMeta(previewMoments.slice(0, ROW_DISPLAY_LIMIT)),
+          enrichMomentsWithKismetMeta(visibleMoments.slice(0, ROW_DISPLAY_LIMIT)),
         ])
         const ethEligibleTotalWei = ethEligible
           .reduce((sum, e) => sum + e.pricePerToken, 0n)
