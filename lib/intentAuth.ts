@@ -2,18 +2,25 @@ import 'server-only'
 import { randomBytes } from 'crypto'
 import { redis } from './redis'
 import { serverBaseClient } from './rpc'
-import { buildIntentMessage, type IntentAction, type IntentEnvelope } from './intent'
+import {
+  buildMintIntent,
+  KISMET_INTENT_DOMAIN,
+  MINT_INTENT_TYPES,
+  type IntentAction,
+  type IntentEnvelope,
+  type MintBody,
+} from './intent'
 
 /**
- * Server-side intent-nonce + signature verification. The nonce is
- * single-use, 5 min TTL, atomically claimed via DEL only after signature
- * verification succeeds (matches the /api/auth/login pattern — a failed
- * signature attempt doesn't burn a legitimate user's nonce).
+ * Server-side intent-nonce + EIP-712 typed-data verification. The nonce
+ * is single-use, 5 min TTL, atomically claimed via DEL only AFTER a
+ * successful signature check (matches /api/auth/login — failed sigs
+ * don't burn a legitimate user's nonce).
  *
- * The signature is verified via viem.verifyMessage which transparently
- * handles both EOA (personal_sign) and ERC-1271 (smart-wallet contract)
- * signatures. ERC-1271 path is critical: most Kismet users hold smart
- * wallets (Coinbase, Farcaster) that don't sign with a raw EOA key.
+ * Signature path: serverBaseClient().verifyTypedData calls verifyHash
+ * which supports both EOA recovery and ERC-1271 contract signatures
+ * (smart wallets), so Kismet's Coinbase / Farcaster smart-wallet users
+ * are covered with no special-casing.
  */
 
 const NONCE_TTL_SECONDS = 5 * 60
@@ -23,7 +30,7 @@ const intentNonceKey = (nonce: string) => `kismetart:intent-nonce:${nonce}`
 
 export interface IntentNonceIssue {
   nonce: string
-  /** Unix seconds — client signs this exact value into the message. */
+  /** Unix seconds — client signs this exact value into the typed data. */
   expiresAt: number
 }
 
@@ -42,7 +49,7 @@ export async function verifyIntent(
   envelope: IntentEnvelope | undefined,
   action: IntentAction,
   account: string,
-  bindings: Record<string, string>,
+  body: MintBody,
 ): Promise<IntentVerifyResult> {
   if (
     !envelope ||
@@ -60,25 +67,24 @@ export async function verifyIntent(
   }
 
   const now = Math.floor(Date.now() / 1000)
-  // expiresAt MUST be in the future and within a sane window. Reject
-  // expired signatures (≤ now) and ridiculous future-dated ones (> now +
-  // 10 min) — both indicate tampering or a client bug.
   if (envelope.expiresAt <= now || envelope.expiresAt > now + MAX_EXPIRY_WINDOW) {
     return { ok: false, error: 'Intent expired or expiry out of range', status: 401 }
   }
 
-  const message = buildIntentMessage(action, bindings, envelope.nonce, envelope.expiresAt)
+  // Rebuild the exact typed-data message the client signed. Any tampered
+  // body field flips one of the typed slots and the signature fails.
+  const message = buildMintIntent(body, action, envelope.nonce, envelope.expiresAt)
 
-  // Use the PublicClient's verifyMessage action (not the top-level
-  // utility) so ERC-1271 smart-wallet signatures are honored — most
-  // Kismet users hold a Coinbase / Farcaster smart wallet that doesn't
-  // sign with a raw EOA key. The action falls back to plain EOA recovery
-  // when the address is a regular EOA.
+  // verifyTypedData handles both EOA recovery and ERC-1271 smart-wallet
+  // signatures (via the same verifyHash path verifyMessage uses).
   let valid = false
   try {
-    valid = await serverBaseClient().verifyMessage({
+    valid = await serverBaseClient().verifyTypedData({
       address: account as `0x${string}`,
-      message,
+      domain: KISMET_INTENT_DOMAIN,
+      types: MINT_INTENT_TYPES,
+      primaryType: 'MintIntent',
+      message: message as unknown as Record<string, unknown>,
       signature: envelope.signature as `0x${string}`,
     })
   } catch {
@@ -88,11 +94,10 @@ export async function verifyIntent(
     return { ok: false, error: 'Signature does not match account', status: 401 }
   }
 
-  // Atomic nonce consumption — runs AFTER signature verification so a
-  // failed-sig attempt doesn't burn the legitimate user's nonce. DEL
-  // returns 1 when the key existed (we just consumed it) or 0 when it
-  // didn't (already used by a concurrent request or expired between
-  // issue and now).
+  // Atomic nonce consumption — last step, so failed signatures don't burn
+  // the legitimate user's nonce. DEL returns 1 when we just consumed a
+  // valid nonce; 0 means it was already used by a concurrent request or
+  // expired between issue and now.
   const consumed = await redis.del(intentNonceKey(envelope.nonce)).catch(() => 0)
   if (consumed !== 1) {
     return { ok: false, error: 'Nonce already used or expired', status: 401 }

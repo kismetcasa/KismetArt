@@ -1,10 +1,11 @@
 'use client'
 
 import { useCallback } from 'react'
-import { useAccount, useSignMessage } from 'wagmi'
+import { useAccount, useSignTypedData } from 'wagmi'
 import {
-  buildIntentMessage,
-  buildMintBindings,
+  buildMintIntent,
+  KISMET_INTENT_DOMAIN,
+  MINT_INTENT_TYPES,
   type IntentAction,
   type IntentEnvelope,
   type MintBody,
@@ -12,28 +13,27 @@ import {
 
 interface SignMintIntentResult {
   intent: IntentEnvelope
-  /** Echoed back so the caller can spread it into the request body
-   *  unchanged — they should never construct the envelope themselves. */
+  /** Echoed so the caller can spread it into the request body. */
   account: string
 }
 
 /**
- * Client-side per-action intent signer. Pairs with /api/auth/intent-nonce
- * (issuer) and lib/intentAuth.verifyIntent (server verifier). One wallet
- * prompt produces a signature bound to the exact mint/write body — any
- * field the server cares about (collection, tokenURI, price, splits,
- * payoutRecipient, …) is canonicalized into the signed message via
- * buildMintBindings, so a man-in-the-middle who tampers with the body
- * after signing invalidates the signature.
+ * Client-side per-action intent signer using EIP-712 typed data. Pairs
+ * with /api/auth/intent-nonce (issuer) and lib/intentAuth.verifyIntent
+ * (server verifier). One wallet prompt produces a signature bound to the
+ * exact mint/write body — every economically-relevant field is its own
+ * typed slot, so newline / control-character injection into a value can't
+ * shift what the user "sees" vs what the server enforces. The domain
+ * separator also pins the signature to chainId 8453 (Base), so a signed
+ * intent obtained on a phishing site for a different chain is rejected.
  *
- * Replay-safe: the nonce is single-use server-side, consumed only after a
- * successful verification. The signature is therefore non-replayable
- * across requests AND non-substitutable across actions (the message
- * embeds the action name).
+ * Replay-safe: nonce is single-use server-side, consumed only after a
+ * successful verification. Action-bound (mint vs write) via the typed
+ * `action` field, so a write-signature can't be replayed as a mint.
  */
 export function useIntentAuth() {
   const { address } = useAccount()
-  const { signMessageAsync } = useSignMessage()
+  const { signTypedDataAsync } = useSignTypedData()
 
   const signMintIntent = useCallback(
     async (
@@ -42,9 +42,6 @@ export function useIntentAuth() {
     ): Promise<SignMintIntentResult> => {
       if (!address) throw new Error('Wallet not connected')
 
-      // Fetch a fresh nonce + expiry from the server. The expiry is what
-      // the server signed off on; we echo it back unchanged so the server
-      // can rebuild the same message during verification.
       const nonceRes = await fetch('/api/auth/intent-nonce', { method: 'POST' })
       if (!nonceRes.ok) throw new Error('Failed to obtain intent nonce')
       const { nonce, expiresAt } = (await nonceRes.json()) as {
@@ -52,16 +49,26 @@ export function useIntentAuth() {
         expiresAt: number
       }
 
-      const bindings = buildMintBindings({ ...body, account: address })
-      const message = buildIntentMessage(action, bindings, nonce, expiresAt)
-      const signature = await signMessageAsync({ message })
+      const message = buildMintIntent(
+        { ...body, account: address },
+        action,
+        nonce,
+        expiresAt,
+      )
+
+      const signature = await signTypedDataAsync({
+        domain: KISMET_INTENT_DOMAIN,
+        types: MINT_INTENT_TYPES,
+        primaryType: 'MintIntent',
+        message,
+      })
 
       return {
         intent: { signature, nonce, expiresAt },
         account: address,
       }
     },
-    [address, signMessageAsync],
+    [address, signTypedDataAsync],
   )
 
   return { signMintIntent }

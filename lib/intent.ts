@@ -1,22 +1,27 @@
 import { keccak256, toBytes } from 'viem'
 
 /**
- * Intent message format for per-action authorization. Pure functions only —
- * safe to import on both client (signMessage) and server (verifyMessage)
- * without pulling in redis/viem-server deps. Server-side verification
- * lives in lib/intentAuth.ts.
+ * Intent message format for per-action authorization, using EIP-712 typed
+ * data. Pure functions only — safe to import on both client (signTypedData)
+ * and server (verifyTypedData) without pulling in redis/viem-server deps.
  *
- * The signed message binds the user's intent to specific action params so
- * an attacker who intercepts the request can't substitute different
- * economically-relevant fields (price, recipient, splits, etc.) and have
- * the signature still verify. Both client and server build the same
- * message string from the same canonical body — any mismatch fails closed.
+ * Why EIP-712 instead of personal_sign over a string:
+ *   - Newline / control-char injection in any binding value is structurally
+ *     impossible (each field is its own typed slot, not concatenated into a
+ *     single text blob).
+ *   - The domain separator binds the signature to the Kismet+Base chain
+ *     combination — a signature obtained on a phishing site claiming to be
+ *     Kismet can be detected by wallets that surface the typed-data domain.
+ *   - Wallet UIs render typed data as a labeled table; harder to overlook
+ *     a tampered field than scanning a free-form text message.
+ *
+ * Server-side verification lives in lib/intentAuth.ts.
  */
 
 export type IntentAction = 'mint' | 'write'
 
 export interface IntentEnvelope {
-  /** Hex-encoded 0x-prefixed signature returned by personal_sign / EIP-1271. */
+  /** Hex-encoded 0x-prefixed signature returned by signTypedData / EIP-1271. */
   signature: string
   /** Server-issued single-use nonce echoed back unchanged. */
   nonce: string
@@ -44,11 +49,65 @@ export interface MintBody {
 }
 
 /**
+ * EIP-712 domain. The chainId binds to Base mainnet — a signature
+ * obtained for our domain cannot be replayed on any other chain because
+ * wallets compute a different domain separator per chainId. `name` and
+ * `version` are surfaced to wallet UIs that render the typed-data domain.
+ */
+export const KISMET_INTENT_DOMAIN = {
+  name: 'Kismet',
+  version: '1',
+  chainId: 8453,
+} as const
+
+/**
+ * Type schema for a mint/write intent. Every economically-relevant field
+ * is its own slot; the wallet renders these as a labeled table. Using
+ * `string` for numeric fields (salePrice, saleStart, etc.) sidesteps
+ * BigInt serialization quirks across wallets and keeps the type schema
+ * stable across optional/missing values (empty string is a valid string).
+ */
+export const MINT_INTENT_TYPES = {
+  MintIntent: [
+    { name: 'action', type: 'string' },
+    { name: 'account', type: 'address' },
+    { name: 'collection', type: 'string' },
+    { name: 'tokenURI', type: 'string' },
+    { name: 'tokenContentHash', type: 'string' },
+    { name: 'maxSupply', type: 'string' },
+    { name: 'salePrice', type: 'string' },
+    { name: 'saleCurrency', type: 'string' },
+    { name: 'saleStart', type: 'string' },
+    { name: 'saleEnd', type: 'string' },
+    { name: 'payoutRecipient', type: 'string' },
+    { name: 'splitsHash', type: 'string' },
+    { name: 'nonce', type: 'string' },
+    { name: 'expiresAt', type: 'uint256' },
+  ],
+} as const
+
+export interface MintIntentMessage {
+  action: IntentAction
+  account: `0x${string}`
+  collection: string
+  tokenURI: string
+  tokenContentHash: string
+  maxSupply: string
+  salePrice: string
+  saleCurrency: string
+  saleStart: string
+  saleEnd: string
+  payoutRecipient: string
+  splitsHash: string
+  nonce: string
+  expiresAt: bigint
+}
+
+/**
  * Canonical hash of the splits array. Lowercased, sorted by address,
  * joined as "addr:pct|addr:pct|...". Deterministic across client + server.
- * Returns the empty string when no splits are present so the caller can
- * include a constant placeholder in the message rather than branching on
- * presence (and accidentally producing a different message shape).
+ * Empty string when no splits — both sides produce the same empty value
+ * so they hash the same way.
  */
 export function hashSplits(splits: unknown): string {
   if (!Array.isArray(splits) || splits.length === 0) return ''
@@ -73,18 +132,25 @@ function asString(v: unknown): string {
 }
 
 /**
- * Reduce the mint/write request body to a canonical, deterministic set of
- * bindings. Both client and server call this on the same payload — any
- * mismatch surfaces as a signature failure.
+ * Reduce the mint/write body to a canonical EIP-712 message. Both client
+ * and server call this with the same body — any economically-relevant
+ * field tampering between the signer and the server produces a different
+ * message and the signature fails to verify.
  *
- * Bound fields are everything economically relevant: who, what collection,
- * what content, max supply, sale params (price + currency + window),
- * payout recipient, and the canonical splits hash. Display-only fields
- * (display name, comment) are NOT bound — they can't move funds and would
- * just bloat the wallet popup. createReferral is also NOT bound because
- * mint-proxy server-overwrites it from CREATE_REFERRAL regardless of body.
+ * Bound: account, collection (resolved to address or new-deploy form),
+ * tokenURI, tokenContent hash (so the writing body is bound by content
+ * not just title), maxSupply, sale config (price + currency + window),
+ * payoutRecipient, splits hash (canonical-sorted), nonce, expiresAt.
+ *
+ * Not bound: display name / title / comment / mintToCreatorCount.
+ * createReferral is server-overwritten by mint-proxy regardless of body.
  */
-export function buildMintBindings(body: MintBody): Record<string, string> {
+export function buildMintIntent(
+  body: MintBody,
+  action: IntentAction,
+  nonce: string,
+  expiresAt: number,
+): MintIntentMessage {
   const contract = (body.contract ?? {}) as { address?: unknown; name?: unknown; uri?: unknown }
   const token = (body.token ?? {}) as {
     tokenMetadataURI?: unknown
@@ -105,14 +171,12 @@ export function buildMintBindings(body: MintBody): Record<string, string> {
       ? contract.address.toLowerCase()
       : `new:${asString(contract.name)}:${asString(contract.uri)}`
 
-  // tokenContent is potentially large (writing moment body). Hash it instead
-  // of pasting the whole text into the signed message — the user sees a
-  // short hash in the wallet popup but the binding still covers every byte.
   const tokenContent = asString(token.tokenContent)
   const tokenContentHash = tokenContent ? keccak256(toBytes(tokenContent)) : ''
 
   return {
-    account: asString(body.account).toLowerCase(),
+    action,
+    account: asString(body.account).toLowerCase() as `0x${string}`,
     collection,
     tokenURI: asString(token.tokenMetadataURI),
     tokenContentHash,
@@ -123,30 +187,7 @@ export function buildMintBindings(body: MintBody): Record<string, string> {
     saleEnd: asString(salesConfig.saleEnd),
     payoutRecipient: asString(token.payoutRecipient).toLowerCase(),
     splitsHash: hashSplits(body.splits),
+    nonce,
+    expiresAt: BigInt(expiresAt),
   }
-}
-
-/**
- * Build the human-readable message string that the user signs. Keys are
- * sorted so client and server produce byte-identical strings. The wallet
- * popup renders this verbatim so the user can audit what they're
- * authorizing (collection, price, recipient, etc.) before tapping sign.
- */
-export function buildIntentMessage(
-  action: IntentAction,
-  bindings: Record<string, string>,
-  nonce: string,
-  expiresAt: number,
-): string {
-  const lines: string[] = [
-    `Kismet — Authorize ${action}`,
-    '',
-  ]
-  for (const key of Object.keys(bindings).sort()) {
-    lines.push(`${key}: ${bindings[key]}`)
-  }
-  lines.push('')
-  lines.push(`Nonce: ${nonce}`)
-  lines.push(`Expires: ${expiresAt}`)
-  return lines.join('\n')
 }

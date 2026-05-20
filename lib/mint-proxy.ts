@@ -14,7 +14,7 @@ import { hasGateAccess, isPlatformPausedFor } from './gate'
 import { isBlacklisted } from './blacklist'
 import { recordPlatformTx } from './pass-validity'
 import { verifyIntent } from './intentAuth'
-import { buildMintBindings, type IntentAction, type IntentEnvelope, type MintBody } from './intent'
+import type { IntentAction, IntentEnvelope, MintBody } from './intent'
 
 type SplitsValidation =
   | { kind: 'absent' }
@@ -46,8 +46,17 @@ export async function proxyMintRequest(
   } catch {
     return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   }
-  const account = typeof body?.account === 'string' ? body.account : undefined
-  if (account) void trackWallet(account)
+  // body.account is required: it's the address we verify against the
+  // intent signature, run gate/blacklist/pause checks on, and forward to
+  // inprocess as the smart-wallet target. Without it none of those layers
+  // can decide who's actually minting, so a no-account request would
+  // forward to inprocess without any platform-side authorization. Reject
+  // upfront; legitimate clients (MintForm) always include it.
+  if (typeof body?.account !== 'string' || !isAddress(body.account)) {
+    return NextResponse.json({ error: 'account is required and must be a valid address' }, { status: 400 })
+  }
+  const account = body.account
+  void trackWallet(account)
 
   const tokenObj = (body?.token as Record<string, unknown> | undefined) ?? {}
   const maxSupplyRaw = tokenObj.maxSupply ?? body?.maxSupply
@@ -100,12 +109,11 @@ export async function proxyMintRequest(
   // signature.
   if (account) {
     const action: IntentAction = rateLimitKey === 'write' ? 'write' : 'mint'
-    const bindings = buildMintBindings(body as MintBody)
     const intentResult = await verifyIntent(
       body.intent as IntentEnvelope | undefined,
       action,
       account,
-      bindings,
+      body as MintBody,
     )
     if (!intentResult.ok) {
       return NextResponse.json({ error: intentResult.error }, { status: intentResult.status })
