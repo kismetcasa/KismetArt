@@ -4,6 +4,7 @@ import { isAddress } from '@/lib/address'
 import { recordAirdrop } from '@/lib/airdrops'
 import { consumeQuota } from '@/lib/airdrop-quota'
 import { recordCollected } from '@/lib/collected'
+import { getGateConfig } from '@/lib/gate'
 import { getMomentMeta, writeNotification } from '@/lib/notifications'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
 import { redis } from '@/lib/redis'
@@ -216,24 +217,32 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true, idempotent: true })
   }
 
-  // Debit the artist's daily/weekly airdrop ledger atomically. Verified-
-  // and-locked above — by the time we reach here the request is proven
-  // to correspond to a real, unique on-chain event from this sender, so
-  // the debit reflects a real action they took.
-  const quota = await consumeQuota(sender, finalRecipients.length)
-  if (!quota.ok) {
-    return NextResponse.json(
-      {
-        error:
-          quota.reason === 'day_cap'
-            ? 'Daily airdrop limit reached'
-            : 'Weekly airdrop limit reached',
-        reason: quota.reason,
-        limits: quota.limits,
-        used: quota.used,
-      },
-      { status: 429 },
-    )
+  // Quota debit is SCOPED to the configured Pass collection — the Season
+  // 1 plan (1/day, 5/week per artist) is about throttling the rate Pass
+  // NFTs are given away, not about constraining moments airdropped from
+  // any other collection. Read gate config per request so a mid-flight
+  // admin update (e.g. switching Pass collections between phases)
+  // immediately applies to subsequent airdrops.
+  const gateConfig = await getGateConfig()
+  const isPassAirdrop =
+    !!gateConfig.passCollection && gateConfig.passCollection === collectionAddress
+
+  if (isPassAirdrop) {
+    const quota = await consumeQuota(sender, finalRecipients.length)
+    if (!quota.ok) {
+      return NextResponse.json(
+        {
+          error:
+            quota.reason === 'day_cap'
+              ? 'Daily airdrop limit reached'
+              : 'Weekly airdrop limit reached',
+          reason: quota.reason,
+          limits: quota.limits,
+          used: quota.used,
+        },
+        { status: 429 },
+      )
+    }
   }
 
   // tokenName lookup is best-effort — kept off the critical path so a meta
