@@ -28,11 +28,23 @@ export default function PassAdminPage() {
   const [busy, setBusy] = useState(false)
 
   useEffect(() => {
-    fetch('/api/admin/gate')
-      .then((r) => r.json())
-      .then((d: GateConfig) => setConfig(d))
-      .catch(() => {})
-  }, [])
+    if (!isAdmin) return
+    let cancelled = false
+    void (async () => {
+      // GET goes through withSession (same path as the pass-validity
+      // mutations below) so the HttpOnly cookie is attached on first
+      // load. Plain fetch() would 401 against the admin-gated route
+      // and the readonly gate-config block would silently stay hidden.
+      const cfg = await withSession(async () => {
+        const res = await fetch('/api/admin/gate')
+        if (!res.ok) return null
+        return (await res.json()) as GateConfig
+      })
+      if (cancelled || !cfg) return
+      setConfig(cfg)
+    })()
+    return () => { cancelled = true }
+  }, [isAdmin, withSession])
 
   async function fetchCurrent() {
     if (!lookupAddress || !isAddress(lookupAddress)) {

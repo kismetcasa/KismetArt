@@ -21,19 +21,30 @@ export default function AirdropQuotaAdminPage() {
 
   const [day, setDay] = useState('')
   const [week, setWeek] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    fetch('/api/admin/airdrop-quota')
-      .then((r) => r.json())
-      .then((d: Limits) => {
-        setDay(String(d.day ?? 1))
-        setWeek(String(d.week ?? 5))
+    if (!isAdmin) return
+    let cancelled = false
+    void (async () => {
+      // Same fail-closed pattern as /admin/gate: GET must use the same
+      // auth path as POST, and the form must not be operable until the
+      // real limits arrive — otherwise an admin who cancels SIWE then
+      // signs the Save re-prompt would post the JS defaults over the
+      // real config.
+      const limits = await withSession(async () => {
+        const res = await fetch('/api/admin/airdrop-quota')
+        if (!res.ok) return null
+        return (await res.json()) as Limits
       })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
+      if (cancelled || !limits) return
+      setDay(String(limits.day ?? 1))
+      setWeek(String(limits.week ?? 5))
+      setLoaded(true)
+    })()
+    return () => { cancelled = true }
+  }, [isAdmin, withSession])
 
   async function handleSave() {
     const dayNum = parseInt(day, 10)
@@ -117,7 +128,7 @@ export default function AirdropQuotaAdminPage() {
         </p>
       </div>
 
-      {loading ? (
+      {!loaded ? (
         <p className="text-xs font-mono text-muted">loading limits…</p>
       ) : (
         <>

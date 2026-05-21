@@ -24,20 +24,33 @@ export default function GateAdminPage() {
   const [enabled, setEnabled] = useState(false)
   const [passCollection, setPassCollection] = useState('')
   const [paused, setPaused] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loaded, setLoaded] = useState(false)
   const [saving, setSaving] = useState(false)
 
   useEffect(() => {
-    fetch('/api/admin/gate')
-      .then((r) => r.json())
-      .then((d: GateConfig) => {
-        setEnabled(!!d.enabled)
-        setPassCollection(d.passCollection ?? '')
-        setPaused(!!d.paused)
+    if (!isAdmin) return
+    let cancelled = false
+    void (async () => {
+      // GET goes through withSession (same path as POST below) so the
+      // HttpOnly cookie is attached on first load. Plain fetch() here
+      // would 401 against the admin-gated route — UI would silently
+      // keep the useState defaults, and a subsequent Save would
+      // overwrite real config with those defaults. `loaded` gates the
+      // form so even a cancelled SIWE prompt can't lead to a defaults
+      // overwrite via a later re-prompt during Save.
+      const cfg = await withSession(async () => {
+        const res = await fetch('/api/admin/gate')
+        if (!res.ok) return null
+        return (await res.json()) as GateConfig
       })
-      .catch(() => {})
-      .finally(() => setLoading(false))
-  }, [])
+      if (cancelled || !cfg) return
+      setEnabled(!!cfg.enabled)
+      setPassCollection(cfg.passCollection ?? '')
+      setPaused(!!cfg.paused)
+      setLoaded(true)
+    })()
+    return () => { cancelled = true }
+  }, [isAdmin, withSession])
 
   async function handleSave() {
     if (passCollection && !isAddress(passCollection)) {
@@ -118,7 +131,7 @@ export default function GateAdminPage() {
         </p>
       </div>
 
-      {loading ? (
+      {!loaded ? (
         <p className="text-xs font-mono text-muted">loading config…</p>
       ) : (
         <>
