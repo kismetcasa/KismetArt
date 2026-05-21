@@ -64,9 +64,20 @@ export async function getValidBalance(collection: string, address: string): Prom
 }
 
 async function adjustValidBalance(collection: string, address: string, delta: number): Promise<void> {
-  // INCRBY is atomic. We do NOT clamp negative values back to 0 here — that
-  // would be a non-atomic check-then-write race. Reads clamp via Math.max(0).
-  await redis.incrby(keyValidBalance(collection, address), delta)
+  // INCRBY is atomic and returns the post-write value. We do NOT clamp
+  // negative values back to 0 here — that would be a non-atomic check-
+  // then-write race. Reads clamp via Math.max(0).
+  const newBalance = (await redis.incrby(keyValidBalance(collection, address), delta)) as number
+  // Clear the admin-grant flag once validBalance hits zero. Without this
+  // an admin-granted address that later sells / transfers their Pass
+  // would keep the flag persisting past the depletion, and any subsequent
+  // legitimate acquisition (airdrop, mint, collect) would still skip live
+  // reconciliation under the stale flag — meaning a webhook-drift bug
+  // wouldn't be caught for that address. Best-effort: the clamp on read
+  // still applies if the DEL fails.
+  if (newBalance <= 0) {
+    await redis.del(keyAdminGrant(collection, address)).catch(() => {})
+  }
 }
 
 /** Admin override: set the validBalance for an address to an explicit value.
