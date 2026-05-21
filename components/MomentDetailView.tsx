@@ -510,7 +510,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
         const text = creatorName
           ? `Collect ${titleStr} by ${creatorName}`
           : `Collect ${titleStr}`
-        await sdk.actions.composeCast({ text, embeds: [url] })
+        await sdk.actions.composeCast({ text, embeds: [url], channelKey: 'kismet' })
         return
       } catch { /* fall through to clipboard */ }
     }
