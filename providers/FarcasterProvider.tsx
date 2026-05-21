@@ -85,7 +85,10 @@ function isPotentialMiniAppEnv(): boolean {
  *
  * Returns a teardown that restores the original fetch.
  */
-function installFetchInterceptor(getToken: () => Promise<string | null>): () => void {
+function installFetchInterceptor(
+  getToken: () => Promise<string | null>,
+  refreshToken: () => Promise<string | null>,
+): () => void {
   const original = window.fetch.bind(window)
   const ownOrigin = window.location.origin
 
@@ -104,12 +107,30 @@ function installFetchInterceptor(getToken: () => Promise<string | null>): () => 
     }
     if (!isOwnOrigin) return original(input, init)
 
-    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
-    if (!headers.has('authorization')) {
-      const token = await getToken()
-      if (token) headers.set('authorization', `Bearer ${token}`)
+    const baseHeaders = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
+    let attached: string | null = null
+    if (!baseHeaders.has('authorization')) {
+      attached = await getToken()
+      if (attached) baseHeaders.set('authorization', `Bearer ${attached}`)
     }
-    return original(input, { ...init, headers })
+    let response = await original(input, { ...init, headers: baseHeaders })
+
+    // Industry-standard single-retry on 401: Apollo's onError link,
+    // Axios response interceptors, RTK Query reauth — all do this.
+    // Transparent to every consumer; the cost is one extra getToken()
+    // call per 401, paid once per stale-JWT cycle. Compare returned
+    // token to the one we attached so a legitimately-unauthenticated
+    // request (server rejects every JWT for this user) doesn't loop —
+    // if refresh returns the same token, the 401 wasn't expiry-driven.
+    if (response.status === 401 && attached) {
+      const fresh = await refreshToken()
+      if (fresh && fresh !== attached) {
+        const retryHeaders = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
+        retryHeaders.set('authorization', `Bearer ${fresh}`)
+        response = await original(input, { ...init, headers: retryHeaders })
+      }
+    }
+    return response
   }
 
   window.fetch = wrapped
@@ -213,14 +234,21 @@ export function FarcasterProvider({ children }: { children: ReactNode }) {
         // below picks up the Bearer token automatically. The token
         // getter is lazy — getToken() returns the in-memory token
         // when one is cached, otherwise acquires a fresh one.
-        teardownFetch = installFetchInterceptor(async () => {
+        // Quick Auth caches the JWT in memory and refreshes when it
+        // detects expiry. Both arguments are the same call — the
+        // interceptor invokes the second one only after the server
+        // returned 401, which prompts the SDK to revalidate against
+        // the host. If the SDK's own cache check missed the expiry
+        // (clock skew, key rotation, etc.) this catches it.
+        const getQuickAuthToken = async (): Promise<string | null> => {
           try {
             const result = await sdk.quickAuth.getToken()
             return result?.token ?? null
           } catch {
             return null
           }
-        })
+        }
+        teardownFetch = installFetchInterceptor(getQuickAuthToken, getQuickAuthToken)
 
         // Parallelize everything we need before ready(). The host's
         // splash screen is showing throughout this block — every ms
