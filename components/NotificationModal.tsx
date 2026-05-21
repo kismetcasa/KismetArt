@@ -5,6 +5,7 @@ import { X, Settings, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { NotificationFeed } from './NotificationFeed'
 import { ProfileAvatar } from './ProfileAvatar'
+import { SignInPrompt } from './SignInPrompt'
 import { useUploadSession } from '@/hooks/useUploadSession'
 import { useEscapeKey } from '@/hooks/useEscapeKey'
 import { useBodyScrollLock } from '@/hooks/useBodyScrollLock'
@@ -65,11 +66,10 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
   // still works without an extra trip to settings.
   const [pushMaster, setPushMaster] = useState<boolean>(false)
   // 401 from any settings-tab GET below flips authRequired so the tab
-  // renders a sign-in button instead of three blank sections. Same
+  // renders <SignInPrompt /> instead of three blank sections. Same
   // wallet-connected-but-no-session-cookie path that NotificationFeed
   // handles for its own initial GET.
   const [authRequired, setAuthRequired] = useState(false)
-  const [signingIn, setSigningIn] = useState(false)
 
   useBodyScrollLock()
   useEscapeKey(onClose)
@@ -135,23 +135,6 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
     setAuthRequired(false)
     refetchSettings()
   }, [tab, refetchSettings])
-
-  // Wallet-connected users without a session cookie need to SIWE
-  // before the settings GETs will succeed. Same UX pattern as
-  // NotificationFeed's auth-required empty state.
-  async function handleSignIn() {
-    if (signingIn) return
-    setSigningIn(true)
-    try {
-      await ensureSession()
-      setAuthRequired(false)
-      refetchSettings()
-    } catch (err) {
-      toast.error('Sign in failed', { description: humanError(err) })
-    } finally {
-      setSigningIn(false)
-    }
-  }
 
   async function handleUnmute(actor: string) {
     const previous = muted
@@ -296,16 +279,13 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
           {tab === 'feed' ? (
             <NotificationFeed />
           ) : authRequired ? (
-            <div className="flex flex-col items-center gap-3 py-12">
-              <p className="text-xs font-mono text-muted">sign in to manage notifications</p>
-              <button
-                onClick={handleSignIn}
-                disabled={signingIn}
-                className="px-4 py-1.5 text-xs font-mono border border-line text-dim hover:text-ink hover:border-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {signingIn ? 'signing…' : 'sign in'}
-              </button>
-            </div>
+            <SignInPrompt
+              message="sign in to manage notifications"
+              onSignedIn={() => {
+                setAuthRequired(false)
+                refetchSettings()
+              }}
+            />
           ) : (
             <div className="p-4 flex flex-col gap-6">
               <div>
