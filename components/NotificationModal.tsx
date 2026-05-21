@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { X, Settings, Loader2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { NotificationFeed } from './NotificationFeed'
@@ -64,23 +64,38 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
   // notifications_enabled webhook so the "Add Kismet" prompt's promise
   // still works without an extra trip to settings.
   const [pushMaster, setPushMaster] = useState<boolean>(false)
+  // 401 from any settings-tab GET below flips authRequired so the tab
+  // renders a sign-in button instead of three blank sections. Same
+  // wallet-connected-but-no-session-cookie path that NotificationFeed
+  // handles for its own initial GET.
+  const [authRequired, setAuthRequired] = useState(false)
+  const [signingIn, setSigningIn] = useState(false)
 
   useBodyScrollLock()
   useEscapeKey(onClose)
 
-  // Fetch mute lists + push prefs when settings tab is first opened
-  useEffect(() => {
-    if (tab !== 'settings') return
+  // Fetch mute lists + push prefs for the settings tab. Extracted so
+  // the sign-in handler below can re-run all three after a successful
+  // SIWE. Each .then guards for 401 → authRequired = true; the
+  // existing .catch paths still null out the lists on any other
+  // failure so partial outages don't show stale data.
+  const refetchSettings = useCallback(() => {
     setMutedLoading(true)
     setTypesLoading(true)
     setPushLoading(true)
     fetch('/api/notifications/mute', { credentials: 'same-origin' })
-      .then((r) => r.ok ? r.json() : Promise.reject())
+      .then((r) => {
+        if (r.status === 401) { setAuthRequired(true); return Promise.reject() }
+        return r.ok ? r.json() : Promise.reject()
+      })
       .then((d) => setMuted(Array.isArray(d.muted) ? d.muted : []))
       .catch(() => setMuted([]))
       .finally(() => setMutedLoading(false))
     fetch('/api/notifications/mute-type', { credentials: 'same-origin' })
-      .then((r) => r.ok ? r.json() : Promise.reject())
+      .then((r) => {
+        if (r.status === 401) { setAuthRequired(true); return Promise.reject() }
+        return r.ok ? r.json() : Promise.reject()
+      })
       .then((d) => {
         setMutedTypes(Array.isArray(d.muted) ? d.muted : [])
         setMuteableTypes(Array.isArray(d.muteable) ? d.muteable : [])
@@ -91,7 +106,10 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
       })
       .finally(() => setTypesLoading(false))
     fetch('/api/notifications/push-types', { credentials: 'same-origin' })
-      .then((r) => r.ok ? r.json() : Promise.reject())
+      .then((r) => {
+        if (r.status === 401) { setAuthRequired(true); return Promise.reject() }
+        return r.ok ? r.json() : Promise.reject()
+      })
       .then((d) => {
         setPushEnabled(Array.isArray(d.enabled) ? d.enabled : [])
         setPushAllTypes(Array.isArray(d.all) ? d.all : [])
@@ -107,7 +125,33 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
         setPushMaster(false)
       })
       .finally(() => setPushLoading(false))
-  }, [tab])
+  }, [])
+
+  // Fetch mute lists + push prefs when settings tab is first opened.
+  // Reset authRequired on every tab switch so the empty state doesn't
+  // stick around from a stale check.
+  useEffect(() => {
+    if (tab !== 'settings') return
+    setAuthRequired(false)
+    refetchSettings()
+  }, [tab, refetchSettings])
+
+  // Wallet-connected users without a session cookie need to SIWE
+  // before the settings GETs will succeed. Same UX pattern as
+  // NotificationFeed's auth-required empty state.
+  async function handleSignIn() {
+    if (signingIn) return
+    setSigningIn(true)
+    try {
+      await ensureSession()
+      setAuthRequired(false)
+      refetchSettings()
+    } catch (err) {
+      toast.error('Sign in failed', { description: humanError(err) })
+    } finally {
+      setSigningIn(false)
+    }
+  }
 
   async function handleUnmute(actor: string) {
     const previous = muted
@@ -251,6 +295,17 @@ export function NotificationModal({ onClose }: NotificationModalProps) {
         <div className="flex-1 overflow-y-auto" style={{ paddingBottom: 'var(--safe-bottom)' }}>
           {tab === 'feed' ? (
             <NotificationFeed />
+          ) : authRequired ? (
+            <div className="flex flex-col items-center gap-3 py-12">
+              <p className="text-xs font-mono text-muted">sign in to manage notifications</p>
+              <button
+                onClick={handleSignIn}
+                disabled={signingIn}
+                className="px-4 py-1.5 text-xs font-mono border border-line text-dim hover:text-ink hover:border-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {signingIn ? 'signing…' : 'sign in'}
+              </button>
+            </div>
           ) : (
             <div className="p-4 flex flex-col gap-6">
               <div>
