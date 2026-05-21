@@ -2,6 +2,7 @@ import { createClient } from '@farcaster/quick-auth'
 import { redis } from './redis'
 import { SITE_URL } from './siteUrl'
 import { getVerifiedAddressesByFid } from './farcasterProfile'
+import { getFidProfile } from './profile'
 
 // Quick Auth verifies JWTs **locally** via asymmetric signature check
 // against Farcaster's published public key — no per-request network round
@@ -88,6 +89,23 @@ export async function getPrimaryAddress(fid: number): Promise<string | null> {
  * primary rather than serving a no-longer-valid identity.
  */
 export async function getKismetIdentityAddress(fid: number): Promise<string | null> {
+  // FidProfile.currentAddress is the source of truth for miniapp-first
+  // users (their profile data is FID-keyed, the address is just a
+  // pointer). Re-validate against current verifications below to
+  // guard against a stale pointer if the user un-verified the chosen
+  // wallet on Farcaster.
+  const fidProfile = await getFidProfile(fid)
+  if (fidProfile?.currentAddress) {
+    const verified = await getVerifiedAddressesByFid(fid)
+    if (verified.includes(fidProfile.currentAddress)) return fidProfile.currentAddress
+    // Stale — fall through. Don't try to "fix" the FidProfile here;
+    // the next /api/me/identity call will replace it.
+  }
+
+  // Legacy pointer: kismetart:fc:identity:{fid} predates FidProfile.
+  // Still read for users who picked an identity before FidProfile
+  // existed but never edited their profile (so no FidProfile got
+  // created). Eventually drains as those users edit or re-pick.
   let stored: string | null = null
   try {
     const v = await redis.get<string>(identityAddressKey(fid))
@@ -96,9 +114,6 @@ export async function getKismetIdentityAddress(fid: number): Promise<string | nu
     // Redis blip — fall through to primary.
   }
   if (stored) {
-    // Re-validate against current verifications. Cached in Redis with
-    // a 1h TTL (see lib/farcasterProfile) so this is one cache read in
-    // the common case.
     const verified = await getVerifiedAddressesByFid(fid)
     if (verified.includes(stored)) return stored
     // Stale choice — drop it and fall through. Avoids a permanent

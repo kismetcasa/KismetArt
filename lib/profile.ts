@@ -9,8 +9,30 @@ export interface Profile {
   updatedAt: number
 }
 
+/**
+ * FID-keyed profile, used for "miniapp-first" Farcaster users — those
+ * who created their Kismet profile inside the Mini App and never had
+ * an address-keyed record. The user's identity follows their FID, and
+ * `currentAddress` (always an FC-verified address) is the address
+ * currently representing them: drives the profile URL, the Nav avatar,
+ * share cards, etc. WalletsPanel switches it freely without losing
+ * data because the username/avatar live alongside the FID, not the
+ * address. "Web-first" users (existing address-keyed Profile from
+ * before they connected FC) stay on the address-keyed path — they
+ * see no chooser and their identity stays anchored.
+ */
+export interface FidProfile {
+  fid: number
+  currentAddress: string
+  username?: string
+  avatarUrl?: string
+  updatedAt: number
+}
+
 const keyByAddress = (address: string) =>
   `kismetart:profile:${address.toLowerCase()}`
+const keyByFid = (fid: number) =>
+  `kismetart:profile:fid:${fid}`
 const keyNonce = (address: string) =>
   `kismetart:nonce:${address.toLowerCase()}`
 export const KEY_PROFILES = 'kismetart:profiles'
@@ -55,6 +77,59 @@ export async function upsertProfile(
   await Promise.all([
     redis.set(keyByAddress(address), JSON.stringify(updated)),
     redis.sadd(KEY_PROFILES, address.toLowerCase()),
+  ])
+  return updated
+}
+
+export async function getFidProfile(fid: number): Promise<FidProfile | null> {
+  const raw = await redis.get<string | FidProfile>(keyByFid(fid))
+  if (!raw) return null
+  const parsed: FidProfile = typeof raw === 'string' ? JSON.parse(raw) : raw
+  return parsed
+}
+
+export async function upsertFidProfile(
+  fid: number,
+  currentAddress: string,
+  data: Partial<Pick<FidProfile, 'username' | 'avatarUrl'>>,
+): Promise<FidProfile> {
+  const existing = await getFidProfile(fid)
+  const updated: FidProfile = {
+    fid,
+    currentAddress: currentAddress.toLowerCase(),
+    username: data.username ?? existing?.username,
+    avatarUrl: data.avatarUrl ?? existing?.avatarUrl,
+    updatedAt: Date.now(),
+  }
+  await Promise.all([
+    redis.set(keyByFid(fid), JSON.stringify(updated)),
+    // Index the current address in the master profiles SET so address-
+    // prefix search still surfaces FID-based users.
+    redis.sadd(KEY_PROFILES, updated.currentAddress),
+  ])
+  return updated
+}
+
+/**
+ * Move the FidProfile's `currentAddress` pointer without touching
+ * username/avatar. Called by /api/me/identity when the user switches
+ * which of their FC-verified wallets represents them. No-op if the
+ * FID has no profile yet — caller should `upsertFidProfile` first.
+ */
+export async function setFidCurrentAddress(
+  fid: number,
+  currentAddress: string,
+): Promise<FidProfile | null> {
+  const existing = await getFidProfile(fid)
+  if (!existing) return null
+  const updated: FidProfile = {
+    ...existing,
+    currentAddress: currentAddress.toLowerCase(),
+    updatedAt: Date.now(),
+  }
+  await Promise.all([
+    redis.set(keyByFid(fid), JSON.stringify(updated)),
+    redis.sadd(KEY_PROFILES, updated.currentAddress),
   ])
   return updated
 }
