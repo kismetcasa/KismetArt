@@ -40,7 +40,6 @@ type ListConfig = {
   endpoint: string
   addLabel: string
   removeLabel: string
-  inputId: string
 }
 
 const LISTS: ListConfig[] = [
@@ -52,7 +51,6 @@ const LISTS: ListConfig[] = [
     endpoint: '/api/admin/blacklist',
     addLabel: 'block',
     removeLabel: 'unblock',
-    inputId: 'mod-actions-input',
   },
   {
     id: 'pass',
@@ -62,7 +60,6 @@ const LISTS: ListConfig[] = [
     endpoint: '/api/admin/pass-blacklist',
     addLabel: 'block',
     removeLabel: 'unblock',
-    inputId: 'mod-pass-input',
   },
   {
     id: 'hidden',
@@ -72,7 +69,6 @@ const LISTS: ListConfig[] = [
     endpoint: '/api/admin/hidden-users',
     addLabel: 'hide',
     removeLabel: 'unhide',
-    inputId: 'mod-hidden-input',
   },
 ]
 
@@ -213,7 +209,6 @@ function ModerationListSection({ config }: { config: ListConfig }) {
 
       <div className="flex gap-2">
         <input
-          id={config.inputId}
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value.trim())}

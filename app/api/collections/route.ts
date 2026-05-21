@@ -253,26 +253,25 @@ export async function GET(req: NextRequest) {
     if (!isAddress(artist)) {
       return errorResponse(400, 'Invalid artist address')
     }
-    // Hidden-user gate: if the queried artist is admin-hidden and the
-    // viewer isn't them, return an empty list. Same "creator sees their
-    // own content on their own profile" exception as the per-content
-    // hide — admin hides them from the public, not from themselves.
-    const [hiddenUsersForArtist, viewerForGate] = await Promise.all([
-      getHiddenUsersSet(),
-      getSessionAddress(req),
-    ])
     const artistLower = artist.toLowerCase()
-    if (
-      hiddenUsersForArtist.has(artistLower)
-      && viewerForGate?.toLowerCase() !== artistLower
-    ) {
+    // Hoist session + hidden-users gate above try/catch so both the
+    // happy path and the inprocess-down fallback share the same viewer
+    // identity and admin-hide check (and getSessionAddress's JWT verify
+    // only runs once per request). Same own-profile exception as the
+    // per-content hide system.
+    const [viewer, hiddenUsers] = await Promise.all([
+      getSessionAddress(req),
+      getHiddenUsersSet(),
+    ])
+    const isOwnProfile = viewer?.toLowerCase() === artistLower
+    if (hiddenUsers.has(artistLower) && !isOwnProfile) {
       return NextResponse.json({ collections: [] }, {
         headers: { 'Cache-Control': 'private, no-store' },
       })
     }
     const url = inprocessUrl('/collections', { artist, limit: 100 })
     try {
-      const [res, userCreated, kvOwned, hiddenSet, viewer] = await Promise.all([
+      const [res, userCreated, kvOwned, hiddenSet] = await Promise.all([
         fetch(url, {
           headers: { Accept: 'application/json' },
           next: { revalidate: 120 },
@@ -280,14 +279,11 @@ export async function GET(req: NextRequest) {
         getUserCollections(),
         getCollectionsByArtist(artist),
         getHiddenCollectionsSet(),
-        getSessionAddress(req),
       ])
       const text = await res.text()
       const data = JSON.parse(text)
       // Filter to curated only — auto-deploy wrappers go in Mints feed.
       const userSet = new Set(userCreated.map((a: string) => a.toLowerCase()))
-      // Artist sees their own hidden collections so they can unhide.
-      const isOwnProfile = viewer?.toLowerCase() === artist.toLowerCase()
       const inprocessAddrs = new Set<string>()
       if (Array.isArray(data.collections)) {
         data.collections = data.collections.filter(
@@ -322,13 +318,12 @@ export async function GET(req: NextRequest) {
         headers: { 'Cache-Control': 'private, no-store' },
       })
     } catch {
-      // Inprocess down — fall back to local KV only.
-      const [kvOwned, hiddenSet, viewer] = await Promise.all([
+      // Inprocess down — fall back to local KV only. viewer + isOwnProfile
+      // are already in scope from the gate hoist above.
+      const [kvOwned, hiddenSet] = await Promise.all([
         getCollectionsByArtist(artist),
         getHiddenCollectionsSet(),
-        getSessionAddress(req),
       ])
-      const isOwnProfile = viewer?.toLowerCase() === artist.toLowerCase()
       return NextResponse.json(
         {
           collections: kvOwned

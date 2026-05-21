@@ -249,25 +249,18 @@ export async function GET(req: NextRequest) {
     return errorResponse(400, 'Invalid seller address')
   }
 
-  // Hidden-users filter for public lookups. Single-token lookup is the
-  // exception — it's keyed by an explicit (collection, tokenId, seller)
-  // tuple chosen by the caller; if the caller already knows the seller
-  // address, hiding the result tells them nothing they don't already
-  // know AND breaks BuyButton flows where the buyer is looking up a
-  // listing they intend to fulfill on-chain. The hide is for feed
-  // surfaces, not direct deeplinks.
   const hiddenUsers = await getHiddenUsersSet()
 
-  // Single-token lookup — requires seller to identify which listing
+  // Single-token lookup — direct deeplink, not filtered (matches the
+  // single-collection lookup precedent in /api/collections; BuyButton
+  // needs to be able to resolve a known listing to fulfill).
   if (collection && tokenId && seller) {
     const listing = await getListingForToken(collection, tokenId, seller)
     return NextResponse.json({ listing: listing ?? null })
   }
 
-  // Seller profile lookup — all active listings by a specific seller.
-  // If the seller themselves is hidden, return an empty list (no leak
-  // of "this user exists but is hidden"; matches how hiddenCollections
-  // filters a collections lookup).
+  // Seller-scope lookup — empty list when the seller is admin-hidden,
+  // so we don't leak "this user exists but is hidden".
   if (seller && !collection && !tokenId) {
     if (hiddenUsers.has(seller.toLowerCase())) {
       return NextResponse.json({ listings: [], pagination: { page: 1, limit: 0, total: 0, total_pages: 1 } })
@@ -277,10 +270,9 @@ export async function GET(req: NextRequest) {
   }
 
   const { listings, total } = await getListings({ page, limit, collection })
-  // Strip listings whose seller is on the hidden-users set. We filter
-  // post-pagination because the underlying store doesn't index by
-  // visibility; total may overcount by the number of hidden listings
-  // on the page but that's acceptable for the marketplace feed.
+  // Filter post-pagination; the store isn't indexed by visibility, so
+  // `total` may overcount hidden listings on this page. Acceptable for
+  // the marketplace feed.
   const visibleListings = hiddenUsers.size === 0
     ? listings
     : listings.filter((l) => !hiddenUsers.has(l.seller.toLowerCase()))
