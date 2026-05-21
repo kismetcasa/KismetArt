@@ -1,7 +1,15 @@
 import { redis } from './redis'
 import { serverBaseClient } from './rpc'
+import { isPassBlacklisted } from './pass-blacklist'
 
 const PROCESSED_TTL = 30 * 24 * 60 * 60 // 30 days
+// Platform-tx flags live long enough to cover any plausible Alchemy
+// delivery delay (typically seconds-to-minutes; SLA spec is hours). 90
+// days bounds the keyspace — without it, every successful mint, collect,
+// and airdrop wrote a permanent Redis key, even for non-Pass-collection
+// targets where the flag is never consulted (the webhook filters by
+// passCollection, so the flag sits unread for off-Pass mints).
+const PLATFORM_TX_TTL = 90 * 24 * 60 * 60
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
 
 const keyPlatformTx = (txHash: string) =>
@@ -40,7 +48,7 @@ export async function recordPlatformTx(txHash: string): Promise<void> {
   for (const delay of delays) {
     if (delay) await new Promise((r) => setTimeout(r, delay))
     try {
-      await redis.set(keyPlatformTx(txHash), '1')
+      await redis.set(keyPlatformTx(txHash), '1', { ex: PLATFORM_TX_TTL })
       return
     } catch (err) {
       lastErr = err
@@ -159,6 +167,14 @@ export async function processTransfer(params: {
     await adjustValidBalance(collection, from, -amount)
   }
   if (platform) {
+    // Skip the credit step if `to` is on the pass-blacklist. The Pass
+    // moves to them on-chain regardless, but for platform purposes they
+    // gain no validity. `from`'s decrement above still applies — moving
+    // the Pass to a blacklisted address takes validity AWAY from the
+    // sender just as if they'd transferred it off-platform. Pairs with
+    // hasValidPass's short-circuit so an admin-listed address stays
+    // denied even if a webhook event somehow incremented them.
+    if (await isPassBlacklisted(to)) return
     await adjustValidBalance(collection, to, amount)
   }
 }
@@ -173,6 +189,14 @@ export async function processTransfer(params: {
  *  (promotional access before a Pass is airdropped) get silently nullified by
  *  balanceOfBatch. The grant is the documented intent of the override path. */
 export async function hasValidPass(collection: string, address: string): Promise<boolean> {
+  // Pass-blacklist short-circuit: even if the address holds the Pass
+  // on-chain and the ledger says they have a positive balance, an
+  // admin-listed address is denied creator access. This is the moderation
+  // overlay that operates on top of the ledger; it lets admin revoke
+  // validity without nuking the ledger value (which would be silently
+  // restored by the next legitimate Transfer event).
+  if (await isPassBlacklisted(address)) return false
+
   let validBalance: number
   try {
     validBalance = await getValidBalance(collection, address)

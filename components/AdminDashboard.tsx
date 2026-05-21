@@ -158,8 +158,9 @@ function TokenGateCard() {
     },
     {
       href: '/admin/blacklist',
-      title: 'Blacklist',
-      desc: 'platform-wide address bans (distinct from per-content hiding above).',
+      title: 'Moderation',
+      desc:
+        'three address lists: action blacklist (block mint/list/airdrop), pass blacklist (deny validity), hidden users (strip content from public feeds).',
     },
   ]
 

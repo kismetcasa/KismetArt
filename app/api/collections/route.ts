@@ -11,6 +11,7 @@ import {
   addTrackedCollection,
   getCollectionsByArtist,
   getCollectionMeta,
+  getCollectionMetaBatch,
   markCreatedMint,
   type CollectionSource,
 } from '@/lib/kv'
@@ -18,6 +19,7 @@ import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
 import { getSessionAddress } from '@/lib/session'
 import { getHiddenCollectionsSet } from '@/lib/hiddenCollections'
 import { getHiddenMomentsSet } from '@/lib/hiddenMoments'
+import { getHiddenUsersSet } from '@/lib/hidden-users'
 import { fetchEligibleTokens } from '@/lib/saleConfig'
 import { errorResponse } from '@/lib/apiResponse'
 
@@ -183,14 +185,30 @@ export async function GET(req: NextRequest) {
   if (feed) {
     const page = Math.max(1, parseInt(searchParams.get('page') ?? '1', 10) || 1)
     const limit = Math.min(50, Math.max(1, parseInt(searchParams.get('limit') ?? '18', 10) || 18))
-    const [userCreated, hiddenSet, hiddenMoments] = await Promise.all([
+    const [userCreated, hiddenSet, hiddenMoments, hiddenUsers] = await Promise.all([
       getUserCollections(),
       getHiddenCollectionsSet(),
       getHiddenMomentsSet(),
+      getHiddenUsersSet(),
     ])
-    const visible = userCreated.filter(
-      (addr) => !hiddenSet.has(addr.toLowerCase()),
-    )
+    // Cascade the hidden-users filter onto the discovery feed by looking
+    // up each tracked collection's deployer (stored in KV's artist field)
+    // and dropping any whose artist is on the hidden-users list. Single
+    // MGET via getCollectionMetaBatch — same cost as a single Redis call,
+    // not per-collection. Auto-deploy wrappers without a stored meta
+    // entry are kept (artist unknown ≠ hidden).
+    const metaByAddr = hiddenUsers.size > 0
+      ? await getCollectionMetaBatch(userCreated)
+      : new Map<string, { artist?: string }>()
+    const visible = userCreated.filter((addr) => {
+      const lower = addr.toLowerCase()
+      if (hiddenSet.has(lower)) return false
+      if (hiddenUsers.size > 0) {
+        const artist = metaByAddr.get(lower)?.artist?.toLowerCase()
+        if (artist && hiddenUsers.has(artist)) return false
+      }
+      return true
+    })
     const total = visible.length
     const total_pages = Math.max(1, Math.ceil(total / limit))
     const client = serverBaseClient()
@@ -234,6 +252,23 @@ export async function GET(req: NextRequest) {
   if (artist) {
     if (!isAddress(artist)) {
       return errorResponse(400, 'Invalid artist address')
+    }
+    // Hidden-user gate: if the queried artist is admin-hidden and the
+    // viewer isn't them, return an empty list. Same "creator sees their
+    // own content on their own profile" exception as the per-content
+    // hide — admin hides them from the public, not from themselves.
+    const [hiddenUsersForArtist, viewerForGate] = await Promise.all([
+      getHiddenUsersSet(),
+      getSessionAddress(req),
+    ])
+    const artistLower = artist.toLowerCase()
+    if (
+      hiddenUsersForArtist.has(artistLower)
+      && viewerForGate?.toLowerCase() !== artistLower
+    ) {
+      return NextResponse.json({ collections: [] }, {
+        headers: { 'Cache-Control': 'private, no-store' },
+      })
     }
     const url = inprocessUrl('/collections', { artist, limit: 100 })
     try {

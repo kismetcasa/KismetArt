@@ -6,19 +6,23 @@ import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
 import { errorResponse } from '@/lib/apiResponse'
 
 /**
- * Public read of an address's Pass-collection validity. UI surfaces use
- * this to show a "Valid Pass" badge on the holder's profile cards and on
- * marketplace listing cards (so buyers can see whether a seller's Pass
- * carries validity before purchasing).
+ * Public read of an address's Pass-collection validity. The profile
+ * Collected tab overlays a "Valid Pass" badge on tokens from the
+ * configured passCollection so the holder can confirm at a glance that
+ * their Pass currently grants mint access (see ProfileView + MomentCard).
  *
  * Returns the configured `passCollection` so callers can match it against
- * a moment's collection address to decide whether the validity check is
- * even applicable (non-Pass moments have no validity to display).
+ * a moment's collection address before rendering the badge — moments
+ * from any other collection have no validity to display.
  *
- * Data exposure: every value here is derivable from on-chain Transfer
- * history plus our flagged-tx Redis keys (which any indexer with our
- * source code could reconstruct). Surfacing it directly is a UX win, not
- * a new information leak. Rate-limited to prevent enumeration probing.
+ * Reads the stored ledger (`getValidBalance`) rather than running live
+ * on-chain reconciliation (`hasValidPass`) — the badge can lag behind
+ * actual on-chain state by up to one webhook delivery cycle, but reads
+ * are cheap and the actual gate decision (mint enforcement) still runs
+ * the live read. So the badge is eventually-consistent UX; policy stays
+ * correct.
+ *
+ * Rate-limited 60/min/IP to bound enumeration probing.
  */
 export async function GET(req: NextRequest) {
   const ip = getClientIp(req)

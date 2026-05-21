@@ -6,6 +6,8 @@ import {
   verifyTypedData,
 } from 'viem'
 import { isAddress, isValidTokenId } from '@/lib/address'
+import { isBlacklisted } from '@/lib/blacklist'
+import { getHiddenUsersSet } from '@/lib/hidden-users'
 import { createListing, getListings, getListingForToken, getListingsBySeller } from '@/lib/listings'
 import {
   SEAPORT_DOMAIN,
@@ -19,6 +21,7 @@ import { serverBaseClient } from '@/lib/rpc'
 import { errorResponse } from '@/lib/apiResponse'
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000'
+const ZERO_BYTES32 = '0x' + '0'.repeat(64)
 
 /** Validate orderComponents matches what our marketplace assumes: exactly
  *  one ERC-1155 offer item pointing at the listing's collection + tokenId;
@@ -67,6 +70,20 @@ function validateOrderShape(args: {
   }
   if (offerAmount <= 0n) {
     return { error: 'Offer amount must be positive', status: 400 }
+  }
+
+  // Pin Seaport's routing/validator slots to "no zone, no conduit". Kismet's
+  // marketplace builds zoneless conduit-less orders exclusively (lib/seaport.ts
+  // uses ZERO_ADDRESS / ZERO_BYTES32 here). Anything else means the seller
+  // signed an order that routes through an unknown zone validator or a Conduit
+  // we don't support — the signature is valid (the seller authorized those
+  // bytes) but the order would either revert at fulfillment time or get the
+  // buyer's call delegated through an unintended contract. Reject up front.
+  if (serialized.zone.toLowerCase() !== ZERO_ADDRESS) {
+    return { error: 'Order zone must be the zero address', status: 400 }
+  }
+  if (serialized.conduitKey.toLowerCase() !== ZERO_BYTES32) {
+    return { error: 'Order conduitKey must be zero', status: 400 }
   }
 
   if (!Array.isArray(serialized.consideration) || serialized.consideration.length === 0) {
@@ -232,21 +249,43 @@ export async function GET(req: NextRequest) {
     return errorResponse(400, 'Invalid seller address')
   }
 
+  // Hidden-users filter for public lookups. Single-token lookup is the
+  // exception — it's keyed by an explicit (collection, tokenId, seller)
+  // tuple chosen by the caller; if the caller already knows the seller
+  // address, hiding the result tells them nothing they don't already
+  // know AND breaks BuyButton flows where the buyer is looking up a
+  // listing they intend to fulfill on-chain. The hide is for feed
+  // surfaces, not direct deeplinks.
+  const hiddenUsers = await getHiddenUsersSet()
+
   // Single-token lookup — requires seller to identify which listing
   if (collection && tokenId && seller) {
     const listing = await getListingForToken(collection, tokenId, seller)
     return NextResponse.json({ listing: listing ?? null })
   }
 
-  // Seller profile lookup — all active listings by a specific seller
+  // Seller profile lookup — all active listings by a specific seller.
+  // If the seller themselves is hidden, return an empty list (no leak
+  // of "this user exists but is hidden"; matches how hiddenCollections
+  // filters a collections lookup).
   if (seller && !collection && !tokenId) {
+    if (hiddenUsers.has(seller.toLowerCase())) {
+      return NextResponse.json({ listings: [], pagination: { page: 1, limit: 0, total: 0, total_pages: 1 } })
+    }
     const listings = await getListingsBySeller(seller)
     return NextResponse.json({ listings, pagination: { page: 1, limit: listings.length, total: listings.length, total_pages: 1 } })
   }
 
   const { listings, total } = await getListings({ page, limit, collection })
+  // Strip listings whose seller is on the hidden-users set. We filter
+  // post-pagination because the underlying store doesn't index by
+  // visibility; total may overcount by the number of hidden listings
+  // on the page but that's acceptable for the marketplace feed.
+  const visibleListings = hiddenUsers.size === 0
+    ? listings
+    : listings.filter((l) => !hiddenUsers.has(l.seller.toLowerCase()))
   return NextResponse.json({
-    listings,
+    listings: visibleListings,
     pagination: {
       page,
       limit,
@@ -299,8 +338,43 @@ export async function POST(req: NextRequest) {
     if (BigInt(price) <= 0n) {
       return errorResponse(400, 'Price must be greater than 0')
     }
+    // The top-level royaltyReceiver/royaltyAmount aren't enforced on-chain
+    // (Seaport pays whatever the consideration items declare; verifyRoyalty
+    // below enforces the EIP-2981 receiver), but they're persisted on the
+    // listing record and rendered in the UI. Reject malformed values up
+    // front so we don't store "0xfffff" or "not-a-number" as display data.
+    if (!isAddress(royaltyReceiver)) {
+      return errorResponse(400, 'Invalid royaltyReceiver address')
+    }
+    let royaltyAmountBig: bigint
+    try {
+      royaltyAmountBig = BigInt(royaltyAmount)
+    } catch {
+      return errorResponse(400, 'royaltyAmount is not a valid integer')
+    }
+    if (royaltyAmountBig < 0n || royaltyAmountBig > BigInt(price)) {
+      return errorResponse(400, 'royaltyAmount must be 0 ≤ amount ≤ price')
+    }
+    let sellerProceedsBig: bigint
+    try {
+      sellerProceedsBig = BigInt(sellerProceeds)
+    } catch {
+      return errorResponse(400, 'sellerProceeds is not a valid integer')
+    }
+    if (sellerProceedsBig < 0n || sellerProceedsBig + royaltyAmountBig !== BigInt(price)) {
+      return errorResponse(400, 'sellerProceeds + royaltyAmount must equal price')
+    }
     if (orderComponents.offerer.toLowerCase() !== seller.toLowerCase()) {
       return errorResponse(400, 'Seller must match order offerer')
+    }
+
+    // Action-blacklist gate: blocks the seller from creating new listings
+    // on the platform. Their existing listings and on-chain ownership are
+    // unaffected. Symmetric with the gate in lib/mint-proxy (mint/write)
+    // and /api/airdrop/notify — anything that produces new content for
+    // the marketplace consults this list.
+    if (await isBlacklisted(seller)) {
+      return errorResponse(403, 'Address is blocked from listing')
     }
 
     // Structural validation BEFORE the expensive signature verification —

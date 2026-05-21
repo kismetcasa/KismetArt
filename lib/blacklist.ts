@@ -3,15 +3,31 @@ import { ADMIN_ADDRESS } from './config'
 
 const KEY = 'kismetart:blacklist'
 
-/** Returns true if the address is on the platform-wide blacklist. The admin
- *  address is hardcoded-exempt so an accidental self-blacklist can't lock
- *  the admin out of their own dashboard. Fails open on Redis error so a
- *  transient outage can't accidentally block every user — security is at
- *  the action layer (gate, on-chain ownership), this layer is policy.
+/**
+ * ACTION blacklist — addresses listed here are blocked from creator
+ * actions: mint, write (writing moments), list (secondary sales), and
+ * airdrop. Collecting is intentionally NOT blocked — banned users can
+ * still buy other people's content.
  *
- *  Coexists with main's hide system (lib/hiddenCollections, lib/hiddenMoments):
- *  hide is creator-controlled per-content, blacklist is admin-controlled
- *  per-address. Both filters compose where applicable. */
+ * Two sibling lists live in their own files for separation of concerns:
+ *   - lib/pass-blacklist.ts → denies Pass validity (even when held)
+ *   - lib/hidden-users.ts   → hides authored content from public feeds
+ *
+ * Wiring (enforcement points):
+ *   - lib/mint-proxy.ts                  → /api/mint, /api/write
+ *   - app/api/listings/route.ts POST     → secondary listing creation
+ *   - app/api/airdrop/notify/route.ts    → airdrop platform-recording
+ *
+ * Admin is hardcoded-exempt at both read and write so an accidental
+ * self-blacklist can't lock the admin out of their own dashboard. Fails
+ * open on Redis error so a transient outage can't accidentally block
+ * every user — security at the chokepoints is layered (gate, on-chain
+ * ownership, signature verification), this list is moderation policy.
+ *
+ * Coexists with main's hide system (lib/hiddenCollections,
+ * lib/hiddenMoments): hide is creator-controlled per-content, blacklist
+ * is admin-controlled per-address. Both compose where applicable.
+ */
 export async function isBlacklisted(address: string | null | undefined): Promise<boolean> {
   if (!address) return false
   const lower = address.toLowerCase()

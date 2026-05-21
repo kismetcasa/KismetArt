@@ -3,6 +3,7 @@ import { decodeEventLog, parseAbi, type Hex } from 'viem'
 import { isAddress } from '@/lib/address'
 import { recordAirdrop } from '@/lib/airdrops'
 import { consumeQuota } from '@/lib/airdrop-quota'
+import { isBlacklisted } from '@/lib/blacklist'
 import { bestEffort } from '@/lib/bestEffort'
 import { recordCollected } from '@/lib/collected'
 import { getGateConfig } from '@/lib/gate'
@@ -171,6 +172,17 @@ export async function POST(req: NextRequest) {
     .map((r) => r.toLowerCase())
   if (validRecipients.length === 0) {
     return errorResponse(400, 'No valid recipients')
+  }
+
+  // Action-blacklist gate: the on-chain airdrop already happened (Zora
+  // adminMint is direct from the sender's wallet, not relayed through us),
+  // but a blacklisted sender's airdrop is denied platform-side recording.
+  // No quota debit, no notifications, no recordPlatformTx — meaning
+  // recipients hold the Pass on-chain but earn no platform validity (admin
+  // would have to manually grant via /admin/pass). Matches the policy that
+  // blacklisted users can't propagate creator access through their actions.
+  if (await isBlacklisted(sender)) {
+    return errorResponse(403, 'Address is blocked from airdropping')
   }
 
   // Verify the receipt contains TransferSingle events matching every
