@@ -91,6 +91,13 @@ interface CollectionOption {
   address: string
   name: string
   image?: string
+  // Base64 thumbhash for the cover. Passed to MomentImage so the
+  // selected-collection chip renders a blur placeholder during the
+  // optimizer fetch + any fallback walk — matches what AirdropForm's
+  // moment chip already does. Optional because legacy KV records
+  // pre-date the thumbhash field and inprocess may not surface it
+  // for collections deployed outside the Kismet flow.
+  thumbhash?: string
 }
 
 // PLATFORM_COLLECTION is filtered out of the picker (defense in depth in
@@ -157,7 +164,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
         type ApiCollection = {
           contractAddress?: string
           name?: string
-          metadata?: { name?: string; image?: string }
+          metadata?: { name?: string; image?: string; kismet_thumbhash?: string }
         }
         const items: CollectionOption[] = (Array.isArray(d.collections) ? d.collections : [])
           .map((c: ApiCollection) => {
@@ -166,6 +173,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
               address: c.contractAddress,
               name: c.metadata?.name ?? c.name ?? shortAddress(c.contractAddress),
               image: c.metadata?.image,
+              thumbhash: c.metadata?.kismet_thumbhash,
             }
           })
           .filter((c: CollectionOption | null): c is CollectionOption => c !== null)
@@ -1194,6 +1202,7 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
                   fill
                   className="object-cover"
                   sizes="32px"
+                  thumbhash={selectedCollection.thumbhash}
                 />
               </div>
             ) : selectedCollection ? (
