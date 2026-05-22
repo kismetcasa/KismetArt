@@ -1,23 +1,32 @@
 #!/usr/bin/env node
-// One-shot: write the missing per-moment KV creator record for a single
-// cover-image mint deployed before the field-level fixes shipped (commits
-// e438700 added kv.coverTokenId persistence; 2704bd0 added the
-// instrumentation-time backfill — which still skips collections whose
-// stored meta lacks coverTokenId, so the very first cover-mint slips
-// through both nets).
+// One-shot: backfill both KV records the cover-mint synthesis path needs
+// for a single legacy collection deployed before the field-level fixes
+// shipped (e438700 added collection-meta.coverTokenId persistence; 2704bd0
+// added the instrumentation-time moment-meta backfill — which still skips
+// collections whose stored meta lacks coverTokenId, so the very first
+// cover-mint slips through both nets).
 //
-// Without this record the timeline route's KV stitching has nothing to
-// override the wrong creator inprocess returns for cover tokens (deploy
-// runs through the factory, so creator.address comes back as the factory
-// / smart-wallet address instead of the artist EOA), and the moment
-// disappears from every creator-filtered feed.
+// Two KV writes, both keyed off the same collection address:
+//
+//   1. kismetart:moment-meta:<addr>:<tokenId>
+//        { creator: <artist EOA>, name: <collection name> }
+//      Powers the timeline route's stitch override so cover-mint moments
+//      get the correct creator.address despite inprocess attributing them
+//      to the factory at deploy time.
+//
+//   2. kismetart:collection-meta:<addr>          (coverTokenId field merged in)
+//      Gates lib/coverMomentSynthesis.ts. Without coverTokenId set, the
+//      synthesis path is a no-op for this collection — which is the right
+//      behavior for case #1 (collection-only deploys) but means a legacy
+//      cover-mint collection has to opt back in explicitly.
 //
 // Usage:
 //   UPSTASH_REDIS_REST_URL=... UPSTASH_REDIS_REST_TOKEN=... \
-//     node scripts/backfill-cover-moment.mjs <collection> [--creator 0x...] [--token 1]
+//     node scripts/backfill-cover-moment.mjs <collection> [--creator 0x...] [--token 1] [--name "..."]
 //
-// Idempotent: aborts if a moment-meta record already exists at the target
-// key so an existing (possibly hand-corrected) entry isn't overwritten.
+// Idempotent on both writes: moment-meta is skipped if already present;
+// collection-meta is rewritten only if coverTokenId isn't already on the
+// stored record (and even then preserves every other field).
 
 import { Redis } from '@upstash/redis'
 
@@ -91,16 +100,38 @@ if (!/^0x[a-fA-F0-9]{40}$/.test(creatorArg)) {
 }
 const creator = creatorArg.toLowerCase()
 
+// Write moment-meta first, then coverTokenId. Order matters: synthesis is
+// gated on coverTokenId, so flipping it on AFTER the creator record exists
+// guarantees the first synthesis-triggered read finds a properly attributed
+// moment instead of falling back to collection-meta.artist (which is the
+// same address in practice but a less specific signal).
 const existing = await redis.get(momentMetaKey)
 if (existing) {
-  console.log('moment-meta already exists; nothing to do', {
+  console.log('moment-meta already exists; skipping write', {
     key: momentMetaKey,
     existing,
   })
-  process.exit(0)
+} else {
+  const value = { creator, name }
+  await redis.set(momentMetaKey, JSON.stringify(value))
+  console.log('wrote moment-meta', { key: momentMetaKey, value })
 }
 
-const value = { creator, name }
-await redis.set(momentMetaKey, JSON.stringify(value))
-
-console.log('wrote moment-meta', { key: momentMetaKey, value })
+if (meta.coverTokenId === tokenId) {
+  console.log('collection-meta.coverTokenId already set; skipping write', {
+    key: collectionMetaKey,
+    coverTokenId: meta.coverTokenId,
+  })
+} else if (meta.coverTokenId && meta.coverTokenId !== tokenId) {
+  console.error(
+    `collection-meta.coverTokenId is already set to ${meta.coverTokenId} (expected ${tokenId}); refusing to overwrite`,
+  )
+  process.exit(1)
+} else {
+  const updated = { ...meta, coverTokenId: tokenId }
+  await redis.set(collectionMetaKey, JSON.stringify(updated))
+  console.log('wrote collection-meta with coverTokenId', {
+    key: collectionMetaKey,
+    coverTokenId: tokenId,
+  })
+}

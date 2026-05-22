@@ -11,17 +11,35 @@ import { getMomentMetaBatch } from '@/lib/notifications'
 import { expandToFidSiblings } from '@/lib/addressUnion'
 import { enrichMomentsWithKismetMeta } from '@/lib/momentEnrichment'
 import type { Moment } from '@/lib/inprocess'
+import { synthesizeMissingCoverMoment } from '@/lib/coverMomentSynthesis'
 
 async function fetchCollection(collection: string, limit: number): Promise<unknown[]> {
   const url = inprocessUrl('/timeline', { collection, limit, chain_id: '8453' })
+  let moments: unknown[] = []
   try {
     const res = await fetch(url, { headers: { Accept: 'application/json' }, next: { revalidate: 30 } })
     const text = await res.text()
     const data = JSON.parse(text)
-    return Array.isArray(data.moments) ? data.moments : []
+    moments = Array.isArray(data.moments) ? data.moments : []
   } catch {
-    return []
+    moments = []
   }
+
+  // Cover-mints created at deploy time via factory setupAction never reach
+  // inprocess's /moment/create endpoint, so they don't enter the /timeline
+  // index even though they're on-chain and inprocess /moment resolves them.
+  // Synthesize the missing entry locally, gated by collection-meta's
+  // coverTokenId — only set by /api/collections POST for create-form deploys
+  // with a cover mint, so case #1 (collection only) and case #3 (individual
+  // MintForm mint via inprocess) are untouched. Failure short-circuits to
+  // null so a synthesis error never poisons the inprocess passthrough.
+  const synthCover = await synthesizeMissingCoverMoment(
+    collection,
+    moments as { token_id?: string }[],
+  )
+  if (synthCover) moments.push(synthCover)
+
+  return moments
 }
 
 export async function GET(req: NextRequest) {
