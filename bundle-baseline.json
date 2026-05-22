@@ -1,0 +1,28 @@
+{
+  "note": "Per-route JS bundle baseline. Regenerate with: npm run check:bundle -- --update. Bump intentionally when adding dependencies; reviewers see the diff alongside code changes.",
+  "threshold": 0.1,
+  "routes": {
+    "/layout": 2035495,
+    "/@modal/default": 355036,
+    "/moment/[address]/[tokenId]/opengraph-image/route": 355036,
+    "/collection/[address]/opengraph-image/route": 355036,
+    "/profile/[address]/opengraph-image/route": 355036,
+    "/@modal/(.)moment/[address]/[tokenId]/loading": 368467,
+    "/@modal/(.)moment/[address]/[tokenId]/page": 1161701,
+    "/admin/airdrop-quota/page": 1061574,
+    "/admin/blacklist/page": 1062767,
+    "/admin/gate/page": 1062327,
+    "/admin/pass/page": 1062122,
+    "/collection/[address]/loading": 355036,
+    "/collection/[address]/page": 1167403,
+    "/market/page": 1101843,
+    "/page": 1185106,
+    "/moment/[address]/[tokenId]/loading": 355036,
+    "/moment/[address]/[tokenId]/page": 1160326,
+    "/profile/[address]/loading": 355036,
+    "/profile/[address]/page": 1196648,
+    "/admin/page": 1065234,
+    "/mint/page": 1163498,
+    "/permissions/page": 1048298
+  }
+}

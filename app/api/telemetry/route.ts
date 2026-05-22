@@ -2,9 +2,13 @@ import { NextRequest } from 'next/server'
 import { redis } from '@/lib/redis'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
 
-// Edge runtime — telemetry should be cheap globally; no Redis-specific
-// reason to stay on Node. Upstash works over fetch from edge.
-export const runtime = 'edge'
+// Node runtime: declaring edge here would activate the edge bundle of
+// instrumentation.ts, which fails to build because the project's
+// background tasks transitively import node:crypto (randomUUID) which
+// edge doesn't expose. Telemetry is fire-and-forget anyway — the
+// latency win from edge isn't user-visible. If the codebase ever
+// drops node:crypto in favor of Web Crypto API across the lib layer,
+// this route can switch to edge for free.
 
 // Bucket events into 5-minute windows. Tight enough for hour-resolution
 // dashboards, loose enough that even a busy moment in production only
