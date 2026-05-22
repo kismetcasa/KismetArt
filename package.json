@@ -11,7 +11,8 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "check": "npm run typecheck && npm run lint",
+    "check:resource-hints": "node scripts/check-resource-hint-cors.mjs",
+    "check": "npm run typecheck && npm run lint && npm run check:resource-hints",
     "postinstall": "node scripts/copy-ffmpeg-core.mjs"
   },
   "dependencies": {
