@@ -49,7 +49,9 @@ interface HydratedFeaturedCollection {
   default_admin?: { address?: string; username?: string }
   moments: Moment[]
   ethEligibleTokenIds: string[]
+  ethEligibleTotalWei: string
   usdcEligibleTokenIds: string[]
+  usdcEligibleTotalUsdc: string
   featuredAt: number
 }
 
@@ -213,6 +215,13 @@ export async function GET() {
           tokenIds.length > 0 ? fetchEligibleTokens(client, address, tokenIds, 'usdc') : [],
           enrichMomentsWithKismetMeta(visibleMoments.slice(0, ROW_DISPLAY_LIMIT)),
         ])
+        const ethEligibleTotalWei = ethEligible
+          .reduce((sum, e) => sum + e.pricePerToken, 0n)
+          .toString()
+        const usdcEligibleTotalUsdc = usdcEligible
+          .reduce((sum, e) => sum + e.pricePerToken, 0n)
+          .toString()
+
         return {
           contractAddress: address,
           name: collection.name,
@@ -221,7 +230,9 @@ export async function GET() {
           default_admin: collection.default_admin,
           moments: displayMoments,
           ethEligibleTokenIds: ethEligible.map((e) => e.tokenId.toString()),
+          ethEligibleTotalWei,
           usdcEligibleTokenIds: usdcEligible.map((e) => e.tokenId.toString()),
+          usdcEligibleTotalUsdc,
           featuredAt: ref.featuredAt,
         }
       } catch (err) {
