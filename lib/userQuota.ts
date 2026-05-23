@@ -26,6 +26,7 @@ export type QuotaKind =
   | 'write'
   | 'upload-bytes'
   | 'sign-calls'
+  | 'collection'
   | 'update-uri'
   | 'distribute'
 
@@ -36,31 +37,29 @@ interface QuotaWindow {
   week: number
 }
 
-// These are abuse CEILINGS, not product knobs — every limit is set far above
-// any plausible legitimate cadence so a real creator (including a prolific
-// drop session) never hits one, while a runaway script is bounded to a non-
-// catastrophic level instead of the IP rate limit's ~28k/day theoretical max.
-// Mints are one-per-user-action (no bulk loop in MintForm), so daily counts
-// only accrue through manual repetition. Do not tighten without usage data.
+// Per-identity ceilings (admin-exempt, fail-open). Daily is the primary
+// lever; weekly (~5× daily) catches sustained-not-bursty abuse without
+// wall'ing a consistently-active creator. Mints are one-per-user-action (no
+// bulk loop in MintForm), so counts accrue only through manual repetition.
 const QUOTAS: Record<QuotaKind, QuotaWindow> = {
-  // ~one mint every ~5 min for 24h straight before the cap — no human does
-  // that; a script does. Bounds platform inprocess spend per identity.
-  mint:           { day: 300,          week: 1000           },
-  write:          { day: 300,          week: 1000           },
-  // Byte-denominated (Turbo bills by bytes). NOTE: /api/upload only carries
-  // JSON metadata (≤50 MB each); media streams through /api/sign. 500 MB/day
-  // of metadata is thousands of mints — never a real ceiling, but caps a
-  // metadata-spam abuser.
+  // Moment creations. 50/day covers any normal creator; a larger drop
+  // session is rare and resumes the next day. write = writing moments
+  // (separate endpoint, same intent + ceiling).
+  mint:           { day: 50,           week: 250            },
+  write:          { day: 50,           week: 250            },
+  // Metadata JSON only — media streams via /api/sign. Generous; never the
+  // binding limit, just caps a metadata-spam abuser.
   'upload-bytes': { day: 500 * 1024 * 1024,  week: 2 * 1024 * 1024 * 1024 },
-  // COUNT of media-upload signings. Bytes can't be metered here (media
-  // streams client → Turbo, never reaching the server), so this count + an
-  // operationally-capped wallet balance are the controls (see
-  // app/api/sign/route.ts). A video mint is 2 signings (media + poster);
-  // 600/day clears ~300 video mints/day.
-  'sign-calls':   { day: 600,          week: 2000           },
+  // Media-upload signings. Sits above a maxed legit day (50 mints ×≤2 signs
+  // + 25 collections ≈ 125) so the mint/collection caps bind first. Bytes
+  // can't be metered here (media streams client → Turbo); the operationally-
+  // capped wallet balance is the real Arweave backstop (see sign/route.ts).
+  'sign-calls':   { day: 200,          week: 1000           },
+  // Collection registrations. Nobody legit creates 25/day; bounds feed/KV
+  // spam. The on-chain deploy is the caller's own gas — this caps our side.
+  'collection':   { day: 25,           week: 100            },
   // Owner-gated inprocess-key actions that submit a sponsored on-chain tx
-  // (gas paid by the platform smart wallet). Above any legitimate cadence;
-  // bound an authorized owner from spamming gas-burning calls on their token.
+  // (gas paid by the platform smart wallet). Above any legitimate cadence.
   'update-uri':   { day: 50,           week: 200            },
   'distribute':   { day: 100,          week: 400            },
 }
