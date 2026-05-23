@@ -402,15 +402,12 @@ async function compose(n: Notification): Promise<ComposedPush | null> {
     case 'payout': {
       // In-app row links to the moment, not the profile — payouts are
       // moment-scoped (one split distribution per moment). Match that.
-      const currencyLabel = (n.currency ?? 'eth').toUpperCase()
+      // amountLabel already carries the currency ("0.1 ETH" / "$5").
       const subject = tokenName ? `"${tokenName}"` : 'a moment'
       const amountLabel = n.price ? formatPushPrice(n.price, n.currency) : 'a payout'
       return {
         title: truncate('Payout received', TITLE_MAX),
-        body: truncate(
-          `You received ${amountLabel} from ${subject} (${currencyLabel})`,
-          BODY_MAX,
-        ),
+        body: truncate(`You received ${amountLabel} from ${subject}`, BODY_MAX),
         targetUrl: momentUrl,
       }
     }

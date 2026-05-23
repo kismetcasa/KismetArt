@@ -117,10 +117,7 @@ export function useMomentSplits({ address, tokenId, isCreator, isAdmin, isPlatfo
     query: { enabled: canDistribute && !!splitAddress && currency === 'usdc' },
   })
 
-  const pendingRaw =
-    currency === 'usdc'
-      ? (usdcBalance as bigint | undefined)
-      : ethBalance?.value
+  const pendingRaw = currency === 'usdc' ? usdcBalance : ethBalance?.value
   const hasPending = pendingRaw !== undefined && pendingRaw > 0n
   const pendingFormatted =
     pendingRaw === undefined ? undefined : formatPrice(pendingRaw.toString(), currency)

@@ -335,9 +335,9 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     !!creatorAddress &&
     connectedAddress.toLowerCase() === creatorAddress.toLowerCase()
 
-  // Admin per inprocess's momentAdmins (unordered; may carry the operator
-  // smart wallet, harmless here). Creator, admins, and recipients each get
-  // the distribute affordance — mirrored server-side by /api/distribute.
+  // Moment admin per inprocess's momentAdmins (unordered; may include the
+  // operator smart wallet — harmless, the distribute API's signature gate is
+  // authoritative). One of the roles canDistribute admits.
   const isMomentAdmin =
     !!connectedAddress &&
     Array.isArray(detail?.momentAdmins) &&
@@ -1118,10 +1118,10 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
           {/* Spacer — pushes bottom group down when content is short */}
           <div className="flex-1 min-h-6" />
 
-          {/* Distribute earnings — visible to the creator, admins, and
-              recipients. Distributing pays every recipient their share in
-              one tx (0xSplits is all-or-nothing), so the figures below show
-              the full pending balance plus the viewer's cut of it. */}
+          {/* Distribute earnings — shown to anyone who can distribute.
+              Distributing pays every recipient at once (0xSplits is
+              all-or-nothing), so the figures show the full pending balance
+              plus the viewer's cut. */}
           {canDistribute && (
             <div className="px-5 pb-4 flex flex-col gap-2">
               <p className="text-[10px] font-mono text-faint uppercase tracking-wider">
