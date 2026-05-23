@@ -16,7 +16,7 @@ import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
  * Lower than 4 starts producing visible placeholder pop-in on first paint;
  * higher and we re-introduce the click-through pause on heavy feeds.
  */
-export const EAGER_MOUNT_COUNT = 4
+const EAGER_MOUNT_COUNT = 4
 
 interface LazyMountProps {
   /** Render-prop: only invoked once the placeholder enters the IO window.
