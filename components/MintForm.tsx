@@ -25,6 +25,7 @@ import { useCollectionsPermissions } from '@/hooks/useCollectionsPermissions'
 import { useIntentAuth } from '@/hooks/useIntentAuth'
 import { PLATFORM_COLLECTION, CREATE_REFERRAL, RESIDENCIES_ADDRESS, DEFAULT_RESIDENCIES_PERCENT } from '@/lib/config'
 import { COLLECTION_ABI } from '@/lib/collections'
+import { MAX_SPLITS } from '@/lib/splits'
 import { generateTextCollectionCoverDataUri } from '@/lib/generateTextCover'
 import { hasAdminBit, readPermissions } from '@/lib/permissions'
 import { registerCollectionWithBackoff } from '@/lib/registerCollection'
@@ -57,28 +58,47 @@ function sortSplits(s: Split[]): Split[] {
 // room for residencies) get mis-parsed downstream and revert the on-chain
 // splits-contract setup.
 //
-// Round each value to the nearest integer (≥1 floor so we never silently
-// drop a recipient), then absorb rounding drift round-robin until the sum
-// matches `target` exactly.
+// Convert fractional `values` (which by construction sum to ~`target`) into
+// integers that sum to EXACTLY `target`, with every entry ≥ 1. Largest-
+// remainder method: floor (min 1), then hand out / claw back the leftover by
+// fractional remainder. Exact and order-stable — unlike a bounded ±1 drift
+// loop, it can't leave the sum off-target for skewed allocations (e.g. many
+// tiny recipients plus one large one). Precondition: target ≥ values.length,
+// which callers guarantee via the recipient cap + residenciesOverCap, so a
+// min-1 solution always exists; the guards below just prevent a spin if it
+// is ever violated (handleMint's sum check is the final backstop).
 function roundToIntegerAllocations(values: number[], target: number): number[] {
-  const rounded = values.map((v) => Math.max(1, Math.round(v)))
-  const sum = rounded.reduce((a, b) => a + b, 0)
-  let drift = target - sum
-  let idx = 0
-  // Bound the loop generously; drift is bounded by recipient count in practice.
-  const max = rounded.length * 4 + 8
-  while (drift !== 0 && idx < max) {
-    const i = idx % rounded.length
-    if (drift > 0) {
-      rounded[i] += 1
-      drift -= 1
-    } else if (drift < 0 && rounded[i] > 1) {
-      rounded[i] -= 1
-      drift += 1
+  const n = values.length
+  if (n === 0) return []
+  const ints = values.map((v) => Math.max(1, Math.floor(v)))
+  let sum = ints.reduce((a, b) => a + b, 0)
+  if (sum === target) return ints
+  // Indices ordered by fractional remainder: add to the largest first,
+  // remove from the smallest first, so the integer split best tracks intent.
+  const byRemainder = values
+    .map((v, i) => ({ i, frac: v - Math.floor(v) }))
+    .sort((a, b) => a.frac - b.frac)
+  if (sum < target) {
+    let k = n - 1
+    while (sum < target) {
+      ints[byRemainder[((k % n) + n) % n].i] += 1
+      sum += 1
+      k -= 1
     }
-    idx += 1
+  } else {
+    let k = 0
+    let guard = 0
+    const maxGuard = sum * n + n
+    while (sum > target && guard++ < maxGuard) {
+      const { i } = byRemainder[k % n]
+      if (ints[i] > 1) {
+        ints[i] -= 1
+        sum -= 1
+      }
+      k += 1
+    }
   }
-  return rounded
+  return ints
 }
 
 interface MintFormProps {
@@ -352,6 +372,19 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
     if (!isAddress(addr)) { toast.error('Invalid address'); return }
     if (isNaN(pct) || pct <= 0 || pct > 100) { toast.error('Allocation must be 1–100'); return }
     if (splitsTotal + pct > 100) { toast.error('Total allocation exceeds 100%'); return }
+    // Cap recipient count to the server's MAX_SPLITS. When residencies is on
+    // it occupies one of those slots (buildFinalSplits appends it), so the
+    // custom-recipient limit drops by one — otherwise the final array would
+    // be MAX_SPLITS+1 and validateSplitsArray would reject the mint.
+    const recipientCap = residenciesEnabled ? MAX_SPLITS - 1 : MAX_SPLITS
+    if (splits.length >= recipientCap) {
+      toast.error(
+        residenciesEnabled
+          ? `Up to ${recipientCap} recipients with residencies on (${MAX_SPLITS} total)`
+          : `Up to ${recipientCap} split recipients`,
+      )
+      return
+    }
     // EVM addresses are case-insensitive but 0xSplits' SplitMain rejects
     // byte-level duplicates, so "0xABC" + "0xabc" would revert the deploy.
     const lowerAddr = addr.toLowerCase()
@@ -1525,6 +1558,13 @@ export function MintForm({ collectionAddress, collectionName, onSwitchToCreate }
               )
               if (dup) {
                 toast.error('Remove residencies from your custom splits before enabling the toggle')
+                return false
+              }
+              // Residencies takes a recipient slot; if the custom list already
+              // fills MAX_SPLITS, enabling would make MAX_SPLITS+1 and the mint
+              // would be rejected server-side. Make the creator free a slot.
+              if (splits.length >= MAX_SPLITS) {
+                toast.error(`Remove a recipient first — ${MAX_SPLITS} is the max including residencies`)
                 return false
               }
               // Sync the edit buffer so clicking the % shows the live value.
