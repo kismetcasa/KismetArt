@@ -10,6 +10,7 @@ import { getMomentMeta, writeNotification } from '@/lib/notifications'
 import { errorResponse } from '@/lib/apiResponse'
 import { consumeUserQuota } from '@/lib/userQuota'
 import { serverBaseClient } from '@/lib/rpc'
+import { ADMIN_ADDRESS } from '@/lib/config'
 
 /**
  * Triggers the inprocess split distribution for a token's accumulated proceeds.
@@ -99,13 +100,18 @@ export async function POST(req: NextRequest) {
     return errorResponse(403, 'No splits registered for this token')
   }
 
-  // Authorize the caller as creator, admin, OR recipient — the same three
-  // roles the UI shows the distribute button to. Distribution is
-  // permissionless on 0xSplits (it can only pay the fixed recipients, never
-  // redirect funds), so widening past creator/admin to recipients is safe;
-  // platform-sponsored gas stays bounded by the per-user quota below.
+  // Authorize the caller as creator, moment admin, recipient, OR the Kismet
+  // platform admin. Distribution is permissionless on 0xSplits (it can only
+  // pay the fixed recipients, never redirect funds), so widening the roster
+  // is safe; platform-sponsored gas stays bounded by the per-user quota below
+  // (the platform admin is quota-exempt, by design — it's a support lever).
   const callerLower = callerAddress.toLowerCase()
   const isRecipient = stored.recipients.some((r) => r.address.toLowerCase() === callerLower)
+
+  // Platform admin (ADMIN_ADDRESS) — break-glass override so support can
+  // unstick a payout a user reports as missing on any moment. The EOA-only
+  // signature gate above already proved the caller holds this key.
+  const isPlatformAdmin = !!ADMIN_ADDRESS && callerLower === ADMIN_ADDRESS
 
   // KV moment-meta creator — the EOA mint-proxy recorded at mint. Preferred
   // over inprocess's momentAdmins, which often lists the platform smart
@@ -113,7 +119,7 @@ export async function POST(req: NextRequest) {
   const meta = await getMomentMeta(collectionAddress, tokenId)
   const isKvCreator = meta?.creator?.toLowerCase() === callerLower
 
-  let authorized = isRecipient || isKvCreator
+  let authorized = isRecipient || isKvCreator || isPlatformAdmin
   // Only consult inprocess's momentAdmins when the cheap KV/recipient signals
   // didn't already authorize — saves an upstream round-trip in the common case.
   // /moment returns `momentAdmins: string[]`, an unordered list; .includes()

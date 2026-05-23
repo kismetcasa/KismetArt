@@ -15,9 +15,14 @@ interface Options {
   tokenId: string
   // Creator (resolved EOA) or a moment admin per the parent view. Either
   // grants distribute rights; recipients are detected here from the stored
-  // split list. The distribute API authorizes the same three roles.
+  // split list. The distribute API authorizes the same roles.
   isCreator: boolean
   isAdmin: boolean
+  // Kismet platform admin (ADMIN_ADDRESS) — a break-glass role that may
+  // distribute any moment's splits (e.g. to unstick a payout a user reports
+  // as missing). The distribute API authorizes the same address; the
+  // signature gate keeps it to the real admin EOA.
+  isPlatformAdmin: boolean
   // Sale currency of the moment — selects which balance to read off the
   // split contract (native ETH vs USDC) and which token inprocess distributes.
   currency: CollectCurrency
@@ -27,9 +32,12 @@ interface SplitsState {
   hasSplits: boolean
   recipients: SplitRecipient[]
   splitAddress: `0x${string}` | undefined
-  // True when the connected wallet is the creator, an admin, or a split
-  // recipient — the three roles allowed to trigger a distribution.
+  // True when the connected wallet may trigger a distribution: creator,
+  // moment admin, split recipient, or platform admin.
   canDistribute: boolean
+  // True when the connected wallet is one of the split recipients. Lets the
+  // view distinguish a recipient/creator from a platform-admin override.
+  isRecipient: boolean
   // Undistributed proceeds sitting on the split, formatted for display
   // (e.g. "0.5 ETH" / "$5"). undefined while the balance read is pending.
   pendingFormatted: string | undefined
@@ -47,7 +55,7 @@ interface SplitsState {
 /**
  * Bundles the splits state for MomentDetailView: the stored recipient list
  * (rendered for every viewer in the splits panel) plus the distribute flow
- * for the creator, admins, and recipients.
+ * for the creator, moment admins, recipients, and the platform admin.
  *
  * `splitAddress`, the balance reads, and the distribute action are gated on
  * `canDistribute` because only those roles use them. `currency` selects the
@@ -55,7 +63,7 @@ interface SplitsState {
  * for USDC moments, else it defaults to ETH and distributes nothing from a
  * USDC split).
  */
-export function useMomentSplits({ address, tokenId, isCreator, isAdmin, currency }: Options): SplitsState {
+export function useMomentSplits({ address, tokenId, isCreator, isAdmin, isPlatformAdmin, currency }: Options): SplitsState {
   const { address: connectedAddress } = useAccount()
   const { signMessageAsync } = useSignMessage()
   const [hasSplits, setHasSplits] = useState(false)
@@ -82,7 +90,7 @@ export function useMomentSplits({ address, tokenId, isCreator, isAdmin, currency
   const viewerRecipient = connectedLower
     ? recipients.find((r) => r.address.toLowerCase() === connectedLower)
     : undefined
-  const canDistribute = hasSplits && (isCreator || isAdmin || !!viewerRecipient)
+  const canDistribute = hasSplits && (isCreator || isAdmin || isPlatformAdmin || !!viewerRecipient)
 
   const { data: splitAddress } = useReadContract({
     address: address as `0x${string}`,
@@ -167,6 +175,7 @@ export function useMomentSplits({ address, tokenId, isCreator, isAdmin, currency
     recipients,
     splitAddress,
     canDistribute,
+    isRecipient: !!viewerRecipient,
     pendingFormatted,
     pendingShareFormatted,
     hasPending,

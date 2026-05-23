@@ -348,6 +348,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     recipients: splitRecipients,
     splitAddress,
     canDistribute,
+    isRecipient,
     pendingFormatted,
     pendingShareFormatted,
     hasPending,
@@ -359,8 +360,13 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     tokenId,
     isCreator,
     isAdmin: isMomentAdmin,
+    isPlatformAdmin: isAdmin,
     currency: splitsCurrency,
   })
+  // The platform admin sees distribute on any moment as a support override.
+  // Flag the case where that's the *only* reason the controls show, so the
+  // UI can label it rather than imply the admin is a creator/payee.
+  const adminDistributeOverride = isAdmin && !isCreator && !isMomentAdmin && !isRecipient
 
   // Fetch moment detail. We retry on the client when initialDetail is null
   // (server-side fetch returned no data, e.g. inprocess hasn't indexed a
@@ -1118,7 +1124,10 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
               the full pending balance plus the viewer's cut of it. */}
           {canDistribute && (
             <div className="px-5 pb-4 flex flex-col gap-2">
-              <p className="text-[10px] font-mono text-faint uppercase tracking-wider">distribute earnings</p>
+              <p className="text-[10px] font-mono text-faint uppercase tracking-wider">
+                distribute earnings
+                {adminDistributeOverride && <span className="text-accent"> · admin override</span>}
+              </p>
               {pendingFormatted !== undefined && (
                 <p className="text-[11px] font-mono text-dim">
                   {hasPending ? `${pendingFormatted} to distribute` : 'nothing to distribute yet'}
