@@ -11,6 +11,7 @@ import { useViewMode } from '@/hooks/useViewMode'
 import { useLongPressDrag } from '@/hooks/useLongPressDrag'
 import type { Moment } from '@/lib/inprocess'
 import { useAdmin } from '@/contexts/AdminContext'
+import { KISMET_CASA_ROME_COLLECTION } from '@/lib/config'
 
 // Mobile-mount context. Server-side UA detection (see app/page.tsx)
 // sets this to `true` on mobile UAs, baking the decision into SSR
@@ -457,7 +458,7 @@ export function DiscoverPage({ isMobile }: { isMobile: boolean }) {
 
         {hydrated && visitedTabs.has('roster') && (
           <div hidden={active !== 'roster'}>
-            <RosterFeed />
+            <ArtistsFeed />
           </div>
         )}
       </div>
@@ -466,93 +467,49 @@ export function DiscoverPage({ isMobile }: { isMobile: boolean }) {
   )
 }
 
-// ─── roster feed ─────────────────────────────────────────────────────────────
+// ─── artists feed ────────────────────────────────────────────────────────────
 
-interface CreatorListLite {
-  slug: string
-  name: string
-  addresses: string[]
-}
+// One card per artist who minted into the Kismet Casa Rome collection. The
+// collection holds a single piece per artist, so scoping the timeline to it
+// and deduping by creator yields exactly that artist's Rome mint. Each card
+// pairs a "view profile" link with the standard collect action.
+function ArtistsFeed() {
+  const lazy = useContext(LazyMountCtx)
 
-function RosterFeed() {
-  const [lists, setLists] = useState<CreatorListLite[]>([])
-  const [activeSlug, setActiveSlug] = useState<string | null>(null)
-  const [listsLoaded, setListsLoaded] = useState(false)
-
-  useEffect(() => {
-    fetch('/api/creator-lists')
-      .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((d: { lists?: CreatorListLite[] }) => {
-        const next = Array.isArray(d.lists) ? d.lists : []
-        setLists(next)
-        setActiveSlug(next[0]?.slug ?? null)
-      })
-      .catch(() => {})
-      .finally(() => setListsLoaded(true))
+  // Dedupe by creator, keeping the first (newest) moment per address. Guards
+  // against an artist who minted more than one piece into the collection.
+  const dedupeByArtist = useCallback((items: Moment[]) => {
+    const seen = new Set<string>()
+    return items.filter((m) => {
+      const addr = m.creator?.address?.toLowerCase()
+      if (!addr || seen.has(addr)) return false
+      seen.add(addr)
+      return true
+    })
   }, [])
 
-  const activeList = lists.find((l) => l.slug === activeSlug) ?? null
-
-  // No lists at all → empty state with curator hint. Don't render
-  // MomentFeed since there's nothing to query.
-  if (listsLoaded && lists.length === 0) {
-    return (
-      <div className="border border-line p-8 sm:p-16 text-center mt-4">
-        <p className="text-sm font-mono text-muted">
-          no creator rosters yet
-        </p>
-        <p className="text-xs font-mono text-[#444] mt-2">
-          a curator can create one from their profile
-        </p>
-      </div>
-    )
-  }
-
-  // Empty list selected → don't fire the API call (?creators= would be
-  // empty → match-nothing); show empty state inline.
-  const apiUrl =
-    activeList && activeList.addresses.length > 0
-      ? `/api/timeline?creators=${activeList.addresses.join(',')}`
-      : null
-
-  const header = lists.length > 0 ? (
-    <div className="flex items-center gap-2 flex-wrap">
-      {lists.map((l) => (
-        <button
-          key={l.slug}
-          onClick={() => setActiveSlug(l.slug)}
-          className={`text-[10px] font-mono px-2.5 py-1 border transition-colors ${
-            l.slug === activeSlug
-              ? 'border-ink text-ink'
-              : 'border-line text-muted hover:border-muted hover:text-dim'
-          }`}
-        >
-          {l.name}
-          <span className="ml-1.5 text-[#444]">{l.addresses.length}</span>
-        </button>
-      ))}
-    </div>
-  ) : null
-
-  if (!apiUrl) {
-    return (
-      <div>
-        <div className="py-4">{header}</div>
-        <div className="border border-line p-8 sm:p-16 text-center">
-          <p className="text-sm font-mono text-muted">
-            {activeList ? 'this list has no creators yet' : 'select a roster'}
-          </p>
-        </div>
-      </div>
-    )
-  }
-
   return (
-    <MomentFeed
-      apiUrl={apiUrl}
-      header={header}
-      emptyMessage="no moments yet from this roster"
-      withViewToggle
+    <PaginatedGrid<Moment>
+      apiUrl={`/api/timeline?collection=${KISMET_CASA_ROME_COLLECTION}`}
+      itemsKey="moments"
+      getKey={(m) => `${m.address}-${m.token_id}`}
+      lazy={lazy}
+      pageLimit={lazy ? 12 : 18}
+      filter={dedupeByArtist}
+      renderItem={(m, { index }) => (
+        <MomentCard
+          key={`${m.address}-${m.token_id}`}
+          moment={m}
+          hidePriceSupply
+          viewProfileHref={`/profile/${m.creator.address}`}
+          priority={index < 3}
+        />
+      )}
+      empty={
+        <div className="border border-line p-8 sm:p-16 text-center">
+          <p className="text-sm font-mono text-muted">no artists yet</p>
+        </div>
+      }
     />
   )
 }

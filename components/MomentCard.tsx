@@ -68,13 +68,19 @@ interface MomentCardProps {
    * mint" become self-diagnosable from a glance at the profile.
    */
   passBadge?: { passCollection: string; hasValidity: boolean }
+  /**
+   * When set, renders a "view profile" button (→ "view" on narrow screens)
+   * to the left of the collect button, linking to this href. Used by the
+   * Artists tab's artist cards. Off by default — other feeds are unchanged.
+   */
+  viewProfileHref?: string
 }
 
 // Memoized — feeds render 18+ cards each doing 3-5 async lookups, so a
 // parent re-render would otherwise re-run them all. Default shallow
 // compare works: `moment` is stable across renders (held in parent
 // useState arrays); other props are primitives.
-function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreator, fillCell, passBadge }: MomentCardProps) {
+function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreator, fillCell, passBadge, viewProfileHref }: MomentCardProps) {
   // Default: creator chip follows compact mode (visible non-compact,
   // hidden compact). `showCreator` overrides either direction.
   const renderCreator = showCreator ?? !compact
@@ -504,9 +510,28 @@ function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreato
               {collectLabel}
             </button>
           )}
+          {viewProfileHref && (
+            <Link
+              href={viewProfileHref}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full py-1.5 flex items-center justify-center text-[10px] font-mono tracking-wider uppercase border border-line text-muted hover:border-muted hover:text-ink transition-colors"
+            >
+              view
+            </Link>
+          )}
         </div>
       ) : (
         <div className="px-4 pb-4 flex gap-2 items-stretch">
+          {viewProfileHref && (
+            <Link
+              href={viewProfileHref}
+              onClick={(e) => e.stopPropagation()}
+              className={`flex-1 ${hidePriceSupply ? 'py-2' : 'py-2.5'} flex items-center justify-center text-xs font-mono tracking-wider uppercase border border-line text-muted hover:border-muted hover:text-ink transition-colors`}
+            >
+              <span className="sm:hidden">view</span>
+              <span className="hidden sm:inline">view profile</span>
+            </Link>
+          )}
           {!hidePriceSupply && owned === 0 && !collected && (
             <div className="flex border border-line flex-none">
               <div className="px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
