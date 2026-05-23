@@ -30,18 +30,8 @@
 export type EventName =
   | 'video_ttff'         // play() → first timeupdate, ms
   | 'image_lcp'          // PerformanceObserver largest-contentful-paint, ms
-  | 'gateway_winner'     // which gateway index won the race (0=arweave.net, 1=permagate.io)
   | 'optimizer_400'      // Next.js /_next/image returned 400 — counter
   | 'pool_eviction'      // SharedVideoProvider idle-over-cap eviction — counter
-
-interface Dimensions {
-  /** Page surface — feed/moment/profile/etc. Set by the caller when relevant. */
-  surface?: string
-  /** Mini App / desktop / mobile-web. Set by the caller when relevant. */
-  platform?: string
-  /** navigator.connection.effectiveType when available. */
-  effectiveType?: string
-}
 
 const STORAGE_KEY = 'kismet_telemetry'
 
@@ -51,8 +41,7 @@ const STORAGE_KEY = 'kismet_telemetry'
 let enabled = false
 if (typeof window !== 'undefined') {
   try {
-    const params = new URL(window.location.href).searchParams
-    const flag = params.get('telemetry')
+    const flag = new URL(window.location.href).searchParams.get('telemetry')
     if (flag === '1') localStorage.setItem(STORAGE_KEY, '1')
     else if (flag === '0') localStorage.removeItem(STORAGE_KEY)
     enabled = localStorage.getItem(STORAGE_KEY) === '1'
@@ -71,13 +60,7 @@ function formatValue(name: EventName, value: number): string {
  * Record a single perf event. Cheap when telemetry is disabled
  * (single boolean check) so call sites can stay hot-path-safe.
  */
-export function trackPerf(name: EventName, value: number, dims: Dimensions = {}): void {
+export function trackPerf(name: EventName, value: number): void {
   if (!enabled || !Number.isFinite(value)) return
-  // Drop undefined dim values so the log line stays compact when the
-  // caller didn't specify them.
-  const dimStr = Object.entries(dims)
-    .filter(([, v]) => v !== undefined)
-    .map(([k, v]) => `${k}=${v}`)
-    .join(' ')
-  console.log(`[telemetry] ${name}=${formatValue(name, value)}${dimStr ? '  ' + dimStr : ''}`)
+  console.log(`[telemetry] ${name}=${formatValue(name, value)}`)
 }

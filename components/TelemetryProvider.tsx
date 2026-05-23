@@ -4,14 +4,13 @@ import { useEffect } from 'react'
 import { trackPerf } from '@/lib/telemetry'
 
 /**
- * Mount once at app root to hook the standardized perf signals that
- * aren't tied to a specific component lifecycle (LCP is page-level).
+ * Mount once at app root to hook the page-level LCP signal that
+ * isn't tied to a component lifecycle. PerformanceObserver is the
+ * spec-mandated entry point — no polyfill, no SDK.
  *
- * LCP fires once per page after the browser determines the largest
- * contentful paint candidate. We capture the value into the telemetry
- * pipeline so it joins the same histogram aggregation as the
- * domain-specific events (video_ttff, optimizer_400, etc.). PerformanceObserver
- * is the spec-mandated entry point — no polyfill, no SDK.
+ * The trackPerf call here is a no-op for normal users (telemetry
+ * is off by default); when an operator has enabled the toggle, the
+ * LCP value lands in DevTools console alongside the other events.
  *
  * Renders nothing.
  */
@@ -21,10 +20,10 @@ export function TelemetryProvider() {
     let lastLcp = 0
     try {
       const observer = new PerformanceObserver((entries) => {
-        // LCP can update multiple times before page becomes idle;
-        // only the LAST entry before user interaction or page-hide
-        // is the final value. Track the running max here and flush
-        // via the regular telemetry buffer at pagehide / idle.
+        // LCP can update multiple times before page becomes idle; only
+        // the LAST entry before user interaction or page-hide is the
+        // final value (per Web Vitals guidance). Track the running max
+        // here and flush via the pagehide listener below.
         for (const entry of entries.getEntries()) {
           const ts = (entry as PerformanceEntry & { renderTime?: number; loadTime?: number })
             .renderTime ?? (entry as PerformanceEntry & { loadTime?: number }).loadTime ?? 0
