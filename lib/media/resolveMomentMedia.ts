@@ -27,38 +27,59 @@ function isGifUrl(url?: string): boolean {
 
 /**
  * Single source of truth for "what does this moment render, and how".
- * Replaces the per-surface `isVideoMoment(meta) ? … : meta.image ? … : …`
- * chains that silently produced "no preview" for any GIF whose animated
- * bytes live in `animation_url` rather than `image`.
  *
- * Precedence: video → gif → text → still image. A GIF is surfaced whether
- * its bytes sit in `animation_url`, `image`, or are flagged only by the
- * `image/gif` mime — and we keep a static `image` as the poster when the
- * gif itself came from `animation_url`.
+ * Media bytes can live in any of three metadata fields depending on who
+ * minted the token and which marketplace's conventions they followed:
+ *   - `animation_url` — OpenSea/EIP-1155 convention for video/gif/html
+ *   - `content.uri`   — Zora's content extension (with `content.mime`)
+ *   - `image`         — the still/poster, but sometimes the only field set
+ *
+ * Earlier versions only consulted `animation_url`/`image`, so a GIF whose
+ * URL sat in `content.uri` (a common Zora shape) fell through to a blank
+ * "no preview" tile. This resolver reads all three, classifies a gif by
+ * mime OR extension on any of them, and — critically — never returns
+ * `none` when ANY renderable URL exists: an unclassifiable URL is still
+ * attempted as an image (the card/detail view fall back to the thumbhash
+ * blur if it errors), which is strictly better than a blank tile.
+ *
+ * Precedence: video → text → gif → still image → none.
  */
 export function resolveMomentMedia(meta: MediaMeta): ResolvedMedia {
   if (isVideoMoment(meta)) {
-    return { kind: 'video', src: meta.animation_url, poster: meta.image }
-  }
-
-  const animIsGif = isGifUrl(meta.animation_url)
-  const imageIsGif = isGifUrl(meta.image)
-  const mimeIsGif = meta.content?.mime === 'image/gif'
-  if (animIsGif || imageIsGif || mimeIsGif) {
-    // Prefer the field that actually carries the gif. When the gif is the
-    // animation_url and `image` is a static still, keep the still as poster.
-    const src = animIsGif
-      ? meta.animation_url
-      : imageIsGif
-        ? meta.image
-        : (meta.animation_url ?? meta.image)
-    if (src) {
-      const poster = !imageIsGif ? meta.image : undefined
-      return { kind: 'gif', src, poster }
+    return {
+      kind: 'video',
+      src: meta.animation_url ?? meta.content?.uri,
+      poster: meta.image,
     }
   }
 
   if (meta.content?.mime === 'text/plain') return { kind: 'text' }
-  if (meta.image) return { kind: 'image', src: meta.image }
+
+  const animIsGif = isGifUrl(meta.animation_url)
+  const contentIsGif = isGifUrl(meta.content?.uri)
+  const imageIsGif = isGifUrl(meta.image)
+  const mimeIsGif = meta.content?.mime === 'image/gif'
+  if (animIsGif || contentIsGif || imageIsGif || mimeIsGif) {
+    // Prefer the field that actually carries the animated bytes; the
+    // mime-only case (no extension hint) falls back through the same
+    // priority order.
+    const src =
+      (animIsGif && meta.animation_url) ||
+      (contentIsGif && meta.content?.uri) ||
+      (imageIsGif && meta.image) ||
+      meta.animation_url ||
+      meta.content?.uri ||
+      meta.image
+    if (src) {
+      const poster = meta.image && !imageIsGif ? meta.image : undefined
+      return { kind: 'gif', src, poster }
+    }
+  }
+
+  // Still image, or any renderable URL we couldn't classify — attempt it
+  // rather than show a blank tile. The render surfaces fall back to the
+  // thumbhash blur if every gateway errors.
+  const src = meta.image ?? meta.content?.uri ?? meta.animation_url
+  if (src) return { kind: 'image', src }
   return { kind: 'none' }
 }
