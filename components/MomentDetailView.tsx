@@ -26,6 +26,7 @@ import { uploadJson } from '@/lib/arweave/uploadJson'
 import { verifyArweaveAvailable } from '@/lib/arweave/verifyAvailable'
 import { generateThumbhash } from '@/lib/media/thumbhash'
 import { extractVideoPoster } from '@/lib/media/extractPoster'
+import { canTranscode, transcodeGifToMp4 } from '@/lib/media/transcodeGif'
 import { proxyUrl } from '@/lib/media/gateway'
 import { ListButton } from './ListButton'
 import { MomentImage, MomentImg } from './MomentImage'
@@ -619,29 +620,67 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
       // valid forever. Preserve the existing thumbhash by default so a
       // name/description-only edit doesn't strip the blur placeholder.
       let imageUri = detail.metadata.image
+      let animationUri = detail.metadata.animation_url
       let thumbhash = detail.metadata.kismet_thumbhash
+      // When a re-uploaded GIF is transcoded to MP4 below, the legacy
+      // `content: { mime: 'image/gif' }` must be dropped — otherwise the
+      // resolver keeps classifying the moment as a GIF and renders the old
+      // raw bytes instead of the new MP4.
+      let dropContent = false
       if (editFile) {
-        // Picker accepts video/* so the creator can re-upload the
-        // moment's source video to fix a broken meta.image — extract
-        // the first frame and use that as the cover, never store the
-        // video URL itself as the image (same constraint as MintForm).
-        let uploadFile: File = editFile
-        if (editFile.type.startsWith('video/')) {
-          toast.loading('Extracting poster from video…', { id: 'edit-meta' })
-          const poster = await extractVideoPoster(editFile)
-          if (!poster) {
-            throw new Error('Could not extract a poster frame from this video — try uploading an image instead')
+        if (canTranscode(editFile)) {
+          // A re-uploaded GIF gets the same iOS-safe MP4 + poster treatment
+          // as MintForm — WebKit can't decode large animated GIFs, so we
+          // never ship the raw .gif as the rendered asset. Over the 100MB
+          // ffmpeg.wasm cap (canTranscode === false) this branch is skipped
+          // and the server backfill is the only fix.
+          let transcoded = false
+          try {
+            toast.loading('Optimizing animation for fast playback…', { id: 'edit-meta' })
+            const { mp4, poster } = await transcodeGifToMp4(editFile)
+            toast.loading('Uploading media…', { id: 'edit-meta' })
+            const thumbhashPromise = generateThumbhash(poster)
+            const [mp4Uri, posterUri] = await Promise.all([
+              uploadToArweave(mp4),
+              uploadToArweave(poster),
+            ])
+            animationUri = mp4Uri
+            imageUri = posterUri
+            thumbhash = (await thumbhashPromise) ?? thumbhash
+            dropContent = true
+            transcoded = true
+          } catch (err) {
+            console.warn('[MomentDetailView] GIF transcode failed; uploading original', err)
           }
-          uploadFile = poster
+          if (!transcoded) {
+            toast.loading('Uploading image…', { id: 'edit-meta' })
+            const thumbhashPromise = generateThumbhash(editFile)
+            imageUri = await uploadToArweave(editFile)
+            thumbhash = (await thumbhashPromise) ?? thumbhash
+          }
+        } else {
+          // Picker accepts video/* so the creator can re-upload the
+          // moment's source video to fix a broken meta.image — extract
+          // the first frame and use that as the cover, never store the
+          // video URL itself as the image (same constraint as MintForm).
+          let uploadFile: File = editFile
+          if (editFile.type.startsWith('video/')) {
+            toast.loading('Extracting poster from video…', { id: 'edit-meta' })
+            const poster = await extractVideoPoster(editFile)
+            if (!poster) {
+              throw new Error('Could not extract a poster frame from this video — try uploading an image instead')
+            }
+            uploadFile = poster
+          }
+          toast.loading('Uploading image…', { id: 'edit-meta' })
+          // Hash and upload in parallel — the encode is bounded by 100px
+          // downscale and finishes well before the Arweave POST does, so
+          // it's free latency. Falls back to the previous hash on encode
+          // failure rather than stripping the placeholder.
+          const thumbhashPromise = generateThumbhash(uploadFile)
+          imageUri = await uploadToArweave(uploadFile)
+          thumbhash = (await thumbhashPromise) ?? thumbhash
         }
-        toast.loading('Uploading image…', { id: 'edit-meta' })
-        // Hash and upload in parallel — the encode is bounded by 100px
-        // downscale and finishes well before the Arweave POST does, so
-        // it's free latency. Falls back to the previous hash on encode
-        // failure rather than stripping the placeholder.
-        const thumbhashPromise = generateThumbhash(uploadFile)
-        imageUri = await uploadToArweave(uploadFile)
-        thumbhash = (await thumbhashPromise) ?? thumbhash
       }
 
       // Build the new metadata JSON. Preserve animation_url + content
@@ -651,8 +690,8 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
         name: editName.trim(),
         description: editDesc.trim(),
         ...(imageUri ? { image: imageUri } : {}),
-        ...(detail.metadata.animation_url ? { animation_url: detail.metadata.animation_url } : {}),
-        ...(detail.metadata.content ? { content: detail.metadata.content } : {}),
+        ...(animationUri ? { animation_url: animationUri } : {}),
+        ...(detail.metadata.content && !dropContent ? { content: detail.metadata.content } : {}),
         ...(thumbhash ? { kismet_thumbhash: thumbhash } : {}),
       }
 
@@ -669,10 +708,16 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
       if (editFile && imageUri?.startsWith('ar://')) {
         verifies.push(verifyArweaveAvailable(imageUri, 90_000))
       }
-      const [metaOk, imageOk = true] = await Promise.all(verifies)
-      if (!metaOk || !imageOk) {
+      // Only pushed in the transcode path (where imageUri is also a fresh
+      // ar:// poster), so positional destructuring below stays correct.
+      if (dropContent && animationUri?.startsWith('ar://')) {
+        verifies.push(verifyArweaveAvailable(animationUri, 90_000))
+      }
+      const [metaOk, imageOk = true, animOk = true] = await Promise.all(verifies)
+      if (!metaOk || !imageOk || !animOk) {
         const failed: string[] = []
         if (!imageOk) failed.push('image')
+        if (!animOk) failed.push('animation')
         if (!metaOk) failed.push('metadata')
         throw new Error(
           `Arweave still settling (${failed.join(' + ')} not yet propagated) — try again in a minute`,
@@ -725,6 +770,8 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
           name: editName.trim(),
           description: editDesc.trim(),
           ...(imageUri ? { image: imageUri } : {}),
+          ...(animationUri ? { animation_url: animationUri } : {}),
+          ...(dropContent ? { content: undefined } : {}),
           ...(thumbhash ? { kismet_thumbhash: thumbhash } : {}),
         },
       }
