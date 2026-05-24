@@ -99,6 +99,7 @@ export default async function RootLayout({
               position="bottom-center"
               offset={{ bottom: 16 }}
               theme="dark"
+              duration={3000}
               toastOptions={{
                 style: {
                   background: '#161616',
