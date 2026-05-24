@@ -535,7 +535,7 @@ function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreato
         </div>
       ) : (
         <div className="px-4 pb-4 flex gap-2 items-stretch">
-          {!hidePriceSupply && owned === 0 && !collected && (
+          {!showProfileCta && !hidePriceSupply && owned === 0 && !collected && (
             <div className="flex border border-line flex-none">
               <div className="px-3 py-2 flex items-center justify-center min-w-[3.5rem]">
                 <span className="text-[11px] font-mono accent-grad">{price ?? '…'}</span>
@@ -551,38 +551,33 @@ function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreato
               </div>
             </div>
           )}
-          {owned > 0 &&
-            (showProfileCta ? (
-              renderViewProfile('full')
-            ) : (
-              <div className="flex-1 min-w-0">
-                <ListButton
-                  collectionAddress={moment.address}
-                  tokenId={moment.token_id}
-                  name={meta.name}
-                  image={meta.image ? resolveUri(meta.image) : undefined}
-                  creatorAddress={moment.creator?.address}
-                  contentUri={meta.content?.uri}
-                  contentMime={meta.content?.mime}
-                  buttonClassName={hidePriceSupply ? 'py-3' : 'py-2'}
-                />
-              </div>
-            ))}
-          {showProfileCta && owned === 0 ? (
+          {showProfileCta ? (
             renderViewProfile('full')
-          ) : (
-            <button
-              onClick={handleCollect}
-              disabled={collecting || mintedOut || !collectReady}
-              className={`flex-1 ${hidePriceSupply ? 'py-2' : 'py-2.5'} text-xs font-mono tracking-wider uppercase border transition-colors disabled:opacity-50 ${collecting ? 'cursor-not-allowed' : ''} ${
-                hasCollected
-                  ? 'text-accent bg-accent/10 border-accent hover:bg-accent/20'
-                  : 'text-muted border-line accent-grad-hover transition-all'
-              }`}
-            >
-              {collectLabel}
-            </button>
-          )}
+          ) : owned > 0 ? (
+            <div className="flex-1 min-w-0">
+              <ListButton
+                collectionAddress={moment.address}
+                tokenId={moment.token_id}
+                name={meta.name}
+                image={meta.image ? resolveUri(meta.image) : undefined}
+                creatorAddress={moment.creator?.address}
+                contentUri={meta.content?.uri}
+                contentMime={meta.content?.mime}
+                buttonClassName={hidePriceSupply ? 'py-3' : 'py-2'}
+              />
+            </div>
+          ) : null}
+          <button
+            onClick={handleCollect}
+            disabled={collecting || mintedOut || !collectReady}
+            className={`flex-1 ${hidePriceSupply ? 'py-2' : 'py-2.5'} text-xs font-mono tracking-wider uppercase border transition-colors disabled:opacity-50 ${collecting ? 'cursor-not-allowed' : ''} ${
+              hasCollected
+                ? 'text-accent bg-accent/10 border-accent hover:bg-accent/20'
+                : 'text-muted border-line accent-grad-hover transition-all'
+            }`}
+          >
+            {collectLabel}
+          </button>
         </div>
       )}
     </article>
