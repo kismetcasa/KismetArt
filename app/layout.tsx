@@ -28,7 +28,7 @@ export const metadata: Metadata = {
   other: buildFarcasterEmbed({
     imageUrl:
       process.env.NEXT_PUBLIC_FARCASTER_EMBED_IMAGE_URL ?? `${SITE_URL}/embed-default.png`,
-    buttonTitle: process.env.NEXT_PUBLIC_FARCASTER_BUTTON_TITLE ?? 'Create Kismet',
+    buttonTitle: process.env.NEXT_PUBLIC_FARCASTER_BUTTON_TITLE ?? 'Enjoy Kismet',
     action: {
       url: SITE_URL,
       name: process.env.NEXT_PUBLIC_FARCASTER_APP_NAME ?? 'Kismet',
@@ -99,6 +99,7 @@ export default async function RootLayout({
               position="bottom-center"
               offset={{ bottom: 16 }}
               theme="dark"
+              duration={3000}
               toastOptions={{
                 style: {
                   background: '#161616',
