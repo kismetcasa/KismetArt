@@ -87,6 +87,33 @@ async function fetchFromGateways(uri, { asBuffer = false, timeoutMs = 60_000 } =
   throw new Error(`all gateways failed for ${uri}: ${lastErr?.message ?? 'unknown'}`)
 }
 
+// Node's fetch reliably pulls small JSON but fails ("fetch failed") on the
+// large GIF body through CDN77 in front of arweave.net. curl handles the
+// redirect + large transfer + retries far better, so use it for binary
+// assets. Downloads to a temp file then reads it back.
+async function downloadBuffer(uri) {
+  const urls = gatewayUrls(uri)
+  let lastErr
+  for (const url of urls) {
+    const tmp = join(tmpdir(), `dl-${Date.now()}-${Math.random().toString(36).slice(2)}`)
+    try {
+      await execFileAsync(
+        'curl',
+        ['-fSL', '--retry', '3', '--retry-delay', '2', '--max-time', '900', '-o', tmp, url],
+        { maxBuffer: 1024 * 1024 },
+      )
+      const buf = await readFile(tmp)
+      if (buf.length === 0) throw new Error('empty download')
+      return buf
+    } catch (err) {
+      lastErr = err
+    } finally {
+      await rm(tmp, { force: true }).catch(() => {})
+    }
+  }
+  throw new Error(`could not download ${uri}: ${lastErr?.message ?? 'unknown'}`)
+}
+
 async function waitForPropagation(uri, timeoutMs = 90_000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
@@ -239,7 +266,7 @@ async function main() {
         continue
       }
       console.log(`  media: ${gifUri}`)
-      const gifBuf = await fetchFromGateways(gifUri, { asBuffer: true })
+      const gifBuf = await downloadBuffer(gifUri)
       // The raw metadata has no reliable mime/extension, so confirm it's
       // actually a GIF from its magic number before transcoding.
       if (!isGifBytes(gifBuf)) {
