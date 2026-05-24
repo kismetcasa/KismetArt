@@ -8,7 +8,7 @@ import {
   useRef,
   type ReactNode,
 } from 'react'
-import { gatewayUrls } from '@/lib/arweave/gateways'
+import { videoGatewayUrls } from '@/lib/media/gateway'
 import { getVideoDuration } from '@/lib/media/durationCache'
 import { trackPerf } from '@/lib/telemetry'
 
@@ -584,7 +584,11 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
   }
 
   function createVideo(src: string): ManagedVideo {
-    const gateways = gatewayUrls(src)
+    // In Mini App webviews / iframe embeds the direct-gateway src stalls on
+    // the shared connection pool (loadeddata never fires → element stays
+    // hidden). videoGatewayUrls prepends the /api/img proxy in those
+    // contexts and leaves top-level browsing on the direct gateways.
+    const gateways = videoGatewayUrls(src)
     // Seeded by MomentCard from the server-stitched kismet_duration_sec.
     // When present + over the long-form threshold, skip the metadata→auto
     // preload upgrade dance: start with preload="auto" so the browser

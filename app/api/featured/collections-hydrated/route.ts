@@ -10,6 +10,7 @@ import { getHiddenCollectionsSet } from '@/lib/hiddenCollections'
 import { getHiddenMomentsSet } from '@/lib/hiddenMoments'
 import { getHiddenUsersSet } from '@/lib/hidden-users'
 import { getCollectionMeta, getCollectionMetaBatch } from '@/lib/kv'
+import { getMomentMetaBatch } from '@/lib/notifications'
 import { enrichMomentsWithKismetMeta } from '@/lib/momentEnrichment'
 
 // Cache for 30s — sale-config eligibility depends on (now), and inner
@@ -208,13 +209,42 @@ export async function GET() {
           if (coverThumbhash && mt && mt === coverThumbhash) return false
           return true
         })
-        // Overlap the Redis MGETs in enrichMomentsWithKismetMeta with
-        // the two RPC eligibility calls — they share no state.
-        const [ethEligible, usdcEligible, displayMoments] = await Promise.all([
+        // Overlap the moment-meta MGET with the two RPC eligibility calls —
+        // they share no state. enrichMomentsWithKismetMeta runs after so it
+        // resolves the creator chip against the corrected address below.
+        const visibleSlice = visibleMoments.slice(0, ROW_DISPLAY_LIMIT)
+        const [ethEligible, usdcEligible, momentMetas] = await Promise.all([
           tokenIds.length > 0 ? fetchEligibleTokens(client, address, tokenIds, 'eth') : [],
           tokenIds.length > 0 ? fetchEligibleTokens(client, address, tokenIds, 'usdc') : [],
-          enrichMomentsWithKismetMeta(visibleMoments.slice(0, ROW_DISPLAY_LIMIT)),
+          getMomentMetaBatch(
+            visibleSlice.map((m) => ({ address: m.address, tokenId: m.token_id })),
+          ),
         ])
+        // Same KV creator-override /api/timeline applies (see that route's
+        // comment): inprocess attributes delegated mints to the collection's
+        // defaultAdmin and cover mints to the factory, so a moment minted by
+        // an individual artist inside a Kismet collection would otherwise
+        // surface — and resolve its creator chip — under the collection
+        // owner's address (e.g. every "Kismet Casa Rome 2026" mint showing
+        // "Kismet Casa" as the creator). mint-proxy writes the real minter
+        // EOA to moment-meta KV at mint time; stitch it on before enrichment
+        // so the username/avatar resolve for the right person. Reset the
+        // inprocess-supplied username/avatarUrl so enrichment re-resolves
+        // them from the corrected address rather than keeping the wrong ones.
+        const correctedSlice = visibleSlice.map((m, i) => {
+          const mMeta = momentMetas[i]
+          if (
+            mMeta?.creator &&
+            m.creator?.address?.toLowerCase() !== mMeta.creator.toLowerCase()
+          ) {
+            return {
+              ...m,
+              creator: { ...m.creator, address: mMeta.creator, username: undefined, avatarUrl: undefined },
+            }
+          }
+          return m
+        })
+        const displayMoments = await enrichMomentsWithKismetMeta(correctedSlice)
         const ethEligibleTotalWei = ethEligible
           .reduce((sum, e) => sum + e.pricePerToken, 0n)
           .toString()
