@@ -4,14 +4,6 @@ export const PLATFORM_COLLECTION =
   process.env.NEXT_PUBLIC_PLATFORM_COLLECTION ||
   '0x349D3DA472BDD2FBeebf8e0bBAF4220160A62526'
 
-// Kismet Casa Rome collection on Base — the curated Rome residency drop where
-// each participating artist minted a single piece. The Artists tab surfaces one
-// card per artist sourced from this collection. Override per-deployment with
-// NEXT_PUBLIC_KISMET_CASA_ROME_COLLECTION.
-export const KISMET_CASA_ROME_COLLECTION =
-  process.env.NEXT_PUBLIC_KISMET_CASA_ROME_COLLECTION ||
-  '0x83c9309e7945d514907be7535dac7a7002169892'
-
 // Referral address — Kismet platform treasury that receives:
 // - createReferral cut from Zora when a collection is deployed via the factory
 // - mintReferral cut from Zora on every direct collect (see lib/zoraMint.ts

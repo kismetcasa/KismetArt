@@ -11,7 +11,6 @@ import { useViewMode } from '@/hooks/useViewMode'
 import { useLongPressDrag } from '@/hooks/useLongPressDrag'
 import type { Moment } from '@/lib/inprocess'
 import { useAdmin } from '@/contexts/AdminContext'
-import { KISMET_CASA_ROME_COLLECTION } from '@/lib/config'
 
 // Mobile-mount context. Server-side UA detection (see app/page.tsx)
 // sets this to `true` on mobile UAs, baking the decision into SSR
@@ -469,33 +468,126 @@ export function DiscoverPage({ isMobile }: { isMobile: boolean }) {
 
 // ─── artists feed ────────────────────────────────────────────────────────────
 
-// One card per artist who minted into the Kismet Casa Rome collection. The
-// collection holds a single piece per artist, so scoping the timeline to it
-// and deduping by creator yields exactly that artist's Rome mint. Each card
-// pairs a "view profile" link with the standard collect action.
+interface CreatorListLite {
+  slug: string
+  name: string
+  addresses: string[]
+  collection?: string
+}
+
+// One card per artist in the active creator list. Each list names *which*
+// artists appear; its optional `collection` decides *which* moment represents
+// each one — for the Kismet Casa Rome list that's the Rome collection. Lists
+// with no collection fall back to each artist's most-collected mint anywhere.
+// Either way the feed is deduped to a single card per artist and ordered by
+// the list, with the view-profile CTA steering to each artist's profile.
 function ArtistsFeed() {
   const lazy = useContext(LazyMountCtx)
+  const [lists, setLists] = useState<CreatorListLite[]>([])
+  const [activeSlug, setActiveSlug] = useState<string | null>(null)
+  const [listsLoaded, setListsLoaded] = useState(false)
 
-  // Dedupe by creator, keeping the first (newest) moment per address. Guards
-  // against an artist who minted more than one piece into the collection.
-  const dedupeByArtist = useCallback((items: Moment[]) => {
-    const seen = new Set<string>()
-    return items.filter((m) => {
-      const addr = m.creator?.address?.toLowerCase()
-      if (!addr || seen.has(addr)) return false
-      seen.add(addr)
-      return true
-    })
+  useEffect(() => {
+    fetch('/api/creator-lists')
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d: { lists?: CreatorListLite[] }) => {
+        const next = Array.isArray(d.lists) ? d.lists : []
+        setLists(next)
+        setActiveSlug(next[0]?.slug ?? null)
+      })
+      .catch(() => {})
+      .finally(() => setListsLoaded(true))
   }, [])
+
+  const activeList = lists.find((l) => l.slug === activeSlug) ?? null
+
+  // No lists at all → empty state with curator hint.
+  if (listsLoaded && lists.length === 0) {
+    return (
+      <div className="border border-line p-8 sm:p-16 text-center mt-4">
+        <p className="text-sm font-mono text-muted">no artist lists yet</p>
+        <p className="text-xs font-mono text-[#444] mt-2">
+          a curator can create one from their profile
+        </p>
+      </div>
+    )
+  }
+
+  // Restrict to the list's artists, keep one moment each (the first survivor of
+  // the feed's sort order — most-collected for the fallback, the sole token for
+  // a collection-scoped list), then order by the list's own sequence.
+  const filterToArtists = (items: Moment[]) => {
+    if (!activeList) return []
+    const order = new Map(activeList.addresses.map((a, i) => [a.toLowerCase(), i]))
+    const seen = new Set<string>()
+    const out: Moment[] = []
+    for (const m of items) {
+      const addr = m.creator?.address?.toLowerCase()
+      if (!addr || !order.has(addr) || seen.has(addr)) continue
+      seen.add(addr)
+      out.push(m)
+    }
+    return out.sort(
+      (a, b) =>
+        (order.get(a.creator.address.toLowerCase()) ?? 0) -
+        (order.get(b.creator.address.toLowerCase()) ?? 0),
+    )
+  }
+
+  // Collection-scoped when the list names a source collection (Rome list → Rome
+  // collection). Otherwise pull the listed artists' own timelines sorted by
+  // collects, so the dedupe keeps each one's most-collected (most popular) mint.
+  const apiUrl = activeList
+    ? activeList.collection
+      ? `/api/timeline?collection=${activeList.collection}`
+      : activeList.addresses.length > 0
+        ? `/api/timeline?creators=${activeList.addresses.join(',')}&sort=trending`
+        : null
+    : null
+
+  const header =
+    lists.length > 1 ? (
+      <div className="flex items-center gap-2 flex-wrap">
+        {lists.map((l) => (
+          <button
+            key={l.slug}
+            onClick={() => setActiveSlug(l.slug)}
+            className={`text-[10px] font-mono px-2.5 py-1 border transition-colors ${
+              l.slug === activeSlug
+                ? 'border-ink text-ink'
+                : 'border-line text-muted hover:border-muted hover:text-dim'
+            }`}
+          >
+            {l.name}
+            <span className="ml-1.5 text-[#444]">{l.addresses.length}</span>
+          </button>
+        ))}
+      </div>
+    ) : null
+
+  // Empty list (no addresses, no collection) → nothing to query.
+  if (!apiUrl) {
+    return (
+      <div>
+        {header && <div className="py-4">{header}</div>}
+        <div className="border border-line p-8 sm:p-16 text-center">
+          <p className="text-sm font-mono text-muted">
+            {activeList ? 'this list has no artists yet' : 'select a list'}
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <PaginatedGrid<Moment>
-      apiUrl={`/api/timeline?collection=${KISMET_CASA_ROME_COLLECTION}`}
+      apiUrl={apiUrl}
       itemsKey="moments"
       getKey={(m) => `${m.address}-${m.token_id}`}
       lazy={lazy}
       pageLimit={lazy ? 12 : 18}
-      filter={dedupeByArtist}
+      filter={filterToArtists}
+      header={header}
       renderItem={(m, { index }) => (
         <MomentCard
           key={`${m.address}-${m.token_id}`}
@@ -506,7 +598,7 @@ function ArtistsFeed() {
       )}
       empty={
         <div className="border border-line p-8 sm:p-16 text-center">
-          <p className="text-sm font-mono text-muted">no artists yet</p>
+          <p className="text-sm font-mono text-muted">no mints to show yet</p>
         </div>
       }
     />
