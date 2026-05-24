@@ -120,7 +120,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     buttonTitle: hasActiveListing ? 'View Listing' : `Collect ${name}`,
     action: {
       url: canonicalUrl,
-      name: title,
     },
   })
 

@@ -18,21 +18,29 @@ export interface GateConfig {
   paused: boolean
 }
 
+// Upstash's REST client sends string args to SET unchanged but JSON-parses
+// GET results, so the flag stored as '1' comes back as the number 1 — a
+// strict `=== '1'` would always be false and the toggle would never persist.
+// Normalize both representations.
+function isFlagSet(raw: string | number | null): boolean {
+  return String(raw) === '1'
+}
+
 export async function getGateConfig(): Promise<GateConfig> {
   try {
     const [enabled, collectionRaw, paused] = await Promise.all([
-      redis.get<string>(KEY_ENABLED),
+      redis.get<string | number>(KEY_ENABLED),
       redis.get<string>(KEY_PASS_COLLECTION),
-      redis.get<string>(KEY_PAUSED),
+      redis.get<string | number>(KEY_PAUSED),
     ])
     const passCollection =
       typeof collectionRaw === 'string' && isAddress(collectionRaw)
         ? collectionRaw.toLowerCase()
         : null
     return {
-      enabled: enabled === '1',
+      enabled: isFlagSet(enabled),
       passCollection,
-      paused: paused === '1',
+      paused: isFlagSet(paused),
     }
   } catch {
     return { enabled: false, passCollection: null, paused: false }

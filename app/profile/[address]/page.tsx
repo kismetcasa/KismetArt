@@ -48,7 +48,6 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     buttonTitle: 'view profile',
     action: {
       url: canonicalUrl,
-      name: title,
     },
   })
 
