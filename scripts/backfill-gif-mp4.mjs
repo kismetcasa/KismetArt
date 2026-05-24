@@ -233,6 +233,7 @@ async function main() {
           ...(meta.external_url ? { external_url: meta.external_url } : {}),
           image: 'ar://<poster>',
           animation_url: 'ar://<mp4>',
+          content: { uri: 'ar://<mp4>', mime: 'video/mp4' },
         }
         console.log(`  DRY RUN — wrote ${workDir}/out.mp4 + poster.jpg`)
         console.log('  would write metadata:', JSON.stringify(newMeta, null, 2).replace(/\n/g, '\n  '))
@@ -245,15 +246,19 @@ async function main() {
       ])
       console.log(`  uploaded mp4 ${mp4Uri}  poster ${posterUri}`)
 
-      // Rewritten metadata: drop the stale `content` (mime image/gif) so the
-      // renderer no longer classifies this as a GIF; image = poster,
-      // animation_url = mp4 (the moving asset), matching MintForm's shape.
+      // Rewritten metadata: image = poster, animation_url = mp4, and
+      // content = the mp4 with mime video/mp4. The content.mime is
+      // load-bearing — ar:// URIs have no extension, so isVideoMoment()
+      // classifies by content.mime; writing it explicitly (rather than the
+      // stale image/gif, or omitting it) guarantees the moment renders as a
+      // playing video regardless of how the indexer re-derives metadata.
       const newMeta = {
         name: meta.name,
         description: meta.description,
         ...(meta.external_url ? { external_url: meta.external_url } : {}),
         image: posterUri,
         animation_url: mp4Uri,
+        content: { uri: mp4Uri, mime: 'video/mp4' },
       }
       const newUri = await turboUpload(turbo, JSON.stringify(newMeta), 'application/json')
       console.log(`  uploaded metadata ${newUri}`)

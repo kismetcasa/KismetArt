@@ -623,11 +623,12 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
       let imageUri = detail.metadata.image
       let animationUri = detail.metadata.animation_url
       let thumbhash = detail.metadata.kismet_thumbhash
-      // When a re-uploaded GIF is transcoded to MP4 below, the legacy
-      // `content: { mime: 'image/gif' }` must be dropped — otherwise the
-      // resolver keeps classifying the moment as a GIF and renders the old
-      // raw bytes instead of the new MP4.
-      let dropContent = false
+      // When a re-uploaded GIF is transcoded to MP4, we rewrite `content` to
+      // the MP4 with mime video/mp4. This is load-bearing: ar:// URIs carry
+      // no extension, so isVideoMoment() classifies by content.mime — without
+      // it the moment would render the poster as a still instead of playing.
+      // It also replaces the stale `content: { mime: 'image/gif' }`.
+      let videoContent: { uri: string; mime: string } | null = null
       const isGifEdit =
         !!editFile && (editFile.type === 'image/gif' || editFile.name.toLowerCase().endsWith('.gif'))
       if (editFile && isGifEdit) {
@@ -650,7 +651,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
             animationUri = mp4Uri
             imageUri = posterUri
             thumbhash = (await thumbhashPromise) ?? thumbhash
-            dropContent = true
+            videoContent = { uri: mp4Uri, mime: 'video/mp4' }
             done = true
           } catch (err) {
             console.warn('[MomentDetailView] client GIF transcode failed; trying server', err)
@@ -671,7 +672,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
             animationUri = r.animationUri
             imageUri = r.posterUri
             thumbhash = r.thumbhash ?? thumbhash
-            dropContent = true
+            videoContent = { uri: r.animationUri, mime: 'video/mp4' }
             done = true
           } catch (err) {
             console.warn('[MomentDetailView] server GIF transcode failed; uploading original', err)
@@ -717,7 +718,11 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
         description: editDesc.trim(),
         ...(imageUri ? { image: imageUri } : {}),
         ...(animationUri ? { animation_url: animationUri } : {}),
-        ...(detail.metadata.content && !dropContent ? { content: detail.metadata.content } : {}),
+        ...(videoContent
+          ? { content: videoContent }
+          : detail.metadata.content
+            ? { content: detail.metadata.content }
+            : {}),
         ...(thumbhash ? { kismet_thumbhash: thumbhash } : {}),
       }
 
@@ -736,7 +741,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
       }
       // Only pushed in the transcode path (where imageUri is also a fresh
       // ar:// poster), so positional destructuring below stays correct.
-      if (dropContent && animationUri?.startsWith('ar://')) {
+      if (videoContent && animationUri?.startsWith('ar://')) {
         verifies.push(verifyArweaveAvailable(animationUri, 90_000))
       }
       const [metaOk, imageOk = true, animOk = true] = await Promise.all(verifies)
@@ -797,7 +802,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
           description: editDesc.trim(),
           ...(imageUri ? { image: imageUri } : {}),
           ...(animationUri ? { animation_url: animationUri } : {}),
-          ...(dropContent ? { content: undefined } : {}),
+          ...(videoContent ? { content: videoContent } : {}),
           ...(thumbhash ? { kismet_thumbhash: thumbhash } : {}),
         },
       }
