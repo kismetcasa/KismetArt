@@ -203,6 +203,19 @@ const LONG_FORM_DURATION_THRESHOLD_S = 60
 const IO_ROOT_MARGIN_SHORT = '150px'
 const IO_ROOT_MARGIN_LONG = '200%'
 
+// Mobile-only fast-scroll handling. A position:fixed video tracked via
+// transform can't keep up with iOS momentum scroll — the compositor
+// repaints the fixed element a frame or two behind, so it visibly smears
+// over the wrong card mid-fling, then snaps back when scroll settles.
+// When a slot moves more than this many px between scroll frames we treat
+// it as a fling and hide the video (the poster/thumbhash layer underneath
+// shows the correct still), then reveal it once scrolling settles. Slow
+// scrolls stay under the threshold and keep tracking exactly as before.
+const FAST_SCROLL_DELTA_PX = 24
+// Trailing delay after the last scroll event before we re-position and
+// reveal videos hidden during a fling.
+const SCROLL_SETTLE_MS = 140
+
 // Module-level memory of playback position by canonical src. Outlives
 // pool eviction so that an evict→re-acquire round-trip (long feed,
 // scroll-back after the 30min window or past the cap) resumes where
@@ -272,6 +285,7 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
     slot: Slot,
     rect: DOMRect,
     clip: DOMRect | null,
+    forceHidden = false,
   ) {
     const el = video.el
     // translate3d is GPU-composited; top/left would force layout per
@@ -329,7 +343,13 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
     } else {
       el.style.clipPath = ''
     }
-    if (video.loaded) el.style.visibility = 'visible'
+    // Hidden during a fling (transform is still updated above, so the
+    // element is correctly placed the moment we reveal it on settle).
+    if (forceHidden) {
+      el.style.visibility = 'hidden'
+    } else if (video.loaded) {
+      el.style.visibility = 'visible'
+    }
   }
 
   function positionElement(video: ManagedVideo, slot: Slot) {
@@ -811,11 +831,32 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
           updates.push({ video, slot, rect, clip })
         })
         for (const { video, slot, rect, clip } of updates) {
-          applySlotGeometry(video, slot, rect, clip)
+          // On mobile, hide a feed video that's moving too fast this frame
+          // to track without smearing; the trailing settle timer reveals
+          // it once scrolling stops. Controls surfaces (detail/lightbox)
+          // and desktop always track live.
+          const fling =
+            isMobile &&
+            !slot.controls &&
+            Number.isFinite(video.lastTop) &&
+            Math.abs(rect.top - video.lastTop) > FAST_SCROLL_DELTA_PX
+          applySlotGeometry(video, slot, rect, clip, fling)
         }
       })
     }
-    window.addEventListener('scroll', flushAll, { passive: true })
+    // On mobile, schedule a reposition+reveal once scrolling settles so a
+    // video hidden mid-fling doesn't stay hidden after the user stops.
+    let settleTimer: ReturnType<typeof setTimeout> | null = null
+    const onScroll = () => {
+      flushAll()
+      if (!isMobile) return
+      if (settleTimer !== null) clearTimeout(settleTimer)
+      settleTimer = setTimeout(() => {
+        settleTimer = null
+        flushAll()
+      }, SCROLL_SETTLE_MS)
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
     window.addEventListener('resize', flushAll)
 
     // Eviction sweep. Walks the pool, drops entries whose slot count
@@ -874,9 +915,10 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
     }
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
-      window.removeEventListener('scroll', flushAll)
+      window.removeEventListener('scroll', onScroll)
       window.removeEventListener('resize', flushAll)
       document.removeEventListener('visibilitychange', onVisibilityChange)
+      if (settleTimer !== null) clearTimeout(settleTimer)
       clearInterval(interval)
       // Defensive: destroy all videos on provider unmount so they
       // don't outlive the React tree as orphan DOM nodes.
