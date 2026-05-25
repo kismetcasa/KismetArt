@@ -545,6 +545,9 @@ function ArtistsFeed() {
         : null
     : null
 
+  // A single list shows its name as a static title — it's the context for the
+  // feed (e.g. the artists who stayed at the Kismet Casa Rome residence). Once
+  // there's more than one list the same names become selectable filter chips.
   const header =
     lists.length > 1 ? (
       <div className="flex items-center gap-2 flex-wrap">
@@ -562,6 +565,15 @@ function ArtistsFeed() {
             <span className="ml-1.5 text-[#444]">{l.addresses.length}</span>
           </button>
         ))}
+      </div>
+    ) : activeList ? (
+      <div className="flex items-baseline gap-2">
+        <h2 className="text-xs font-mono text-ink uppercase tracking-wider">
+          {activeList.name}
+        </h2>
+        <span className="text-[10px] font-mono text-[#444]">
+          {activeList.addresses.length}
+        </span>
       </div>
     ) : null
 
