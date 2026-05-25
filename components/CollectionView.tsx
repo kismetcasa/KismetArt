@@ -9,8 +9,8 @@ import { mainnet } from 'wagmi/chains'
 import { toast } from 'sonner'
 import { isAddress } from 'viem'
 import { ArrowLeft, Star, Eye, EyeOff, ShieldCheck, Trash2, Copy, Check } from 'lucide-react'
-import { shortAddress, inferCollectCurrency, type Moment } from '@/lib/inprocess'
-import { ZORA_1155_TOKEN_INFO_ABI } from '@/lib/zoraMint'
+import { shortAddress, type Moment } from '@/lib/inprocess'
+import { ZORA_1155_TOKEN_INFO_ABI, isOpenEdition } from '@/lib/zoraMint'
 import { fetchCreatorProfile } from '@/lib/profileCache'
 import { toastError } from '@/lib/toast'
 import { useAdmin } from '@/contexts/AdminContext'
@@ -626,15 +626,16 @@ export function CollectionView({
     0,
   )
 
-  // Collect-all candidates bucketed by currency; useCollectAll re-checks live
-  // eligibility at click time, so passing every priced token is safe.
-  const ethCollectIds: string[] = []
-  const usdcCollectIds: string[] = []
-  for (const m of loadedMoments) {
-    if (!m.saleConfig) continue
-    if (inferCollectCurrency(m.saleConfig) === 'usdc') usdcCollectIds.push(m.token_id)
-    else ethCollectIds.push(m.token_id)
-  }
+  // Collect-all candidates: tokens not yet sold out, from the same getTokenInfo
+  // read used above. useCollectAll resolves each token's currency + live sale
+  // eligibility on-chain at click time, so the same id list feeds both legs.
+  const collectableIds: string[] = []
+  loadedMoments.forEach((m, i) => {
+    const info = tokenInfos?.[i]
+    if (info?.status !== 'success' || !info.result) return
+    const { maxSupply, totalMinted } = info.result as { maxSupply: bigint; totalMinted: bigint }
+    if (isOpenEdition(maxSupply) || totalMinted < maxSupply) collectableIds.push(m.token_id)
+  })
 
   async function handleShare() {
     const url = `${window.location.origin}/collection/${address}`
@@ -998,12 +999,12 @@ export function CollectionView({
           <h2 className="text-xs font-mono text-muted uppercase tracking-widest">
             artworks{loadedMoments.length > 0 ? ` (${loadedMoments.length})` : ''}
           </h2>
-          {(ethCollectIds.length > 0 || usdcCollectIds.length > 0) && (
+          {collectableIds.length > 0 && (
             <CollectAllAction
               plain
               collectionAddress={address}
-              ethEligibleTokenIds={ethCollectIds}
-              usdcEligibleTokenIds={usdcCollectIds}
+              ethEligibleTokenIds={collectableIds}
+              usdcEligibleTokenIds={collectableIds}
             />
           )}
         </div>
