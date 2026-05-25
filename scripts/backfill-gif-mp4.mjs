@@ -210,14 +210,37 @@ async function turboUpload(turbo, data, contentType) {
 async function updateTokenUri(collectionAddress, tokenId, newUri) {
   const apiKey = process.env.INPROCESS_API_KEY
   if (!apiKey) throw new Error('INPROCESS_API_KEY not configured')
-  const res = await fetch(`${INPROCESS_API}/moment/update-uri`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'x-api-key': apiKey },
-    body: JSON.stringify({ moment: { collectionAddress, tokenId, chainId: CHAIN_ID }, newUri }),
-  })
-  const text = await res.text()
-  if (!res.ok) throw new Error(`inprocess update-uri ${res.status}: ${text.slice(0, 300)}`)
-  return text
+  const body = JSON.stringify({ moment: { collectionAddress, tokenId, chainId: CHAIN_ID }, newUri })
+  // Use curl (not Node fetch) for the same reason as the downloads: Node's
+  // undici is unreliable on this network. Body goes via a temp file; the
+  // status code is appended with -w so we can detect non-2xx.
+  const tmp = join(tmpdir(), `body-${Date.now()}.json`)
+  await writeFile(tmp, body)
+  try {
+    const { stdout } = await execFileAsync(
+      'curl',
+      [
+        '-sS', '-4', '--max-time', '60',
+        '-X', 'POST',
+        '-H', 'Content-Type: application/json',
+        '-H', 'Accept: application/json',
+        '-H', `x-api-key: ${apiKey}`,
+        '--data-binary', `@${tmp}`,
+        '-w', '\n%{http_code}',
+        `${INPROCESS_API}/moment/update-uri`,
+      ],
+      { maxBuffer: 4 * 1024 * 1024 },
+    )
+    const nl = stdout.lastIndexOf('\n')
+    const text = stdout.slice(0, nl)
+    const code = parseInt(stdout.slice(nl + 1), 10)
+    if (!(code >= 200 && code < 300)) {
+      throw new Error(`inprocess update-uri ${code}: ${text.slice(0, 300)}`)
+    }
+    return text
+  } finally {
+    await rm(tmp, { force: true }).catch(() => {})
+  }
 }
 
 // --- main ------------------------------------------------------------------
