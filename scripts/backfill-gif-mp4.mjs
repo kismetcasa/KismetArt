@@ -117,7 +117,7 @@ async function downloadBuffer(uri) {
   throw new Error(`could not download ${uri}: ${lastErr?.message ?? 'unknown'}`)
 }
 
-async function waitForPropagation(uri, timeoutMs = 90_000) {
+async function waitForPropagation(uri, timeoutMs = 300_000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     for (const url of gatewayUrls(uri)) {
@@ -224,6 +224,38 @@ async function updateTokenUri(collectionAddress, tokenId, newUri) {
 async function main() {
   const args = process.argv.slice(2)
   const dryRun = args.includes('--dry-run')
+
+  // --finalize mode: the media + metadata are already uploaded (from a prior
+  // run that uploaded but timed out on the propagation gate). Skip all
+  // download/transcode/upload — just wait for propagation and call
+  // update-uri. Args: 0xcoll:tokenId:ar://metadataUri … Needs only
+  // INPROCESS_API_KEY (no ffmpeg, RPC, or Turbo).
+  if (args.includes('--finalize')) {
+    const items = args
+      .filter((a) => !a.startsWith('--'))
+      .map((a) => {
+        const m = a.match(/^(0x[a-fA-F0-9]{40}):(\d+):(ar:\/\/.+)$/)
+        if (!m) throw new Error(`bad --finalize target "${a}" — expected 0xcoll:tokenId:ar://metaUri`)
+        return { collectionAddress: m[1], tokenId: m[2], newUri: m[3] }
+      })
+    for (const { collectionAddress, tokenId, newUri } of items) {
+      const label = `${collectionAddress}:${tokenId}`
+      console.log(`\n=== finalize ${label} -> ${newUri} ===`)
+      try {
+        console.log('  verifying Arweave propagation…')
+        if (!(await waitForPropagation(newUri))) {
+          throw new Error('metadata still not propagated — wait a minute and re-run --finalize')
+        }
+        const result = await updateTokenUri(collectionAddress, tokenId, newUri)
+        console.log(`  update-uri OK: ${result.slice(0, 200)}`)
+        console.log(`  DONE ${label}`)
+      } catch (err) {
+        console.error(`  FAILED ${label}: ${err?.message ?? err}`)
+      }
+    }
+    return
+  }
+
   const targetArgs = args.filter((a) => !a.startsWith('--'))
   const targets = targetArgs.length
     ? targetArgs.map((a) => {
