@@ -40,7 +40,7 @@ import { createPublicClient, http } from 'viem'
 import { base } from 'viem/chains'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { mkdtemp, writeFile, readFile, mkdir, rm } from 'node:fs/promises'
+import { writeFile, readFile, mkdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -99,7 +99,10 @@ async function downloadBuffer(uri) {
     try {
       await execFileAsync(
         'curl',
-        ['-fSL', '--retry', '3', '--retry-delay', '2', '--max-time', '900', '-o', tmp, url],
+        // -4 (force IPv4) sidesteps the macOS LibreSSL "Broken pipe" / TLS
+        // alerts seen over IPv6; --retry-all-errors retries TLS/connection
+        // failures too, not just HTTP 5xx.
+        ['-fSL', '-4', '--retry', '5', '--retry-all-errors', '--retry-delay', '3', '--max-time', '1200', '-o', tmp, url],
         { maxBuffer: 1024 * 1024 },
       )
       const buf = await readFile(tmp)
@@ -121,7 +124,7 @@ async function waitForPropagation(uri, timeoutMs = 90_000) {
       try {
         // curl -I (HEAD) for the same reason downloads use curl: Node's
         // fetch is flaky against this CDN. -f makes a non-2xx exit nonzero.
-        await execFileAsync('curl', ['-fsIL', '--max-time', '20', url], { maxBuffer: 1024 * 1024 })
+        await execFileAsync('curl', ['-fsIL', '-4', '--max-time', '20', url], { maxBuffer: 1024 * 1024 })
         return true
       } catch {}
     }
@@ -245,9 +248,13 @@ async function main() {
   for (const { collectionAddress, tokenId } of targets) {
     const label = `${collectionAddress}:${tokenId}`
     console.log(`\n=== ${label} ===`)
-    const workDir = dryRun
-      ? join(process.cwd(), 'backfill-out', label.replace(/[:]/g, '_'))
-      : await mkdtemp(join(tmpdir(), 'gifbackfill-'))
+    // Persistent output dir (both dry + real runs). The real run reuses a
+    // dry run's already-transcoded out.mp4/poster.jpg so it never has to
+    // re-download the (large, flaky) source GIF just to upload it.
+    const workDir = join(process.cwd(), 'backfill-out', label.replace(/[:]/g, '_'))
+    await mkdir(workDir, { recursive: true })
+    const mp4Path = join(workDir, 'out.mp4')
+    const posterPath = join(workDir, 'poster.jpg')
     try {
       const metaUri = await rpc.readContract({
         address: collectionAddress,
@@ -262,23 +269,34 @@ async function main() {
         console.log('  SKIP — already a video (mp4). No change.')
         continue
       }
-      const gifUri = mediaSource(meta)
-      if (!gifUri) {
-        console.log('  SKIP — no media URL in metadata. No change.')
-        continue
-      }
-      console.log(`  media: ${gifUri}`)
-      const gifBuf = await downloadBuffer(gifUri)
-      // The raw metadata has no reliable mime/extension, so confirm it's
-      // actually a GIF from its magic number before transcoding.
-      if (!isGifBytes(gifBuf)) {
-        console.log(`  SKIP — asset is not a GIF (magic ${gifBuf.toString('hex', 0, 4)}). No change.`)
-        continue
-      }
-      console.log(`  raw gif confirmed, ${(gifBuf.length / 1024 / 1024).toFixed(1)} MB`)
 
-      const { mp4, poster } = await transcode(gifBuf, workDir)
-      console.log(`  transcoded -> mp4 ${(mp4.length / 1024 / 1024).toFixed(1)} MB, poster ${(poster.length / 1024).toFixed(0)} KB`)
+      // Reuse a prior (dry-)run's transcoded artifacts if present — avoids
+      // re-downloading the large source GIF over a flaky connection.
+      const cachedMp4 = await readFile(mp4Path).catch(() => null)
+      const cachedPoster = await readFile(posterPath).catch(() => null)
+      let mp4, poster
+      if (cachedMp4?.length && cachedPoster?.length) {
+        mp4 = cachedMp4
+        poster = cachedPoster
+        console.log(`  reusing transcoded output (mp4 ${(mp4.length / 1024 / 1024).toFixed(1)} MB, poster ${(poster.length / 1024).toFixed(0)} KB)`)
+      } else {
+        const gifUri = mediaSource(meta)
+        if (!gifUri) {
+          console.log('  SKIP — no media URL in metadata. No change.')
+          continue
+        }
+        console.log(`  media: ${gifUri}`)
+        const gifBuf = await downloadBuffer(gifUri)
+        // The raw metadata has no reliable mime/extension, so confirm it's
+        // actually a GIF from its magic number before transcoding.
+        if (!isGifBytes(gifBuf)) {
+          console.log(`  SKIP — asset is not a GIF (magic ${gifBuf.toString('hex', 0, 4)}). No change.`)
+          continue
+        }
+        console.log(`  raw gif confirmed, ${(gifBuf.length / 1024 / 1024).toFixed(1)} MB`)
+        ;({ mp4, poster } = await transcode(gifBuf, workDir))
+        console.log(`  transcoded -> mp4 ${(mp4.length / 1024 / 1024).toFixed(1)} MB, poster ${(poster.length / 1024).toFixed(0)} KB`)
+      }
 
       if (dryRun) {
         const newMeta = {
@@ -327,9 +345,9 @@ async function main() {
       console.log(`  DONE ${label} -> ${newUri}`)
     } catch (err) {
       console.error(`  FAILED ${label}: ${err?.message ?? err}`)
-    } finally {
-      if (!dryRun) await rm(workDir, { recursive: true, force: true }).catch(() => {})
     }
+    // Artifacts are intentionally kept in ./backfill-out/<token>/ so a real
+    // run can reuse a dry run's transcode without re-downloading.
   }
 }
 
