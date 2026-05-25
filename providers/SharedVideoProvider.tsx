@@ -800,12 +800,23 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
     // a synchronous reflow per video per frame on WebKit. Per-slot
     // ancestor-scroll listeners stay in SharedVideoSlot since ancestor
     // sets vary per slot.
+    // `allowFling` gates the mobile fling-hide. Only SCROLL may hide a
+    // video mid-motion — it's the only trigger that arms the settle timer
+    // that reveals it again. A resize- or layout-shift-driven flush is a
+    // discrete jump (not momentum lag): it must reposition + reveal, never
+    // hide, or the video would stay stuck-hidden until the next scroll.
+    // Coalesced per frame — if any caller this frame was a scroll, the
+    // fling-hide stays eligible.
     let rafPending = false
-    const flushAll = () => {
+    let pendingAllowFling = false
+    const flushAll = (allowFling = false) => {
+      if (allowFling) pendingAllowFling = true
       if (rafPending) return
       rafPending = true
       requestAnimationFrame(() => {
         rafPending = false
+        const allowFlingThisFrame = pendingAllowFling
+        pendingAllowFling = false
         const updates: Array<{
           video: ManagedVideo
           slot: Slot
@@ -836,6 +847,7 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
           // it once scrolling stops. Controls surfaces (detail/lightbox)
           // and desktop always track live.
           const fling =
+            allowFlingThisFrame &&
             isMobile &&
             !slot.controls &&
             Number.isFinite(video.lastTop) &&
@@ -848,7 +860,7 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
     // video hidden mid-fling doesn't stay hidden after the user stops.
     let settleTimer: ReturnType<typeof setTimeout> | null = null
     const onScroll = () => {
-      flushAll()
+      flushAll(true)
       if (!isMobile) return
       if (settleTimer !== null) clearTimeout(settleTimer)
       settleTimer = setTimeout(() => {
@@ -857,7 +869,25 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
       }, SCROLL_SETTLE_MS)
     }
     window.addEventListener('scroll', onScroll, { passive: true })
-    window.addEventListener('resize', flushAll)
+    // Resize is a discrete jump, not momentum — reposition without the
+    // fling-hide (which only the scroll path can reveal). Wrapped so the
+    // Event arg isn't read as `allowFling`.
+    const onResize = () => flushAll(false)
+    window.addEventListener('resize', onResize)
+
+    // CORE FIX for the "video overlay parks over the wrong card" bug. In a
+    // window-scrolled feed the slot's viewport position shifts whenever
+    // content ABOVE it reflows — a GIF/image finishing load, a LazyMount
+    // card mounting/unmounting, an expanding description. None of those
+    // fire scroll/resize or change the slot's OWN size, so the other
+    // triggers miss them and the fixed-position video stays parked at
+    // stale coordinates. document.body's height changes on every such
+    // reflow; observe it and reposition. Routed through the rAF-throttled
+    // flushAll so a burst of reflows coalesces to one reposition per
+    // frame. Fixed-position videos don't contribute to body height, so
+    // repositioning them can't re-trigger this observer (no RO loop).
+    const bodyResizeObserver = new ResizeObserver(() => flushAll(false))
+    bodyResizeObserver.observe(document.body)
 
     // Eviction sweep. Walks the pool, drops entries whose slot count
     // hit zero longer than the tier-appropriate window ago. Guarded
@@ -916,7 +946,8 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
     document.addEventListener('visibilitychange', onVisibilityChange)
     return () => {
       window.removeEventListener('scroll', onScroll)
-      window.removeEventListener('resize', flushAll)
+      window.removeEventListener('resize', onResize)
+      bodyResizeObserver.disconnect()
       document.removeEventListener('visibilitychange', onVisibilityChange)
       if (settleTimer !== null) clearTimeout(settleTimer)
       clearInterval(interval)
