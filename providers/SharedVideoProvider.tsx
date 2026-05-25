@@ -354,6 +354,20 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
 
   function positionElement(video: ManagedVideo, slot: Slot) {
     const { rect, clip } = readSlotGeometry(slot)
+    // Guard the non-hot-path callers — activateSlot, the IO re-show branch,
+    // the visibilitychange resume, and the per-slot refresh — against a
+    // slot whose React component has detached (LazyMount recycling,
+    // route/tab swaps) or isn't laid out yet. A detached node's
+    // getBoundingClientRect is (0,0,0,0); applying that with the
+    // activate-time morph transition still set animates the video shrinking
+    // into the top-left corner before it hides. Hide and bail instead — the
+    // slot's ResizeObserver re-runs positionElement once it has real
+    // geometry, so a transiently-zero slot self-heals. (flushAll carries the
+    // same isConnected guard inline on its per-scroll-frame hot path.)
+    if (!slot.ref.isConnected || (rect.width === 0 && rect.height === 0)) {
+      video.el.style.visibility = 'hidden'
+      return
+    }
     applySlotGeometry(video, slot, rect, clip)
   }
 
