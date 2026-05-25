@@ -5,6 +5,7 @@ import { useAccount } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { MAX_COLLECT_ALL_BATCH } from '@/lib/zoraMint'
 import { useCollectAll } from '@/hooks/useCollectAll'
+import { useFarcaster } from '@/providers/FarcasterProvider'
 
 interface CollectAllActionProps {
   collectionAddress: string
@@ -25,6 +26,10 @@ interface CollectAllActionProps {
   // discover cards where horizontal space is tight and per-card widths must
   // line up cleanly. Non-compact (default) keeps the chip + button row.
   compact?: boolean
+  // Plain mode: borderless text-only action (no chip, no border, no count).
+  // Brand gradient paints the text on hover. Used inline beside the
+  // collection page's "artworks" heading.
+  plain?: boolean
 }
 
 // Trim a wei value's formatted ether string to ≤4 decimal places, dropping
@@ -46,7 +51,7 @@ function formatUsdcChip(amount: bigint): string {
   return trimmed ? `${whole}.${trimmed}` : whole
 }
 
-function statusLabel(status: ReturnType<typeof useCollectAll>['status']): string {
+function statusLabel(status: ReturnType<typeof useCollectAll>['status'], verb: string): string {
   switch (status) {
     case 'preparing':
       return 'preparing…'
@@ -57,7 +62,7 @@ function statusLabel(status: ReturnType<typeof useCollectAll>['status']): string
     case 'recording':
       return 'finalizing…'
     default:
-      return 'collecting…'
+      return `${verb}ing…`
   }
 }
 
@@ -90,6 +95,7 @@ export function CollectAllAction({
   usdcEligibleTokenIds,
   usdcEligibleTotalUsdc,
   compact = false,
+  plain = false,
 }: CollectAllActionProps) {
   const ethCount = ethEligibleTokenIds.length
   const usdcCount = usdcEligibleTokenIds.length
@@ -97,6 +103,9 @@ export function CollectAllAction({
   const { isConnected } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { collectAll, status } = useCollectAll()
+  const { isInMiniApp } = useFarcaster()
+  // Mini-app surfaces frame the action as "enjoy" rather than "collect".
+  const verb = isInMiniApp ? 'enjoy' : 'collect'
 
   if (totalCount === 0) return null
 
@@ -116,8 +125,22 @@ export function CollectAllAction({
   }
 
   const label = inFlight
-    ? statusLabel(status)
-    : `collect all (${batchSize}${totalCount > MAX_COLLECT_ALL_BATCH ? ` of ${totalCount}` : ''})`
+    ? statusLabel(status, verb)
+    : `${verb} all (${batchSize}${totalCount > MAX_COLLECT_ALL_BATCH ? ` of ${totalCount}` : ''})`
+
+  // Plain text-only variant — sits inline beside a heading. No count/chip;
+  // brand gradient paints the text on hover.
+  if (plain) {
+    return (
+      <button
+        onClick={handleClick}
+        disabled={inFlight}
+        className="text-xs font-mono uppercase tracking-widest text-muted accent-grad-text-hover transition-colors disabled:opacity-60 disabled:cursor-wait whitespace-nowrap"
+      >
+        {inFlight ? statusLabel(status, verb) : `${verb} all`}
+      </button>
+    )
+  }
 
   if (compact) {
     return (

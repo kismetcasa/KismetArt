@@ -4,12 +4,13 @@ import { useState, useEffect, useRef } from 'react'
 import { MomentImage } from './MomentImage'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { useAccount, usePublicClient, useReadContract } from 'wagmi'
+import { useAccount, usePublicClient, useReadContract, useReadContracts } from 'wagmi'
 import { mainnet } from 'wagmi/chains'
 import { toast } from 'sonner'
 import { isAddress } from 'viem'
-import { ArrowLeft, Star, Eye, EyeOff, ShieldCheck, Trash2 } from 'lucide-react'
-import { shortAddress, type Moment } from '@/lib/inprocess'
+import { ArrowLeft, Star, Eye, EyeOff, ShieldCheck, Trash2, Copy, Check } from 'lucide-react'
+import { shortAddress, inferCollectCurrency, type Moment } from '@/lib/inprocess'
+import { ZORA_1155_TOKEN_INFO_ABI } from '@/lib/zoraMint'
 import { fetchCreatorProfile } from '@/lib/profileCache'
 import { toastError } from '@/lib/toast'
 import { useAdmin } from '@/contexts/AdminContext'
@@ -24,6 +25,8 @@ import { resolveAddressOrEns } from '@/lib/address'
 import { MomentCard } from './MomentCard'
 import { MaybeLazy } from './LazyMount'
 import { ProfileAvatar } from './ProfileAvatar'
+import { CollectAllAction } from './CollectAllAction'
+import { useFarcaster } from '@/providers/FarcasterProvider'
 
 interface AvatarProfile {
   name: string
@@ -98,8 +101,10 @@ export function CollectionView({
   const router = useRouter()
   const { address: connectedAddress } = useAccount()
   const { isAdmin, featuredCollectionAddrs, toggleFeaturedCollection } = useAdmin()
+  const { isInMiniApp } = useFarcaster()
   const [profiles, setProfiles] = useState<Record<string, AvatarProfile>>({})
   const [hidden, setHidden] = useState(initialHidden)
+  const [linkCopied, setLinkCopied] = useState(false)
   const [resolvedAdminName, setResolvedAdminName] = useState<string | null>(
     defaultAdminUsername ? `@${defaultAdminUsername}` : null,
   )
@@ -602,6 +607,55 @@ export function CollectionView({
   const coverThumbhash = collectionImage ? collectionThumbhash : firstMoment?.metadata?.kismet_thumbhash
   const description = collectionDescription
 
+  // Total collects across the collection: sum on-chain totalMinted for every
+  // loaded token. One multicall batch (wagmi aggregates these). The featured
+  // hydrators don't carry an aggregated count, so we read it here.
+  const { data: tokenInfos } = useReadContracts({
+    contracts: loadedMoments.map((m) => ({
+      address: m.address as `0x${string}`,
+      abi: ZORA_1155_TOKEN_INFO_ABI,
+      functionName: 'getTokenInfo' as const,
+      args: [BigInt(m.token_id)] as const,
+    })),
+    query: { enabled: loadedMoments.length > 0 },
+  })
+  const totalSold = tokenInfos?.reduce(
+    (sum, r) =>
+      r.status === 'success' && r.result
+        ? sum + Number((r.result as { totalMinted: bigint }).totalMinted)
+        : sum,
+    0,
+  )
+
+  // "Collect all" candidate token IDs, bucketed by mint currency. The
+  // useCollectAll hook re-checks live eligibility (sold out / sale ended /
+  // already owned) at click time, so passing every priced token is safe.
+  const ethCollectIds: string[] = []
+  const usdcCollectIds: string[] = []
+  for (const m of loadedMoments) {
+    if (!m.saleConfig) continue
+    if (inferCollectCurrency(m.saleConfig) === 'usdc') usdcCollectIds.push(m.token_id)
+    else ethCollectIds.push(m.token_id)
+  }
+
+  async function handleShare() {
+    const url = `${window.location.origin}/collection/${address}`
+    if (isInMiniApp) {
+      try {
+        const { sdk } = await import('@farcaster/miniapp-sdk')
+        await sdk.actions.composeCast({
+          text: `Check out ${displayName} on @kismet in the /kismet channel`,
+          embeds: [url],
+          channelKey: 'kismet',
+        })
+        return
+      } catch { /* fall through to clipboard */ }
+    }
+    navigator.clipboard.writeText(url).catch(() => {})
+    setLinkCopied(true)
+    setTimeout(() => setLinkCopied(false), 1500)
+  }
+
   // Unique creator addresses across all loaded moments — surfaces
   // anyone who has actually shipped a token here, including authorized
   // creators after they mint. Pre-mint authorizations live in the
@@ -668,12 +722,20 @@ export function CollectionView({
           )}
           {/* Enriched chips: payout transparency (only when it differs from
               the admin — same-address payouts are noise) and creation date. */}
-          {(payoutRecipient || createdAt) && (
-            <div className="flex flex-wrap gap-2 mt-1.5">
+          {(payoutRecipient || createdAt || (totalSold !== undefined && totalSold > 0)) && (
+            <div className="flex flex-wrap items-center gap-2 mt-1.5">
               {createdAt && (
                 <span className="text-[10px] font-mono text-muted uppercase tracking-widest">
                   created {formatCreatedDate(createdAt)}
                 </span>
+              )}
+              {totalSold !== undefined && totalSold > 0 && (
+                <>
+                  {createdAt && <span className="text-[10px] font-mono text-[#444]">|</span>}
+                  <span className="text-[10px] font-mono text-muted uppercase tracking-widest">
+                    total sold {totalSold.toLocaleString()}
+                  </span>
+                </>
               )}
               {payoutRecipient && (
                 <Link
@@ -756,6 +818,16 @@ export function CollectionView({
                 {hidden ? 'hidden' : 'hide'}
               </button>
             )}
+            <button
+              onClick={handleShare}
+              className="flex items-center gap-1.5 text-xs font-mono text-muted hover:text-dim transition-colors"
+              title="Share collection"
+            >
+              {linkCopied
+                ? <Check size={12} className="text-[#6ee7b7]" />
+                : <Copy size={12} strokeWidth={1.5} />}
+              {linkCopied ? 'copied' : 'share'}
+            </button>
           </div>
         </div>
       </div>
@@ -924,9 +996,19 @@ export function CollectionView({
 
       {/* NFT grid */}
       <section>
-        <h2 className="text-xs font-mono text-muted uppercase tracking-widest mb-4">
-          moments{loadedMoments.length > 0 ? ` (${loadedMoments.length})` : ''}
-        </h2>
+        <div className="flex items-center gap-4 mb-4">
+          <h2 className="text-xs font-mono text-muted uppercase tracking-widest">
+            artworks{loadedMoments.length > 0 ? ` (${loadedMoments.length})` : ''}
+          </h2>
+          {(ethCollectIds.length > 0 || usdcCollectIds.length > 0) && (
+            <CollectAllAction
+              plain
+              collectionAddress={address}
+              ethEligibleTokenIds={ethCollectIds}
+              usdcEligibleTokenIds={usdcCollectIds}
+            />
+          )}
+        </div>
         {moments === null ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
             {Array.from({ length: 6 }).map((_, i) => (
