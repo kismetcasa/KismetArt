@@ -25,6 +25,10 @@ interface CollectAllActionProps {
   // discover cards where horizontal space is tight and per-card widths must
   // line up cleanly. Non-compact (default) keeps the chip + button row.
   compact?: boolean
+  // Plain mode: borderless text-only action (no chip, no border, no count).
+  // Brand gradient paints the text on hover. Used inline beside the
+  // collection page's "artworks" heading.
+  plain?: boolean
 }
 
 // Trim a wei value's formatted ether string to ≤4 decimal places, dropping
@@ -90,6 +94,7 @@ export function CollectAllAction({
   usdcEligibleTokenIds,
   usdcEligibleTotalUsdc,
   compact = false,
+  plain = false,
 }: CollectAllActionProps) {
   const ethCount = ethEligibleTokenIds.length
   const usdcCount = usdcEligibleTokenIds.length
@@ -118,6 +123,19 @@ export function CollectAllAction({
   const label = inFlight
     ? statusLabel(status)
     : `collect all (${batchSize}${totalCount > MAX_COLLECT_ALL_BATCH ? ` of ${totalCount}` : ''})`
+
+  // Plain text-only variant: inline beside a heading, brand gradient on hover.
+  if (plain) {
+    return (
+      <button
+        onClick={handleClick}
+        disabled={inFlight}
+        className="text-xs font-mono uppercase tracking-widest text-muted accent-grad-text-hover transition-colors disabled:opacity-60 disabled:cursor-wait whitespace-nowrap"
+      >
+        {inFlight ? statusLabel(status) : 'collect all'}
+      </button>
+    )
+  }
 
   if (compact) {
     return (

@@ -7,7 +7,7 @@ import { useAccount, usePublicClient, useReadContract, useSignMessage, useWriteC
 import { mainnet } from 'wagmi/chains'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
-import { ArrowLeft, Copy, Check, ChevronDown, ChevronUp, Star, X, Pencil, Eye, EyeOff, Send } from 'lucide-react'
+import { ArrowLeft, Copy, Check, ChevronDown, ChevronUp, Star, X, Pencil, Eye, EyeOff, Send, Square } from 'lucide-react'
 import { isAddress } from 'viem'
 import { resolveUri, formatPrice, shortAddress, formatRelativeTime, inferCollectCurrency, isPlatformCollectComment, DEFAULT_COLLECT_COMMENT, type MomentDetail, type MomentComment } from '@/lib/inprocess'
 import { fetchCreatorProfile } from '@/lib/profileCache'
@@ -140,6 +140,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   })
   const [creatorAvatar, setCreatorAvatar] = useState<string | undefined>(undefined)
   const [linkCopied, setLinkCopied] = useState(false)
+  const [scanCopied, setScanCopied] = useState(false)
   const [lightboxOpen, setLightboxOpen] = useState(false)
   const [showFullDesc, setShowFullDesc] = useState(false)
   const [descOverflows, setDescOverflows] = useState(false)
@@ -560,6 +561,13 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     navigator.clipboard.writeText(url).catch(() => {})
     setLinkCopied(true)
     setTimeout(() => setLinkCopied(false), 1500)
+  }
+
+  function handleCopyScan() {
+    const url = `https://basescan.org/token/${address}?a=${tokenId}`
+    navigator.clipboard.writeText(url).catch(() => {})
+    setScanCopied(true)
+    setTimeout(() => setScanCopied(false), 1500)
   }
 
   async function handleToggleHidden() {
@@ -1360,6 +1368,14 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
               the moment link; send sits to its right for holders only. */}
           <div className="px-5 pb-4">
             <div className="flex items-center gap-3">
+              <button
+                onClick={handleCopyScan}
+                className="flex items-center gap-1.5 text-xs font-mono text-muted hover:text-dim transition-colors w-fit"
+                title="Copy BaseScan link"
+              >
+                <Square size={12} strokeWidth={1.5} />
+                {scanCopied ? 'copied' : 'scan'}
+              </button>
               <button
                 onClick={handleShare}
                 className="flex items-center gap-1.5 text-xs font-mono text-muted hover:text-dim transition-colors w-fit"
