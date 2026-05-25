@@ -1,5 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { randomBytes } from 'crypto'
 import { redis } from '@/lib/redis'
 import { checkRateLimit, getClientIp } from '@/lib/ratelimit'
 import { adminNonceKey } from '@/lib/curator'
@@ -23,7 +22,7 @@ export async function POST(req: NextRequest) {
     return errorResponse(429, 'Too many requests')
   }
 
-  const nonce = randomBytes(16).toString('hex')
+  const nonce = Buffer.from(crypto.getRandomValues(new Uint8Array(16))).toString('hex')
   await redis.set(adminNonceKey(nonce), '1', {
     nx: true,
     ex: NONCE_TTL_SECONDS,
