@@ -34,6 +34,7 @@ import { ListButton } from './ListButton'
 import { MomentImage, MomentImg } from './MomentImage'
 import { MomentVideo } from './MomentVideo'
 import { resolveMomentMedia } from '@/lib/media/resolveMomentMedia'
+import { normalizeMediaUrl, guessMediaTypeFromUrl } from '@/lib/media/normalizeMediaUrl'
 import { ProfileAvatar } from './ProfileAvatar'
 import { CopyAddress } from './CopyAddress'
 import { SplitsPanel } from './SplitsPanel'
@@ -167,6 +168,11 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
   const [editName, setEditName] = useState('')
   const [editDesc, setEditDesc] = useState('')
   // "Change media" — replaces the primary content (image / gif / video).
+  // Two sources: upload a new file, or re-point at content already on
+  // Arweave/IPFS (no re-upload — Arweave is content-addressed and permanent,
+  // so the original ar:// is valid forever and re-uploading it only burns
+  // Turbo credits → the "Insufficient balance" 402 artists hit when restoring
+  // a large video they'd previously minted).
   const {
     file: mediaFile,
     inputRef: mediaInputRef,
@@ -176,6 +182,9 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     maxBytes: 420 * 1024 * 1024,
     onTooLarge: () => toast.error('File too large', { description: 'Max 420 MB' }),
   })
+  const [mediaMode, setMediaMode] = useState<'upload' | 'url'>('upload')
+  const [existingMediaUrl, setExistingMediaUrl] = useState('')
+  const [existingMediaType, setExistingMediaType] = useState<'video' | 'gif' | 'image'>('video')
   // "Change cover" — replaces only the poster/thumbnail (image or gif),
   // never the main media. A GIF cover is stored as-is (animates).
   const {
@@ -621,12 +630,18 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
     setEditDesc(detail.metadata.description ?? '')
     clearMedia()
     clearCover()
+    setMediaMode('upload')
+    setExistingMediaUrl('')
+    setExistingMediaType('video')
     setEditing(true)
   }
 
   function closeEditor() {
     clearMedia()
     clearCover()
+    setMediaMode('upload')
+    setExistingMediaUrl('')
+    setExistingMediaType('video')
     setEditing(false)
   }
 
@@ -648,12 +663,43 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
       let contentField: { uri?: string; mime?: string } | undefined = detail.metadata.content
       let thumbhash = detail.metadata.kismet_thumbhash
 
-      // 1) CHANGE MEDIA — replaces the moment's primary content, mirroring the
-      // mint pipeline: video → faststart MP4 + poster; GIF → transcoded MP4 +
-      // poster (server fallback over the 100MB wasm cap); image → still moment.
-      // content.mime is written explicitly because ar:// URLs have no
-      // extension and isVideoMoment() classifies by mime.
-      if (mediaFile) {
+      // 1a) RE-POINT MEDIA — point the moment at content that already lives on
+      // Arweave/IPFS. No upload: we only rebuild + re-pin the metadata JSON,
+      // so restoring a previously-minted video costs a few KB instead of
+      // re-sending the whole file (which fails with 402 once Turbo credits run
+      // out). content.mime is written explicitly because ar:// hashes have no
+      // extension and isVideoMoment()/resolveMomentMedia() classify by mime.
+      // Empty URL field = no media change (media is optional); only a
+      // non-empty, unparseable URL is an error.
+      const repointUrl = mediaMode === 'url' ? normalizeMediaUrl(existingMediaUrl) : null
+      if (mediaMode === 'url' && existingMediaUrl.trim() && !repointUrl) {
+        throw new Error('That doesn’t look like a valid media URL — paste an ar:// URI or an https gateway link')
+      }
+      if (repointUrl) {
+        if (existingMediaType === 'video') {
+          animationUri = repointUrl
+          contentField = { uri: repointUrl, mime: 'video/mp4' }
+          // Poster (image) + thumbhash carry over from the current metadata
+          // unless the creator is also setting a new cover below.
+        } else if (existingMediaType === 'gif') {
+          animationUri = repointUrl
+          contentField = { uri: repointUrl, mime: 'image/gif' }
+        } else {
+          // Still image → the image IS the moment; drop any video binding. The
+          // old thumbhash described the previous media, so clear it rather than
+          // paint a misleading blur under the new still.
+          imageUri = repointUrl
+          animationUri = undefined
+          contentField = undefined
+          thumbhash = undefined
+        }
+      }
+
+      // 1b) CHANGE MEDIA (upload) — replaces the moment's primary content,
+      // mirroring the mint pipeline: video → faststart MP4 + poster; GIF →
+      // transcoded MP4 + poster (server fallback over the 100MB wasm cap);
+      // image → still moment.
+      if (mediaMode === 'upload' && mediaFile) {
         const isGif = mediaFile.type === 'image/gif' || mediaFile.name.toLowerCase().endsWith('.gif')
         if (mediaFile.type.startsWith('video/')) {
           toast.loading('Optimizing video…', { id: 'edit-meta' })
@@ -751,14 +797,19 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
       // sees broken metadata until the gateway pool catches up. Image
       // budget mirrors MintForm's 90s for large uploads.
       toast.loading('Verifying Arweave propagation…', { id: 'edit-meta' })
-      // Verify freshly-uploaded URIs (image when media/cover changed, the MP4
+      // A media change is either a fresh upload or a re-point at existing
+      // content; both want their image/animation URIs verified before we
+      // commit the on-chain pointer. A re-point's bytes are already live, so
+      // this is a cheap sanity check that also catches a typo'd txid.
+      const mediaChanged = repointUrl != null || (mediaMode === 'upload' && !!mediaFile)
+      // Verify freshly-resolved URIs (image when media/cover changed, the MP4
       // when media changed). image is pushed before animation, so positional
       // destructuring stays correct.
       const verifies: Promise<boolean>[] = [verifyArweaveAvailable(newUri)]
-      if ((mediaFile || coverFile) && imageUri?.startsWith('ar://')) {
+      if ((mediaChanged || coverFile) && imageUri?.startsWith('ar://')) {
         verifies.push(verifyArweaveAvailable(imageUri, 90_000))
       }
-      if (mediaFile && animationUri?.startsWith('ar://')) {
+      if (mediaChanged && animationUri?.startsWith('ar://')) {
         verifies.push(verifyArweaveAvailable(animationUri, 90_000))
       }
       const [metaOk, imageOk = true, animOk = true] = await Promise.all(verifies)
@@ -802,7 +853,7 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
       // proxy fallback hits cached bytes the moment the optimistic state
       // swap below re-mounts the <Image>. Fire-and-forget — failure is
       // a no-op, the existing fallback chain still walks the pool.
-      if ((mediaFile || coverFile) && imageUri?.startsWith('ar://')) {
+      if ((mediaChanged || coverFile) && imageUri?.startsWith('ar://')) {
         void fetch(proxyUrl(imageUri), { cache: 'no-store' }).catch(() => {})
       }
 
@@ -1054,40 +1105,96 @@ export function MomentDetailView({ address, tokenId, initialDetail, fallbackMeta
                   />
                 </div>
                 {/* Change media — replaces the primary content (image, gif,
-                    or video). Video → re-points animation_url; a GIF is
-                    transcoded to MP4 like at mint. */}
+                    or video). Two sources: upload a new file (video →
+                    faststart MP4, GIF → transcoded MP4 like at mint), or
+                    re-point at content already on Arweave (no upload, so a
+                    previously-minted video can be restored without re-sending
+                    the bytes / burning Turbo credits). */}
                 <div className="flex flex-col gap-1.5">
                   <label className="text-[10px] font-mono uppercase tracking-widest text-muted">media (optional)</label>
-                  <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1">
                     <button
                       type="button"
-                      onClick={() => mediaInputRef.current?.click()}
+                      onClick={() => setMediaMode('upload')}
                       disabled={savingMeta}
-                      className="text-[10px] font-mono uppercase tracking-widest text-muted hover:text-dim border border-line px-2.5 py-1.5 disabled:opacity-50"
+                      className={`text-[10px] font-mono uppercase tracking-widest border border-line px-2.5 py-1 disabled:opacity-50 ${mediaMode === 'upload' ? 'text-ink border-muted bg-surface' : 'text-muted hover:text-dim'}`}
                     >
-                      change media
+                      upload new
                     </button>
-                    {mediaFile && (
-                      <>
-                        <span className="text-[10px] font-mono text-dim truncate max-w-[9rem]" title={mediaFile.name}>{mediaFile.name}</span>
-                        <button
-                          type="button"
-                          onClick={clearMedia}
-                          disabled={savingMeta}
-                          className="text-[10px] font-mono uppercase tracking-widest text-muted hover:text-dim disabled:opacity-50"
-                        >
-                          keep current
-                        </button>
-                      </>
-                    )}
-                    <input
-                      ref={mediaInputRef}
-                      type="file"
-                      accept="image/*,video/*,.gif"
-                      onChange={handleMediaFile}
-                      className="hidden"
-                    />
+                    <button
+                      type="button"
+                      onClick={() => setMediaMode('url')}
+                      disabled={savingMeta}
+                      className={`text-[10px] font-mono uppercase tracking-widest border border-line px-2.5 py-1 disabled:opacity-50 ${mediaMode === 'url' ? 'text-ink border-muted bg-surface' : 'text-muted hover:text-dim'}`}
+                    >
+                      use existing url
+                    </button>
                   </div>
+                  {mediaMode === 'upload' ? (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => mediaInputRef.current?.click()}
+                        disabled={savingMeta}
+                        className="text-[10px] font-mono uppercase tracking-widest text-muted hover:text-dim border border-line px-2.5 py-1.5 disabled:opacity-50"
+                      >
+                        change media
+                      </button>
+                      {mediaFile && (
+                        <>
+                          <span className="text-[10px] font-mono text-dim truncate max-w-[9rem]" title={mediaFile.name}>{mediaFile.name}</span>
+                          <button
+                            type="button"
+                            onClick={clearMedia}
+                            disabled={savingMeta}
+                            className="text-[10px] font-mono uppercase tracking-widest text-muted hover:text-dim disabled:opacity-50"
+                          >
+                            keep current
+                          </button>
+                        </>
+                      )}
+                      <input
+                        ref={mediaInputRef}
+                        type="file"
+                        accept="image/*,video/*,.gif"
+                        onChange={handleMediaFile}
+                        className="hidden"
+                      />
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-1.5">
+                      <input
+                        type="text"
+                        value={existingMediaUrl}
+                        onChange={(e) => {
+                          const v = e.target.value
+                          setExistingMediaUrl(v)
+                          const guessed = guessMediaTypeFromUrl(v)
+                          if (guessed) setExistingMediaType(guessed)
+                        }}
+                        disabled={savingMeta}
+                        placeholder="ar://… or https://arweave.net/…"
+                        className="bg-surface border border-line px-2.5 py-2 text-xs font-mono text-ink placeholder-faint focus:outline-none focus:border-muted disabled:opacity-50"
+                      />
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono uppercase tracking-widest text-faint">type</span>
+                        {(['video', 'gif', 'image'] as const).map((t) => (
+                          <button
+                            key={t}
+                            type="button"
+                            onClick={() => setExistingMediaType(t)}
+                            disabled={savingMeta}
+                            className={`text-[10px] font-mono uppercase tracking-widest border border-line px-2 py-1 disabled:opacity-50 ${existingMediaType === t ? 'text-ink border-muted bg-surface' : 'text-muted hover:text-dim'}`}
+                          >
+                            {t}
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-[10px] font-mono text-faint leading-relaxed">
+                        re-points to content already on arweave — no re-upload. the cover/poster is kept unless you also change it below.
+                      </p>
+                    </div>
+                  )}
                 </div>
                 {/* Change cover — replaces only the thumbnail/poster (image or
                     gif), never the main media. */}
