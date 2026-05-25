@@ -210,14 +210,43 @@ async function turboUpload(turbo, data, contentType) {
 async function updateTokenUri(collectionAddress, tokenId, newUri) {
   const apiKey = process.env.INPROCESS_API_KEY
   if (!apiKey) throw new Error('INPROCESS_API_KEY not configured')
-  const res = await fetch(`${INPROCESS_API}/moment/update-uri`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'x-api-key': apiKey },
-    body: JSON.stringify({ moment: { collectionAddress, tokenId, chainId: CHAIN_ID }, newUri }),
-  })
-  const text = await res.text()
-  if (!res.ok) throw new Error(`inprocess update-uri ${res.status}: ${text.slice(0, 300)}`)
-  return text
+  const body = JSON.stringify({ moment: { collectionAddress, tokenId, chainId: CHAIN_ID }, newUri })
+  // Use curl (Node fetch is unreliable here). The API key + headers go in a
+  // 0600 config file (-K), NOT argv, so the key can never surface in a
+  // "Command failed: curl …" error. Body via a temp file; status via -w.
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+  const bodyFile = join(tmpdir(), `body-${stamp}.json`)
+  const cfgFile = join(tmpdir(), `cfg-${stamp}`)
+  await writeFile(bodyFile, body)
+  await writeFile(
+    cfgFile,
+    `header = "x-api-key: ${apiKey}"\nheader = "Content-Type: application/json"\nheader = "Accept: application/json"\n`,
+    { mode: 0o600 },
+  )
+  try {
+    const { stdout } = await execFileAsync(
+      'curl',
+      [
+        '-sS', '--max-time', '60', '--retry', '4', '--retry-all-errors', '--retry-delay', '3',
+        '-X', 'PATCH',
+        '-K', cfgFile,
+        '--data-binary', `@${bodyFile}`,
+        '-w', '\n%{http_code}',
+        `${INPROCESS_API}/moment`,
+      ],
+      { maxBuffer: 4 * 1024 * 1024 },
+    )
+    const nl = stdout.lastIndexOf('\n')
+    const text = stdout.slice(0, nl)
+    const code = parseInt(stdout.slice(nl + 1), 10)
+    if (!(code >= 200 && code < 300)) {
+      throw new Error(`inprocess update-uri ${code}: ${text.slice(0, 300)}`)
+    }
+    return text
+  } finally {
+    await rm(bodyFile, { force: true }).catch(() => {})
+    await rm(cfgFile, { force: true }).catch(() => {})
+  }
 }
 
 // --- main ------------------------------------------------------------------
