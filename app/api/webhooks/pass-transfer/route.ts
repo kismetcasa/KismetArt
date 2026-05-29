@@ -16,14 +16,24 @@ interface ActivityErc1155Metadata {
 interface Activity {
   fromAddress?: string
   toAddress?: string
+  // NFT Activity exposes the token contract as `contractAddress`. Address
+  // Activity (wrong webhook type for this, but harden anyway) instead nests
+  // it under `rawContract.address`, and the raw log carries `log.address`.
+  // resolveContract() coalesces all three so a payload-shape difference
+  // can't silently skip every event.
   contractAddress?: string
+  rawContract?: { address?: string }
   // ADDRESS_ACTIVITY uses `hash`; legacy NFT_ACTIVITY uses `transactionHash`
   hash?: string
   transactionHash?: string
   category?: string
   erc1155Metadata?: ActivityErc1155Metadata[]
   erc721TokenId?: string
-  log?: { logIndex?: string }
+  log?: { logIndex?: string; address?: string }
+}
+
+function resolveContract(a: Activity): string {
+  return (a.contractAddress ?? a.rawContract?.address ?? a.log?.address ?? '').toLowerCase()
 }
 
 // Alchemy webhook payload shapes:
@@ -94,8 +104,10 @@ export async function POST(req: NextRequest) {
     }
   }
 
+  let matched = 0
   for (const activity of activities) {
-    if (activity.contractAddress?.toLowerCase() !== passContract) continue
+    if (resolveContract(activity) !== passContract) continue
+    matched++
 
     const from = String(activity.fromAddress ?? '').toLowerCase()
     const to = String(activity.toAddress ?? '').toLowerCase()
@@ -136,5 +148,18 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  return NextResponse.json({ ok: true })
+  // Loud signal for the misconfiguration that bit us in production: a
+  // webhook authenticated (200) and carried activities, but NONE matched
+  // the Pass contract — almost always the wrong webhook type (Address
+  // Activity keys on wallets, not the contract) or a stale watched
+  // address. Without this log it reads as a silent success.
+  if (activities.length > 0 && matched === 0) {
+    console.warn(
+      `[pass-transfer] ${activities.length} activities, 0 matched passContract=${passContract}. `
+        + `Wrong webhook type (use NFT Activity) or stale watched address? `
+        + `seen contracts: ${activities.map(resolveContract).filter(Boolean).join(',') || '(none)'}`,
+    )
+  }
+
+  return NextResponse.json({ ok: true, matched })
 }
