@@ -1,9 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo, type ReactElement, type ReactNode } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef, type ReactElement, type ReactNode } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { MaybeLazy } from './LazyMount'
+import { trackPerf } from '@/lib/telemetry'
 import {
   fetchPageJson,
   paginatedFirstPageUrl,
@@ -118,6 +119,26 @@ export function PaginatedGrid<T>({
     gcTime: 5 * 60_000,
     refetchOnWindowFocus: false,
   })
+
+  // Measure the open-feed "freeze" window: wall-clock from the first render
+  // that has data to two frames later. If mounting the eager cards blocks the
+  // main thread, the first rAF callback is delayed by that block, so the
+  // elapsed approximates the freeze duration. Portable (performance.now +
+  // rAF), so it reports on iOS WebKit where longtask/LoAF don't exist. Op-in
+  // telemetry only; trackPerf is a no-op otherwise. One-shot per mount.
+  const feedRenderStart = useRef<number | null>(null)
+  const feedRenderLogged = useRef(false)
+  if (firstPage && feedRenderStart.current === null) {
+    feedRenderStart.current = performance.now()
+  }
+  useEffect(() => {
+    if (!firstPage || feedRenderLogged.current || feedRenderStart.current === null) return
+    feedRenderLogged.current = true
+    const start = feedRenderStart.current
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => trackPerf('feed_render', performance.now() - start)),
+    )
+  }, [firstPage])
 
   // Subsequent pages (load-more) stay in component-local state. Caching
   // them globally adds complexity (page state per cache entry) without
