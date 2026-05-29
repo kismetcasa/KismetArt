@@ -4,6 +4,12 @@ import { useState, useEffect, useCallback, useMemo, type ReactElement, type Reac
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { RefreshCw } from 'lucide-react'
 import { MaybeLazy } from './LazyMount'
+import {
+  fetchPageJson,
+  paginatedFirstPageUrl,
+  paginatedQueryKey,
+  type PageResponse,
+} from '@/lib/paginatedGridQuery'
 
 interface ItemHelpers {
   /** Optimistically drop this item from the rendered list (e.g. after a delete). */
@@ -58,19 +64,6 @@ interface PaginatedGridProps<T> {
   lazy?: boolean
 }
 
-// Shape of a paginated JSON response. itemsKey is dynamic per caller,
-// so we leave the items array un-typed here and narrow per-call.
-interface PageResponse {
-  pagination?: { total_pages?: number }
-  [key: string]: unknown
-}
-
-async function fetchPageJson(url: string): Promise<PageResponse> {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error(`Failed (${res.status})`)
-  return res.json()
-}
-
 export function PaginatedGrid<T>({
   apiUrl,
   itemsKey,
@@ -96,12 +89,12 @@ export function PaginatedGrid<T>({
   // toggle (apiUrl changes) cleanly switches to a different cache
   // entry without invalidating the previous one — meaning toggling
   // back is also instant.
-  const firstPageUrl = useMemo(() => {
-    const sep = apiUrl.includes('?') ? '&' : '?'
-    return `${apiUrl}${sep}page=1&limit=${pageLimit}`
-  }, [apiUrl, pageLimit])
+  const firstPageUrl = useMemo(
+    () => paginatedFirstPageUrl(apiUrl, pageLimit),
+    [apiUrl, pageLimit],
+  )
   const queryKey = useMemo(
-    () => ['paginated-grid', firstPageUrl] as const,
+    () => paginatedQueryKey(firstPageUrl),
     [firstPageUrl],
   )
 
