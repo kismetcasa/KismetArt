@@ -203,18 +203,24 @@ const LONG_FORM_DURATION_THRESHOLD_S = 60
 const IO_ROOT_MARGIN_SHORT = '150px'
 const IO_ROOT_MARGIN_LONG = '200%'
 
-// Mobile scroll handling. A position:fixed video tracked via transform
-// can't keep pace with iOS momentum scroll — the compositor repaints the
-// fixed element a frame or more behind, so following the slot mid-scroll
-// paints the video over the wrong card / bleeding past the grid. So on
-// mobile we hide every feed video for the entire duration of a scroll (the
-// inline poster/thumbhash layer underneath shows the correct still and
-// scrolls natively with the card) and only reposition + reveal once scroll
-// settles. Stationary is the only time a fixed feed video is ever painted,
-// so the mis-positioning is impossible by construction. Desktop tracks live.
+// Mobile scroll handling. A position:fixed video tracked via transform can't
+// keep pace with iOS momentum scroll WHEN THE MAIN THREAD IS BUSY: while the
+// feed is still rendering in (poster images decoding, LazyMount cards
+// mounting), the rAF that repositions the video is starved, so it lands a
+// frame or more behind — parked over the wrong card / bleeding past the grid.
+// Once the feed has settled the reposition keeps up and tracking is smooth.
 //
-// Trailing delay after the last scroll event before we reposition + reveal.
+// So we hide a feed video during scroll ONLY while layout is still reflowing
+// (see `lastReflowAt`, fed by the body ResizeObserver). In that window the
+// inline poster underneath shows the correct still and scrolls natively; the
+// settle timer reveals + repositions the video once scrolling stops. In the
+// steady state (no recent reflow) videos track live during scroll exactly as
+// before — no trade-off. Desktop always tracks live.
 const SCROLL_SETTLE_MS = 140
+// Treat layout as "still rendering in" for this long after the last body
+// reflow. Scrolls within this window hide feed videos (poster shows); scrolls
+// outside it track live.
+const RENDER_SETTLE_MS = 400
 
 // Module-level memory of playback position by canonical src. Outlives
 // pool eviction so that an evict→re-acquire round-trip (long feed,
@@ -828,6 +834,10 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
     // sets the flag and tracks live.
     let rafPending = false
     let mobileScrolling = false
+    // Timestamp of the last body reflow (image load / card mount / resize).
+    // A recent reflow means the feed is still rendering in — the window where
+    // the fixed-video reposition rAF can fall behind a mobile scroll.
+    let lastReflowAt = 0
     const flushAll = () => {
       if (rafPending) return
       rafPending = true
@@ -858,12 +868,17 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
           updates.push({ video, slot, rect, clip })
         })
         for (const { video, slot, rect, clip } of updates) {
-          // Hold feed videos hidden for the whole duration of a mobile
-          // scroll — the inline poster underneath scrolls natively and
-          // correctly, while the fixed video would lag and smear. Controls
+          // Hide a feed video during scroll ONLY while the feed is still
+          // rendering in (a recent body reflow) — the window where the
+          // reposition rAF gets starved and the element lags/smears. The
+          // inline poster underneath scrolls natively and stays correct.
+          // Steady-state scroll (no recent reflow) tracks live; controls
           // surfaces (detail/lightbox) and desktop always track live.
           const hideWhileScrolling =
-            mobileScrolling && isMobile && !slot.controls
+            mobileScrolling &&
+            isMobile &&
+            !slot.controls &&
+            Date.now() - lastReflowAt < RENDER_SETTLE_MS
           applySlotGeometry(video, slot, rect, clip, hideWhileScrolling)
         }
       })
@@ -899,7 +914,10 @@ export function SharedVideoProvider({ children, isMobile = false }: { children: 
     // flushAll so a burst of reflows coalesces to one reposition per
     // frame. Fixed-position videos don't contribute to body height, so
     // repositioning them can't re-trigger this observer (no RO loop).
-    const bodyResizeObserver = new ResizeObserver(() => flushAll())
+    const bodyResizeObserver = new ResizeObserver(() => {
+      lastReflowAt = Date.now()
+      flushAll()
+    })
     bodyResizeObserver.observe(document.body)
 
     // Eviction sweep. Walks the pool, drops entries whose slot count
