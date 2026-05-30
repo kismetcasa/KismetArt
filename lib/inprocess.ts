@@ -111,7 +111,7 @@ export interface Moment {
   // Video duration in whole seconds, server-stitched from MomentMeta
   // by /api/timeline. Populated only for Kismet-minted moments that
   // sent durationSec at mint time. Consumed by PaginatedGrid to seed
-  // lib/media/durationCache so SharedVideoProvider can pick long-form
+  // lib/media/durationCache so InlineVideo can pick long-form
   // preload at element-create time instead of waiting for loadedmetadata.
   kismet_duration_sec?: number
 }

@@ -317,8 +317,8 @@ function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreato
     [meta.kismet_thumbhash],
   )
   const textSnippet = useTextContent(isTextMoment ? meta.content?.uri : undefined)
-  // Seed the duration cache for SharedVideoProvider.createVideo to read
-  // before this card's SharedVideoSlot effect fires. Idempotent (Map.set
+  // Seed the duration cache for InlineVideo to read before it mounts.
+  // Idempotent (Map.set
   // with same value) so re-renders are free. Skipped for non-video and
   // for moments without the server-stitched kismet_duration_sec field
   // (older mints predating the durationSec write at /api/collections POST).
