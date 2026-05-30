@@ -100,7 +100,6 @@ function PerfBadge() {
   const rows: Array<[string, string, string?]> = []
   if (feed !== undefined) rows.push(['feed', `${Math.round(feed)}ms`, feedColor])
   if (perf.long_task !== undefined) rows.push(['task', `${Math.round(perf.long_task)}ms`])
-  if (perf.video_ttff !== undefined) rows.push(['ttff', `${Math.round(perf.video_ttff)}ms`])
   if (perf.image_lcp !== undefined) rows.push(['lcp', `${Math.round(perf.image_lcp)}ms`])
 
   return (

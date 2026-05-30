@@ -77,7 +77,7 @@ interface MomentMeta {
   name?: string
   // Video duration in whole seconds, captured client-side at mint time
   // via FFprobe. Read by /api/timeline + surfaced as moment.kismet_duration_sec
-  // so SharedVideoProvider can pick the long-form preload strategy at
+  // so InlineVideo can pick the long-form preload strategy at
   // element-create time instead of waiting for loadedmetadata.
   durationSec?: number
 }

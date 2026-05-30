@@ -149,12 +149,11 @@ function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreato
   }, [moment.address, moment.kismetCollection])
 
   // Defer the per-card price fetch + the two on-chain reads off the initial
-  // mount/scroll path. Firing them on mount stacks a network + RPC + re-render
-  // burst onto the exact window where the feed is rendering in and the
-  // shared-video reposition rAF is already contended — which is what makes the
-  // overlay lag/mis-position while moments are still rendering. Waiting for
-  // idle keeps that window light; price/supply still popcorn in a beat later,
-  // and the collect button stays gated on collectReady until they land.
+  // mount path. Firing them on mount stacks a network + RPC + re-render burst
+  // onto the synchronous commit where a page of cards mounts at once — the
+  // open-feed freeze. Waiting for idle keeps that commit light; price/supply
+  // still popcorn in a beat later, and the collect button stays gated on
+  // collectReady until they land.
   const [deferReady, setDeferReady] = useState(false)
   useEffect(() => {
     const w = window as Window & {
@@ -317,8 +316,8 @@ function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreato
     [meta.kismet_thumbhash],
   )
   const textSnippet = useTextContent(isTextMoment ? meta.content?.uri : undefined)
-  // Seed the duration cache for SharedVideoProvider.createVideo to read
-  // before this card's SharedVideoSlot effect fires. Idempotent (Map.set
+  // Seed the duration cache for InlineVideo to read before it mounts.
+  // Idempotent (Map.set
   // with same value) so re-renders are free. Skipped for non-video and
   // for moments without the server-stitched kismet_duration_sec field
   // (older mints predating the durationSec write at /api/collections POST).
@@ -339,8 +338,7 @@ function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreato
       {/* Media — wrapped in <Link> so the click triggers Next.js's
           intercepting route at app/@modal/(.)moment/.../page.tsx. The
           feed stays mounted; the detail page renders as an overlay
-          above. Combined with SharedVideoProvider, the same <video>
-          element CSS-transitions from card to overlay without re-mount.
+          above, with the card's inline video still playing underneath.
           Direct URL load of /moment/X bypasses the interception and
           hits the canonical detail page. */}
       <Link

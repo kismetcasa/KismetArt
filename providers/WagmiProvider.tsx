@@ -7,11 +7,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState } from 'react'
 import { wagmiConfig } from '@/lib/wagmi'
 import { AdminProvider } from '@/contexts/AdminContext'
-import { SharedVideoProvider } from '@/providers/SharedVideoProvider'
 
 import '@rainbow-me/rainbowkit/styles.css'
 
-export function Providers({ children, isMobile = false }: { children: React.ReactNode; isMobile?: boolean }) {
+export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient())
 
   return (
@@ -30,9 +29,7 @@ export function Providers({ children, isMobile = false }: { children: React.Reac
             fontStack: 'system',
           })}
         >
-          <AdminProvider>
-            <SharedVideoProvider isMobile={isMobile}>{children}</SharedVideoProvider>
-          </AdminProvider>
+          <AdminProvider>{children}</AdminProvider>
         </RainbowKitProvider>
       </QueryClientProvider>
     </WagmiProvider>

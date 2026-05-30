@@ -5,7 +5,6 @@ import { FarcasterProvider } from '@/providers/FarcasterProvider'
 import { Nav } from '@/components/Nav'
 import { TelemetryProvider } from '@/components/TelemetryProvider'
 import { buildFarcasterEmbed } from '@/lib/farcasterEmbed'
-import { isMobileUA } from '@/lib/serverDevice'
 import { SITE_URL } from '@/lib/siteUrl'
 import './globals.css'
 
@@ -38,7 +37,7 @@ export const metadata: Metadata = {
   }),
 }
 
-export default async function RootLayout({
+export default function RootLayout({
   children,
   modal,
 }: {
@@ -48,15 +47,11 @@ export default async function RootLayout({
   // null fallback when no intercepted route is active.
   modal: React.ReactNode
 }) {
-  // Read once on the server and pass through Providers so platform-
-  // specific tuning (e.g. SharedVideoProvider's pool cap) is baked into
-  // SSR. Desktop renders see no behavior change.
-  const isMobile = await isMobileUA()
   return (
     <html lang="en">
       <head>
         {/* Warm TLS to arweave.net. The dominant consumers are the
-            <video> elements in SharedVideoProvider and the poster
+            inline <video> elements and the poster
             <img>s in MomentImage — both no-cors by default. Browser
             connection pools partition by CORS mode, so a crossorigin
             preconnect here would warm the wrong pool entry and the
@@ -75,7 +70,7 @@ export default async function RootLayout({
         <link rel="dns-prefetch" href="https://dweb.link" />
       </head>
       <body>
-        <Providers isMobile={isMobile}>
+        <Providers>
           <FarcasterProvider>
             <TelemetryProvider />
             <Nav />
@@ -91,8 +86,7 @@ export default async function RootLayout({
             {/* Intercepted routes render here as an overlay over the
                 still-mounted {children} below. The feed stays alive
                 underneath, scroll position preserved, card videos still
-                playing — combined with SharedVideoProvider, the same
-                video element CSS-transitions from card to overlay. */}
+                playing as the detail opens above. */}
             {modal}
             <Toaster
               position="bottom-center"
