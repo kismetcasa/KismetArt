@@ -8,10 +8,10 @@ import { memoize } from './memoCache'
 // In-memory TTL for the hot collection-set getters below. These read
 // SMEMBERS on every request from a wide range of routes (timeline,
 // search, featured, collections feed) but the underlying sets change
-// rarely — a new collection deploy is once-a-day at most. 60s is short
+// rarely — a new collection deploy is once-a-day at most. 5 min is short
 // enough to be invisible to users (cross-pod, worst case) and the
 // per-write invalidators below make own-pod consistency immediate.
-const SET_CACHE_TTL_MS = 60_000
+const SET_CACHE_TTL_MS = 5 * 60_000
 
 // Per-collection set of "authorized creators": addresses an admin
 // granted ADMIN to via the post-deploy panel. Stored as JSON-encoded
