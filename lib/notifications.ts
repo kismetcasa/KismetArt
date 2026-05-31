@@ -51,6 +51,11 @@ export interface Notification {
 type NotificationInput = Omit<Notification, 'id' | 'timestamp' | 'priority' | 'read'>
 
 const MAX_PER_USER = 200
+// Notifications older than this are dropped lazily on each loadAndAnnotate
+// call (see the ZREMRANGEBYSCORE prepended below). Replaces the previous
+// per-5min background sweep that walked every profile in KEY_PROFILES —
+// (1+N) commands per tick scaled linearly with total wallets ever connected.
+const NOTIF_TTL_SECONDS = 60 * 24 * 60 * 60   // 60 days
 const FOLLOW_DEDUP_WINDOW_SECS = 7 * 24 * 60 * 60
 // Coalesces same-shape bursts (collect-all firing Promise.all-style, or a
 // seller listing several editions back-to-back) into one notification per
@@ -235,8 +240,20 @@ interface NotificationListResult {
 // Loads every stored notification for `address`, parses each entry, drops
 // muted-actor rows, and stamps a computed `read` flag. Shared by the list +
 // unread-count callers so the parse/mute/read invariants stay in sync.
+//
+// The leading ZREMRANGEBYSCORE drops entries older than NOTIF_TTL_SECONDS
+// on every read — lazy cleanup that replaces a per-5min background sweep
+// across every profile in KEY_PROFILES. Pattern: BullMQ's
+// `removeOnComplete` lazy-removal. The result is discarded (the count of
+// removed entries is uninteresting to callers); the cleanup completes
+// before the ZRANGE in actual execution because Promise.all preserves
+// command order on the wire for ordered SDKs, and worst case (cleanup
+// happens after read) the stale entries are returned once and dropped
+// next call — no correctness impact, just a one-poll display lag.
 async function loadAndAnnotate(address: string): Promise<Notification[]> {
-  const [raws, lastRead, readIdsArr, mutedArr] = await Promise.all([
+  const cutoff = Math.floor(Date.now() / 1000) - NOTIF_TTL_SECONDS
+  const [, raws, lastRead, readIdsArr, mutedArr] = await Promise.all([
+    redis.zremrangebyscore(keyNotif(address), 0, cutoff).catch(() => 0),
     redis.zrange(keyNotif(address), 0, -1, { rev: true }) as Promise<string[]>,
     redis.get<string>(keyLastRead(address)),
     redis.smembers(keyReadIds(address)) as Promise<string[]>,
