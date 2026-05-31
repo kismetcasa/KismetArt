@@ -91,13 +91,18 @@ async function _getUserCollections(): Promise<string[]> {
 }
 export const getUserCollections = memoize(_getUserCollections, SET_CACHE_TTL_MS)
 
+// Note: NO try/catch wrapping the SMEMBERS. The earlier `catch { return new Set() }`
+// silently turned every Redis failure into "no created mints", which the
+// timeline's scope=standalone filter then read as "filter everything out" —
+// blanking the mints/trending feeds for a full 60s after recovery (memoize
+// cached the empty result as a successful read). Letting the throw propagate
+// means memoize won't cache the failure, the next call retries, and the
+// caller in app/api/timeline/route.ts handles the throw by skipping the
+// filter for THIS request (showing unfiltered moments — safer degradation
+// than blank).
 async function _getCreatedMintsSet(): Promise<Set<string>> {
-  try {
-    const members = (await redis.smembers(CREATED_MINTS_KEY)) as string[]
-    return new Set(members.map((m) => m.toLowerCase()))
-  } catch {
-    return new Set()
-  }
+  const members = (await redis.smembers(CREATED_MINTS_KEY)) as string[]
+  return new Set(members.map((m) => m.toLowerCase()))
 }
 export const getCreatedMintsSet = memoize(_getCreatedMintsSet, SET_CACHE_TTL_MS)
 
