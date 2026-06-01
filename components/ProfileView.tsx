@@ -245,6 +245,9 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
   // Pinned showcase refs per category. Drives the visitor's curated view and
   // the owner's per-card pin toggle state.
   const [pins, setPins] = useState<PinSets>(EMPTY_PINS)
+  // Set once the owner toggles a pin, so the initial GET (which runs on mount
+  // and may still be in flight) can't overwrite an optimistic toggle.
+  const pinsTouched = useRef(false)
 
   const [followingCount, setFollowingCount] = useState<number | null>(null)
   const [followerCount, setFollowerCount] = useState<number | null>(null)
@@ -336,17 +339,19 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
   // Pinned showcase refs — Tier 1 because the render mode (pinned-only vs
   // full) depends on it. Tiny payload; degrades to no-pins on any failure.
   useEffect(() => {
+    pinsTouched.current = false
     setPins(EMPTY_PINS)
     fetch(`/api/profile/${address}/pins`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
       // Normalize per-category so a partial/garbled payload can't leave a
       // category undefined (pins[cat].includes / .length would then throw).
-      .then((d) => setPins({
+      // Skip if the owner already toggled — don't clobber an optimistic pin.
+      .then((d) => { if (!pinsTouched.current) setPins({
         mints: Array.isArray(d?.pins?.mints) ? d.pins.mints : [],
         collected: Array.isArray(d?.pins?.collected) ? d.pins.collected : [],
         listings: Array.isArray(d?.pins?.listings) ? d.pins.listings : [],
-      }))
-      .catch(() => setPins(EMPTY_PINS))
+      }) })
+      .catch(() => { if (!pinsTouched.current) setPins(EMPTY_PINS) })
   }, [address])
 
   // Tier 2 — visible just below the header.
@@ -542,6 +547,7 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
     // / FC JWT (authorizeOwner), not a wallet signature — and an FC Mini App
     // owner is `isOwner` (so sees the toggle) before wagmi attaches an address.
     // A missing session surfaces as the server's 401 → toast below.
+    pinsTouched.current = true // from here, optimistic state wins over the GET
     const key = `${collectionAddress.toLowerCase()}:${tokenId}`
     const wasPinned = pins[category].includes(key)
     // Functional add/remove scoped to this key, so rapid taps across cards
