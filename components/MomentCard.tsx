@@ -3,7 +3,7 @@
 import { memo, useState, useEffect, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Star, Copy, Check, EyeOff, ArrowUpRight } from 'lucide-react'
+import { Star, Copy, Check, EyeOff, ArrowUpRight, Pin } from 'lucide-react'
 import { useAccount, useReadContract } from 'wagmi'
 import { useConnectModal } from '@rainbow-me/rainbowkit'
 import {
@@ -77,13 +77,22 @@ interface MomentCardProps {
    * "list" for "view profile".
    */
   profileCta?: boolean
+  /**
+   * Owner-only "pin to profile" affordance. When `onTogglePin` is provided
+   * (ProfileView passes it only on the owner's own profile) a pushpin button
+   * overlays the image bottom-left; `pinned` drives its filled/outline state.
+   * Visitors never receive these, so the React.memo equality (and the price/
+   * collection lookups) stay intact for every feed and non-owner profile.
+   */
+  pinned?: boolean
+  onTogglePin?: () => void
 }
 
 // Memoized — feeds render 18+ cards each doing 3-5 async lookups, so a
 // parent re-render would otherwise re-run them all. Default shallow
 // compare works: `moment` is stable across renders (held in parent
 // useState arrays); other props are primitives.
-function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreator, fillCell, passBadge, profileCta }: MomentCardProps) {
+function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreator, fillCell, passBadge, profileCta, pinned, onTogglePin }: MomentCardProps) {
   // Default: creator chip follows compact mode (visible non-compact,
   // hidden compact). `showCreator` overrides either direction.
   const renderCreator = showCreator ?? !compact
@@ -378,6 +387,26 @@ function MomentCardImpl({ moment, hidePriceSupply, priority, compact, showCreato
           <span className="absolute top-2 right-2 z-10 p-1 bg-[#0d0d0d]/80 border border-line">
             <EyeOff size={10} className="text-muted" />
           </span>
+        )}
+        {/* Owner-only "pin to profile" toggle. Bottom-left — the one image
+            corner no other overlay claims (admin star = top-left, hidden
+            badge = top-right, valid-Pass = bottom-right). preventDefault
+            stops the wrapping <Link> from navigating on tap. */}
+        {onTogglePin && (
+          <button
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              onTogglePin()
+            }}
+            className={`absolute bottom-1.5 left-1.5 z-10 min-w-9 min-h-9 flex items-center justify-center transition-colors ${
+              pinned ? 'text-accent' : 'text-faint hover:text-dim'
+            }`}
+            title={pinned ? 'Unpin from profile' : 'Pin to profile'}
+            aria-label={pinned ? 'Unpin from profile' : 'Pin to profile'}
+          >
+            <Pin size={15} fill={pinned ? 'currentColor' : 'none'} strokeWidth={1.5} />
+          </button>
         )}
         {/* Valid-Pass overlay. Shown on the holder's profile collected list
             so they can confirm at a glance that their Pass currently grants
