@@ -339,7 +339,13 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
     setPins(EMPTY_PINS)
     fetch(`/api/profile/${address}/pins`)
       .then((r) => (r.ok ? r.json() : Promise.reject()))
-      .then((d) => setPins(d.pins ?? EMPTY_PINS))
+      // Normalize per-category so a partial/garbled payload can't leave a
+      // category undefined (pins[cat].includes / .length would then throw).
+      .then((d) => setPins({
+        mints: Array.isArray(d?.pins?.mints) ? d.pins.mints : [],
+        collected: Array.isArray(d?.pins?.collected) ? d.pins.collected : [],
+        listings: Array.isArray(d?.pins?.listings) ? d.pins.listings : [],
+      }))
       .catch(() => setPins(EMPTY_PINS))
   }, [address])
 
@@ -393,9 +399,12 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
   }, [address, tier3])
 
   // Sales + Airdrops are owner-dashboard-only sections — a visitor's curated
-  // view never renders them, so skip the fetches entirely for non-owners.
+  // view never renders them, so skip the fetches for non-owners. Mark them
+  // resolved (loading=false) on the visitor path so the flags don't stay true
+  // for the component's life (which would leave their section counts null).
   useEffect(() => {
-    if (!tier3 || !isOwner) return
+    if (!isOwner) { setLoadingPayments(false); return }
+    if (!tier3) return
     fetch(`/api/payments?artist=${address}`)
       .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setPayments(Array.isArray(d.payments) ? d.payments : []))
@@ -404,7 +413,8 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
   }, [address, tier3, isOwner])
 
   useEffect(() => {
-    if (!tier3 || !isOwner) return
+    if (!isOwner) { setLoadingAirdrops(false); return }
+    if (!tier3) return
     fetch(`/api/airdrops?artist_address=${address}`)
       .then((r) => r.ok ? r.json() : Promise.reject())
       .then((d) => setAirdrops(Array.isArray(d.airdrops) ? d.airdrops : []))
@@ -527,14 +537,11 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
 
   // ─── pinned showcase ──────────────────────────────────────────────────────
 
-  const pinSets: Record<PinCategory, Set<string>> = {
-    mints: new Set(pins.mints),
-    collected: new Set(pins.collected),
-    listings: new Set(pins.listings),
-  }
-
   async function togglePin(category: PinCategory, collectionAddress: string, tokenId: string) {
-    if (!connectedAddress) { openConnectModal?.(); return }
+    // No wallet-connection gate: pinning authenticates via the session cookie
+    // / FC JWT (authorizeOwner), not a wallet signature — and an FC Mini App
+    // owner is `isOwner` (so sees the toggle) before wagmi attaches an address.
+    // A missing session surfaces as the server's 401 → toast below.
     const key = `${collectionAddress.toLowerCase()}:${tokenId}`
     const wasPinned = pins[category].includes(key)
     // Functional add/remove scoped to this key, so rapid taps across cards
@@ -564,6 +571,7 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
 
   // Owner-only pin props for a card; {} for visitors so MomentCard/MarketCard
   // render no toggle and keep their memoized identity in every non-owner feed.
+  // Membership is a plain .includes over the capped (≤4) ref array — no Set.
   function ownerPinProps(
     category: PinCategory,
     collectionAddress: string,
@@ -571,7 +579,7 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
   ): { pinned?: boolean; onTogglePin?: () => void } {
     if (!isOwner) return {}
     return {
-      pinned: pinSets[category].has(`${collectionAddress.toLowerCase()}:${tokenId}`),
+      pinned: pins[category].includes(`${collectionAddress.toLowerCase()}:${tokenId}`),
       onTogglePin: () => togglePin(category, collectionAddress, tokenId),
     }
   }
@@ -581,16 +589,14 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
   // render self-validating (a pin can only show content the owner truly
   // minted/collected/listed). Owners always see their full dashboard so they
   // can curate. With no pins, a visitor's view has no sections at all — just
-  // the profile header (identity only).
-  const pinnedMoments = orderByPins(moments, (m) => `${m.address.toLowerCase()}:${m.token_id}`, pins.mints)
-  const pinnedCollected = orderByPins(collected, (m) => `${m.address.toLowerCase()}:${m.token_id}`, pins.collected)
-  const pinnedListings = orderByPins(listings, (l) => `${l.collectionAddress.toLowerCase()}:${l.tokenId}`, pins.listings)
+  // the profile header (identity only). orderByPins runs only on the visitor
+  // path; for an owner the full arrays pass straight through.
   const pinnedView = !isOwner
   const ownerHasNoPins = isOwner && pins.mints.length + pins.collected.length + pins.listings.length === 0
 
-  const displayMoments = pinnedView ? pinnedMoments : moments
-  const displayCollected = pinnedView ? pinnedCollected : collected
-  const displayListings = pinnedView ? pinnedListings : listings
+  const displayMoments = pinnedView ? orderByPins(moments, (m) => `${m.address.toLowerCase()}:${m.token_id}`, pins.mints) : moments
+  const displayCollected = pinnedView ? orderByPins(collected, (m) => `${m.address.toLowerCase()}:${m.token_id}`, pins.collected) : collected
+  const displayListings = pinnedView ? orderByPins(listings, (l) => `${l.collectionAddress.toLowerCase()}:${l.tokenId}`, pins.listings) : listings
   const pinSectionLoading: Record<PinCategory, boolean> = {
     mints: loadingMoments,
     collected: loadingCollected,
