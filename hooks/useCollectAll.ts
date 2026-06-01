@@ -167,6 +167,10 @@ export function useCollectAll(): UseCollectAllReturn {
   const collectAllRef = useRef<(args: CollectAllArgs) => Promise<{ minted: number } | null>>(
     () => Promise.resolve(null),
   )
+  // Dedupes rapid double-taps of the Retry button. Sonner's toast action
+  // stays clickable until the next toast replaces it, so without this a
+  // panicked retap can fire two concurrent recovery flows.
+  const isRecoveringRef = useRef(false)
   // Synchronous re-entrance latch. setStatus is async — between the user's
   // click and React committing the disabled-button render, a double-click
   // could otherwise kick off two parallel bundles.
@@ -609,21 +613,30 @@ export function useCollectAll(): UseCollectAllReturn {
         toastError('Collect all', err, {
           id: TOAST_ID,
           onReconnect: () => {
+            // Dedupe rapid retaps: the toast remains clickable until our
+            // new toast replaces it, so a double-tap would otherwise fire
+            // two concurrent recovery flows.
+            if (isRecoveringRef.current) return
+            isRecoveringRef.current = true
             // Fire-and-forget: the toast action is sync. We re-attempt
             // the same bundle on success, or hand off to the wallet
             // picker if reconnect couldn't restore signing.
             void (async () => {
               try {
-                await reconnectAsync()
-              } catch {
-                // reconnect itself can throw on dead connectors — fall
-                // through to the post-reconnect status check below.
-              }
-              const account = getAccount(config)
-              if (account.status === 'connected' && account.address) {
-                void collectAllRef.current(args)
-              } else {
-                openConnectModal?.()
+                try {
+                  await reconnectAsync()
+                } catch {
+                  // reconnect itself can throw on dead connectors — fall
+                  // through to the post-reconnect status check below.
+                }
+                const account = getAccount(config)
+                if (account.status === 'connected' && account.address) {
+                  void collectAllRef.current(args)
+                } else {
+                  openConnectModal?.()
+                }
+              } finally {
+                isRecoveringRef.current = false
               }
             })()
           },

@@ -14,8 +14,14 @@ const REJECTION_REGEX = /user rejected|user denied|rejected the request|user can
 // path instead of a raw RPC dump. Note: viem mislabels the host's -32006
 // as "Version of JSON-RPC protocol is not supported"; the real signal is
 // the `Details: Unauthorized` line, which lands in error.message/.details.
+//
+// Deliberately NOT matching loose `/not authorized/` — that string appears
+// in on-chain permission reverts ("Caller is not authorized for this
+// token"), which are NOT wallet-session failures and would mislead the
+// user into a reconnect loop. We rely on the literal "unauthorized" /
+// "has not been authorized" wording, which is wallet-context only.
 const AUTH_ERROR_REGEX =
-  /unauthorized|not been authorized|not authorized|session.*(expired|disconnect)|wallet.*disconnect/i
+  /unauthorized|has not been authorized|session.*(expired|disconnect)|wallet.*disconnect/i
 
 interface MaybeWalletError {
   message?: unknown
