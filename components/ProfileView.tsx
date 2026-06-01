@@ -118,6 +118,25 @@ function loadSectionsConfig(): SectionsConfig {
   }
 }
 
+// ─── pinned showcase ─────────────────────────────────────────────────────────
+
+type PinCategory = 'mints' | 'collected' | 'listings'
+type PinSets = Record<PinCategory, string[]>
+const EMPTY_PINS: PinSets = { mints: [], collected: [], listings: [] }
+
+// Reduce `items` to the pinned ones, ordered by pin recency (`order` is the
+// newest-pinned-first ref list from /api/profile/[address]/pins). Items absent
+// from `order` — a pin buried past the profile's 50-item fetch window, or a
+// listing that's since been delisted — simply fall away, which is what lets
+// the visitor's curated view degrade gracefully to the full profile.
+function orderByPins<T>(items: T[], keyOf: (t: T) => string, order: string[]): T[] {
+  if (order.length === 0) return []
+  const rank = new Map(order.map((k, i) => [k, i] as const))
+  return items
+    .filter((it) => rank.has(keyOf(it)))
+    .sort((a, b) => (rank.get(keyOf(a)) ?? 0) - (rank.get(keyOf(b)) ?? 0))
+}
+
 // ─── follow row (lazy-loads display name) ────────────────────────────────────
 
 function FollowRow({ addr, onClose, onNameLoaded }: { addr: string; onClose: () => void; onNameLoaded?: (addr: string, name: string) => void }) {
@@ -175,7 +194,7 @@ interface Profile {
 }
 
 export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
-  const { address: connectedAddress } = useAccount()
+  const { address: connectedAddress, isConnecting, isReconnecting } = useAccount()
   const { openConnectModal } = useConnectModal()
   const { signMessageAsync } = useSignMessage()
   const { isInMiniApp, identity: fcIdentity } = useFarcaster()
@@ -222,6 +241,10 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
   const [followLoading, setFollowLoading] = useState(false)
   const [addrCopied, setAddrCopied] = useState(false)
   const [linkCopied, setLinkCopied] = useState(false)
+
+  // Pinned showcase refs per category. Drives the visitor's curated view and
+  // the owner's per-card pin toggle state.
+  const [pins, setPins] = useState<PinSets>(EMPTY_PINS)
 
   const [followingCount, setFollowingCount] = useState<number | null>(null)
   const [followerCount, setFollowerCount] = useState<number | null>(null)
@@ -308,6 +331,16 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
       .then((d) => setMoments(Array.isArray(d.moments) ? d.moments : []))
       .catch(() => setMoments([]))
       .finally(() => setLoadingMoments(false))
+  }, [address])
+
+  // Pinned showcase refs — Tier 1 because the render mode (pinned-only vs
+  // full) depends on it. Tiny payload; degrades to no-pins on any failure.
+  useEffect(() => {
+    setPins(EMPTY_PINS)
+    fetch(`/api/profile/${address}/pins`)
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d) => setPins(d.pins ?? EMPTY_PINS))
+      .catch(() => setPins(EMPTY_PINS))
   }, [address])
 
   // Tier 2 — visible just below the header.
@@ -490,6 +523,78 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
     }
   }
 
+  // ─── pinned showcase ──────────────────────────────────────────────────────
+
+  const pinSets: Record<PinCategory, Set<string>> = {
+    mints: new Set(pins.mints),
+    collected: new Set(pins.collected),
+    listings: new Set(pins.listings),
+  }
+
+  async function togglePin(category: PinCategory, collectionAddress: string, tokenId: string) {
+    if (!connectedAddress) { openConnectModal?.(); return }
+    const key = `${collectionAddress.toLowerCase()}:${tokenId}`
+    const prev = pins[category]
+    const wasPinned = prev.includes(key)
+    const next = wasPinned ? prev.filter((k) => k !== key) : [key, ...prev]
+    setPins((p) => ({ ...p, [category]: next }))
+    try {
+      const res = await fetch(`/api/profile/${address}/pins`, {
+        method: wasPinned ? 'DELETE' : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category, collectionAddress, tokenId }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        throw new Error(d.error ?? 'Failed')
+      }
+    } catch (err) {
+      setPins((p) => ({ ...p, [category]: prev })) // revert optimistic toggle
+      toastError(wasPinned ? 'Unpin' : 'Pin', err)
+    }
+  }
+
+  // Owner-only pin props for a card; {} for visitors so MomentCard/MarketCard
+  // render no toggle and keep their memoized identity in every non-owner feed.
+  function ownerPinProps(
+    category: PinCategory,
+    collectionAddress: string,
+    tokenId: string,
+  ): { pinned?: boolean; onTogglePin?: () => void } {
+    if (!isOwner) return {}
+    return {
+      pinned: pinSets[category].has(`${collectionAddress.toLowerCase()}:${tokenId}`),
+      onTogglePin: () => togglePin(category, collectionAddress, tokenId),
+    }
+  }
+
+  // Visitor "pinned only" curated view. Owners always see their full profile
+  // (so they can pin); a visitor sees just the pinned sections. The flag is
+  // gated on the POST-FILTER renderable count, so if every pin is currently
+  // unrenderable (buried past the fetch window / delisted) it falls back to
+  // the full view rather than rendering an empty profile.
+  const pinnedMoments = orderByPins(moments, (m) => `${m.address.toLowerCase()}:${m.token_id}`, pins.mints)
+  const pinnedCollected = orderByPins(collected, (m) => `${m.address.toLowerCase()}:${m.token_id}`, pins.collected)
+  const pinnedListings = orderByPins(listings, (l) => `${l.collectionAddress.toLowerCase()}:${l.tokenId}`, pins.listings)
+  const hasAnyPins = pins.mints.length + pins.collected.length + pins.listings.length > 0
+  const pinSourcesLoaded = !loadingMoments && !loadingCollected && !loadingListings
+  const totalPinnedRenderable = pinnedMoments.length + pinnedCollected.length + pinnedListings.length
+  // Hold off the pinned/full decision until the wallet has settled, so an
+  // owner whose reconnect hasn't resolved yet never flashes the visitor view
+  // of their own profile (isOwner is briefly false mid-reconnect).
+  const walletSettled = !isConnecting && !isReconnecting
+  const pinnedView =
+    walletSettled && !isOwner && hasAnyPins && !(pinSourcesLoaded && totalPinnedRenderable === 0)
+
+  const displayMoments = pinnedView ? pinnedMoments : moments
+  const displayCollected = pinnedView ? pinnedCollected : collected
+  const displayListings = pinnedView ? pinnedListings : listings
+  const pinSectionLoading: Record<PinCategory, boolean> = {
+    mints: loadingMoments,
+    collected: loadingCollected,
+    listings: loadingListings,
+  }
+
   // ─── section content map ──────────────────────────────────────────────────
 
   // Profile uses the compact card density everywhere — keeps each section
@@ -521,9 +626,9 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
     curate: 'Curate',
   }
   const sectionCount: Record<SectionId, number | null> = {
-    mints: loadingMoments ? null : moments.length,
-    collected: loadingCollected ? null : collected.length,
-    listings: loadingListings ? null : listings.length,
+    mints: loadingMoments ? null : displayMoments.length,
+    collected: loadingCollected ? null : displayCollected.length,
+    listings: loadingListings ? null : displayListings.length,
     payments: loadingPayments ? null : payments.length,
     airdrops: loadingAirdrops ? null : airdrops.length,
     // Curate count rendered by the panel itself (it knows the live featured set).
@@ -553,7 +658,7 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
   }
 
   const sectionContent: Record<SectionId, React.ReactNode> = {
-    mints: collectionsMode ? (
+    mints: collectionsMode && !pinnedView ? (
       loadingCollections ? skeleton(6) : artistCollections.length === 0 ? (
         <p className="text-muted font-mono text-xs">no collections yet</p>
       ) : renderCardCollection(
@@ -589,22 +694,22 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
         (c) => c.contractAddress,
       )
     ) : (
-      loadingMoments ? skeleton(6) : moments.length === 0
+      loadingMoments ? skeleton(6) : displayMoments.length === 0
         ? <p className="text-muted font-mono text-xs">no mints yet</p>
         : renderCardCollection(
-            moments,
-            (m, index) => <MomentCard moment={m} hidePriceSupply compact showCreator priority={index < 6} />,
+            displayMoments,
+            (m, index) => <MomentCard moment={m} hidePriceSupply compact showCreator priority={index < 6} {...ownerPinProps('mints', m.address, m.token_id)} />,
             (m) => m.id ?? `${m.address}-${m.token_id}`,
           )
     ),
-    collected: loadingCollected ? skeleton(6) : collected.length === 0
+    collected: loadingCollected ? skeleton(6) : displayCollected.length === 0
       ? <p className="text-muted font-mono text-xs">none collected yet</p>
       : renderCardCollection(
-          collected,
-          (m, index) => <MomentCard moment={m} hidePriceSupply compact showCreator priority={index < 6} passBadge={passBadge ?? undefined} />,
+          displayCollected,
+          (m, index) => <MomentCard moment={m} hidePriceSupply compact showCreator priority={index < 6} passBadge={passBadge ?? undefined} {...ownerPinProps('collected', m.address, m.token_id)} />,
           (m) => m.id ?? `${m.address}-${m.token_id}`,
         ),
-    listings: loadingListings ? skeleton(3) : listings.length === 0
+    listings: loadingListings ? skeleton(3) : displayListings.length === 0
       ? (
         <p className="text-muted font-mono text-xs">
           collect a moment on discover then{' '}
@@ -613,7 +718,7 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
         </p>
       )
       : renderCardCollection(
-          listings,
+          displayListings,
           (l, index) => (
             <MarketCard
               listing={l}
@@ -621,6 +726,7 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
               compact
               showCreator
               priority={index < 6}
+              {...ownerPinProps('listings', l.collectionAddress, l.tokenId)}
             />
           ),
           (l) => l.id,
@@ -943,7 +1049,46 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
           appended last for the curator on their own profile and is not
           drag-reorderable — it stays pinned to the bottom. */}
       <div ref={sectionContainerRef} className="flex flex-col">
-        {(showCurate ? [...sectionOrder, 'curate' as const] : sectionOrder).map((section) => {
+        {pinnedView ? (
+          // Visitor curated view: only the owner's pinned Mints / Collected /
+          // Listings, empty categories hidden, fixed order, non-draggable.
+          (['mints', 'collected', 'listings'] as const)
+            // Only categories the owner pinned into; show a skeleton while that
+            // category's source loads, then hide it if nothing renders.
+            .filter((section) => pins[section].length > 0 && (pinSectionLoading[section] || (sectionCount[section] ?? 0) > 0))
+            .map((section) => {
+              const isCollapsed = sectionCollapsed[section] ?? false
+              const count = sectionCount[section]
+              return (
+                <div key={section} data-section={section} className="border-t border-line">
+                  <div
+                    onClick={() => toggleCollapsed(section)}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        toggleCollapsed(section)
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={!isCollapsed}
+                    className="flex items-center gap-2 py-4 select-none cursor-pointer"
+                  >
+                    <ChevronRight
+                      size={12}
+                      className={`text-muted transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}`}
+                    />
+                    <h2 className="text-xs font-mono text-dim uppercase tracking-wider">
+                      {sectionLabel[section]}{count !== null ? ` (${count})` : ''}
+                    </h2>
+                  </div>
+                  {!isCollapsed && <div className="pb-8">{sectionContent[section]}</div>}
+                </div>
+              )
+            })
+        ) : (
+          (showCurate ? [...sectionOrder, 'curate' as const] : sectionOrder).map((section) => {
           const isCollapsed = sectionCollapsed[section] ?? false
           const count = sectionCount[section]
           const isReorderable = section !== 'curate'
@@ -1015,7 +1160,8 @@ export function ProfileView({ address, isMobile = false }: ProfileViewProps) {
               )}
             </div>
           )
-        })}
+        })
+        )}
       </div>
     </div>
   )
