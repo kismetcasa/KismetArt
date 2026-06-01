@@ -1,8 +1,10 @@
 'use client'
 
-import { useCallback, useState } from 'react'
-import { useAccount, usePublicClient, useReconnect, useWriteContract } from 'wagmi'
+import { useCallback, useRef, useState } from 'react'
+import { useAccount, useConfig, usePublicClient, useReconnect, useWriteContract } from 'wagmi'
+import { getAccount } from '@wagmi/core'
 import { base } from 'wagmi/chains'
+import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
 import { getAddress, type Address, type Hash } from 'viem'
 import { isValidTokenId } from '@/lib/address'
@@ -70,14 +72,25 @@ const TOAST_ID = 'direct-collect'
  */
 export function useDirectCollect(): UseDirectCollectReturn {
   const { address } = useAccount()
+  const config = useConfig()
   const publicClient = usePublicClient({ chainId: base.id })
   const { writeContractAsync } = useWriteContract()
-  // Recovery for a connected-but-unauthorized wallet (stale session): the
-  // toast's Reconnect action re-runs wagmi's connector reconnect, the
-  // programmatic equivalent of the page-refresh users currently rely on.
-  const { reconnect } = useReconnect()
+  // Recovery for a connected-but-unauthorized wallet (stale session).
+  // reconnectAsync silently re-authorizes on Farcaster / injected; for
+  // WalletConnect it either re-pairs or actively disconnects (its
+  // isAuthorized() tears down stale sessions). When that drops us to
+  // disconnected, we fall back to the wallet picker so the user always
+  // lands somewhere actionable. See the recovery handler below.
+  const { reconnectAsync } = useReconnect()
+  const { openConnectModal } = useConnectModal()
   const ensureBase = useEnsureBase()
   const [status, setStatus] = useState<CollectStatus>('idle')
+  // Lets the failure toast's Retry action re-invoke the latest `collect`
+  // closure with the same args. A ref breaks the circular dep that would
+  // otherwise require putting `collect` in its own useCallback's deps.
+  const collectRef = useRef<(args: CollectArgs) => Promise<{ hash: Hash } | null>>(
+    () => Promise.resolve(null),
+  )
 
   const collect = useCallback(
     async (args: CollectArgs): Promise<{ hash: Hash } | null> => {
@@ -234,12 +247,35 @@ export function useDirectCollect(): UseDirectCollectReturn {
         return { hash }
       } catch (err) {
         setStatus('error')
-        toastError('Collect', err, { id: TOAST_ID, onReconnect: () => reconnect() })
+        toastError('Collect', err, {
+          id: TOAST_ID,
+          onReconnect: () => {
+            // Fire-and-forget: the toast action is sync. We re-attempt
+            // the same collect on success, or hand off to the wallet
+            // picker if reconnect couldn't restore signing.
+            void (async () => {
+              try {
+                await reconnectAsync()
+              } catch {
+                // reconnect itself can throw on dead connectors — fall
+                // through to the post-reconnect status check below.
+              }
+              const account = getAccount(config)
+              if (account.status === 'connected' && account.address) {
+                void collectRef.current(args)
+              } else {
+                openConnectModal?.()
+              }
+            })()
+          },
+        })
         return null
       }
     },
-    [address, publicClient, writeContractAsync, reconnect, ensureBase],
+    [address, publicClient, writeContractAsync, reconnectAsync, config, openConnectModal, ensureBase],
   )
+
+  collectRef.current = collect
 
   return { collect, status }
 }

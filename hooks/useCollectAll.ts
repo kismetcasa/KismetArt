@@ -12,6 +12,7 @@ import {
 } from 'wagmi'
 import { getAccount, waitForCallsStatus } from '@wagmi/core'
 import { base } from 'wagmi/chains'
+import { useConnectModal } from '@rainbow-me/rainbowkit'
 import { toast } from 'sonner'
 import { encodeFunctionData, getAddress, type Address, type Hex } from 'viem'
 import { isValidTokenId } from '@/lib/address'
@@ -150,12 +151,22 @@ export function useCollectAll(): UseCollectAllReturn {
   const { sendCallsAsync } = useSendCalls()
   const { data: walletClient } = useWalletClient({ chainId: base.id })
   const { writeContractAsync } = useWriteContract()
-  // Recovery for a connected-but-unauthorized wallet (stale session): the
-  // toast's Reconnect action re-runs wagmi's connector reconnect, the
-  // programmatic equivalent of the page-refresh users currently rely on.
-  const { reconnect } = useReconnect()
+  // Recovery for a connected-but-unauthorized wallet (stale session).
+  // reconnectAsync silently re-authorizes on Farcaster / injected; for
+  // WalletConnect it either re-pairs or actively disconnects (its
+  // isAuthorized() tears down stale sessions). When that drops us to
+  // disconnected, we fall back to the wallet picker so the user always
+  // lands somewhere actionable. See the recovery handler below.
+  const { reconnectAsync } = useReconnect()
+  const { openConnectModal } = useConnectModal()
   const ensureBase = useEnsureBase()
   const [status, setStatus] = useState<Status>('idle')
+  // Lets the failure toast's Retry action re-invoke the latest `collectAll`
+  // closure with the same args. A ref breaks the circular dep that would
+  // otherwise require putting `collectAll` in its own useCallback's deps.
+  const collectAllRef = useRef<(args: CollectAllArgs) => Promise<{ minted: number } | null>>(
+    () => Promise.resolve(null),
+  )
   // Synchronous re-entrance latch. setStatus is async — between the user's
   // click and React committing the disabled-button render, a double-click
   // could otherwise kick off two parallel bundles.
@@ -595,14 +606,37 @@ export function useCollectAll(): UseCollectAllReturn {
         return { minted: recorded.length }
       } catch (err) {
         setStatus('error')
-        toastError('Collect all', err, { id: TOAST_ID, onReconnect: () => reconnect() })
+        toastError('Collect all', err, {
+          id: TOAST_ID,
+          onReconnect: () => {
+            // Fire-and-forget: the toast action is sync. We re-attempt
+            // the same bundle on success, or hand off to the wallet
+            // picker if reconnect couldn't restore signing.
+            void (async () => {
+              try {
+                await reconnectAsync()
+              } catch {
+                // reconnect itself can throw on dead connectors — fall
+                // through to the post-reconnect status check below.
+              }
+              const account = getAccount(config)
+              if (account.status === 'connected' && account.address) {
+                void collectAllRef.current(args)
+              } else {
+                openConnectModal?.()
+              }
+            })()
+          },
+        })
         return null
       } finally {
         inFlightRef.current = false
       }
     },
-    [address, config, publicClient, sendCallsAsync, walletClient, writeContractAsync, reconnect, ensureBase],
+    [address, config, publicClient, sendCallsAsync, walletClient, writeContractAsync, reconnectAsync, openConnectModal, ensureBase],
   )
+
+  collectAllRef.current = collectAll
 
   return { collectAll, status }
 }
